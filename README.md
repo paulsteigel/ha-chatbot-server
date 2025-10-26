@@ -1,37 +1,59 @@
-# Kids ChatBot Server for Home Assistant
+# Home Assistant Add-ons by Đặng Đình Ngọc
 
-OpenAI-powered voice chatbot add-on cho trẻ em với giao diện test tích hợp.
+![Project Stage][project-stage-shield]
+![Maintenance][maintenance-shield]
+[![License][license-shield]](LICENSE)
 
-## Tính năng
+## About
 
-- ✅ Chat bằng giọng nói (Speech-to-Text + Text-to-Speech)
-- ✅ Giao diện web test ngay trong add-on
-- ✅ Content filtering cho trẻ em
-- ✅ Hỗ trợ đa ngôn ngữ (Vietnamese, English, Japanese, Korean, Chinese)
-- ✅ Nhiều giọng đọc (6 voices)
-- ✅ Tùy chỉnh model OpenAI
+Home Assistant add-ons repository containing:
 
-## Cài đặt
+- **Kids ChatBot Server**: OpenAI-powered voice chatbot for children
 
-1. Thêm repository: `https://github.com/paulsteigel/ha_chatbot_server`
-2. Cài đặt add-on "Kids ChatBot Server"
-3. Cấu hình OpenAI API key
-4. Start add-on
-5. Mở Web UI để test
+## Installation
 
-## Cấu hình
+1. Click this button to add the repository:
 
-- **openai_api_key**: API key từ OpenAI (bắt buộc)
-- **port**: Port cho web server (mặc định: 5000)
-- **language**: Ngôn ngữ (vi/en/ja/ko/zh)
-- **model**: Model OpenAI (gpt-4o-mini khuyến nghị)
-- **voice**: Giọng đọc (nova/alloy/echo/fable/onyx/shimmer)
-- **content_filter_enabled**: Bật lọc nội dung không phù hợp
+   [![Add Repository][repository-shield]][repository-url]
 
-## Tác giả
+2. Or manually add in Home Assistant:
+   - Go to **Settings** → **Add-ons** → **Add-on Store**
+   - Click **⋮** (three dots) → **Repositories**
+   - Add: `https://github.com/paulsteigel/ha-chatbot-server`
 
-Đặng Đình Ngọc <ngocdd@sfdp.net>
+## Add-ons
+
+### 🤖 Kids ChatBot Server
+
+OpenAI-powered voice chatbot with built-in web UI for testing.
+
+**Features:**
+- Voice chat (Speech-to-Text + Text-to-Speech)
+- Built-in web test interface
+- Content filtering for kids
+- Multi-language support (Vietnamese, English, Japanese, Korean, Chinese)
+- Multiple voice options
+- Customizable OpenAI models
+
+[Documentation](kids-chatbot-server/README.md)
+
+## Support
+
+- 🐛 [Report a Bug](https://github.com/paulsteigel/ha-chatbot-server/issues)
+- 💡 [Request a Feature](https://github.com/paulsteigel/ha-chatbot-server/issues)
+
+## Author
+
+**Đặng Đình Ngọc**
+- Email: ngocdd@sfdp.net
+- GitHub: [@paulsteigel](https://github.com/paulsteigel)
 
 ## License
 
-MIT
+MIT License - see [LICENSE](LICENSE) file for details
+
+[project-stage-shield]: https://img.shields.io/badge/project%20stage-production-green.svg
+[maintenance-shield]: https://img.shields.io/maintenance/yes/2025.svg
+[license-shield]: https://img.shields.io/github/license/paulsteigel/ha-chatbot-server.svg
+[repository-shield]: https://img.shields.io/badge/Add%20repository%20to%20HA-41BDF5?logo=home-assistant&style=for-the-badge
+[repository-url]: https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fpaulsteigel%2Fha-chatbot-server
