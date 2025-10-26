@@ -1,4 +1,4 @@
-# 🤖 Kids Chatbot Server (Zhaozhi)
+# 🤖 Chatbot Server for primary, secondary school kids
 
 Home Assistant Add-on for educational AI voice assistant for children.
 
