@@ -1,36 +1,66 @@
-"""Content filtering for inappropriate content"""
-
+"""Content filtering utilities for kid-safe chatbot"""
 import re
 
-class ContentFilter:
-    def __init__(self, language='vi'):
-        self.language = language
-        self.inappropriate_patterns = self._load_patterns()
+# Inappropriate keywords (Vietnamese and English)
+INAPPROPRIATE_KEYWORDS = [
+    # Vietnamese
+    'đồ chó', 'mẹ kiếp', 'đm', 'vãi', 'cặc', 'lồn', 'địt',
+    # English
+    'fuck', 'shit', 'damn', 'hell', 'ass', 'bitch',
+    # Add more as needed
+]
+
+def is_safe_content(text: str) -> bool:
+    """
+    Check if the content is safe for kids
     
-    def _load_patterns(self):
-        """Load inappropriate word patterns based on language"""
-        patterns = {
-            'vi': [
-                r'\b(đồ|thằng|con)\s+(ngu|khốn|chó|lợn|điên)\b',
-                r'\b(đụ|địt|fuck|shit|damn)\b',
-                r'\b(giết|chết|tự tử|自殺)\b',
-            ],
-            'en': [
-                r'\b(fuck|shit|damn|bitch|asshole)\b',
-                r'\b(kill|die|suicide)\b',
-            ]
-        }
-        return patterns.get(self.language, patterns['en'])
+    Args:
+        text: Input text to check
+        
+    Returns:
+        bool: True if safe, False if inappropriate
+    """
+    if not text:
+        return False
     
-    def filter(self, text):
-        """
-        Check if text contains inappropriate content
-        Returns: (is_safe, filtered_text)
-        """
-        text_lower = text.lower()
+    # Convert to lowercase for checking
+    text_lower = text.lower()
+    
+    # Check for inappropriate keywords
+    for keyword in INAPPROPRIATE_KEYWORDS:
+        if keyword.lower() in text_lower:
+            return False
+    
+    # Check for excessive special characters (spam detection)
+    special_char_ratio = len(re.findall(r'[^a-zA-Z0-9\s\u0080-\uFFFF]', text)) / len(text)
+    if special_char_ratio > 0.3:
+        return False
+    
+    # Check for excessive capitalization (shouting)
+    if len(text) > 10:
+        caps_ratio = sum(1 for c in text if c.isupper()) / len(text)
+        if caps_ratio > 0.7:
+            return False
+    
+    return True
+
+def sanitize_text(text: str) -> str:
+    """
+    Sanitize text by removing potentially harmful content
+    
+    Args:
+        text: Input text to sanitize
         
-        for pattern in self.inappropriate_patterns:
-            if re.search(pattern, text_lower, re.IGNORECASE):
-                return False, text
-        
-        return True, text
+    Returns:
+        str: Sanitized text
+    """
+    # Remove URLs
+    text = re.sub(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', '', text)
+    
+    # Remove email addresses
+    text = re.sub(r'\S+@\S+', '', text)
+    
+    # Remove excessive whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    return text
