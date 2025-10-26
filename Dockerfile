@@ -5,7 +5,8 @@ RUN apk add --no-cache \
     ffmpeg \
     gcc \
     musl-dev \
-    linux-headers
+    linux-headers \
+    bash
 
 # Install Python packages
 RUN pip install --no-cache-dir \
@@ -14,10 +15,11 @@ RUN pip install --no-cache-dir \
     openai>=1.0.0 \
     python-dotenv==1.0.0
 
-# Copy application
+# Copy rootfs
 COPY rootfs /
 
-# Make run script executable
+# Make scripts executable
 RUN chmod a+x /usr/bin/run.sh /usr/bin/app.py
 
+# Run
 CMD ["/usr/bin/run.sh"]
