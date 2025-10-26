@@ -18,6 +18,6 @@ RUN pip install --no-cache-dir \
 COPY rootfs /
 
 # Make run script executable
-RUN chmod a+x /usr/bin/run.sh
+RUN chmod a+x /usr/bin/run.sh /usr/bin/app.py
 
 CMD ["/usr/bin/run.sh"]
