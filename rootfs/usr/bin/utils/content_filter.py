@@ -1,35 +1,36 @@
-"""Content safety filter for kids"""
-import logging
+"""Content filtering for inappropriate content"""
 
-logger = logging.getLogger(__name__)
+import re
 
 class ContentFilter:
-    """Filter inappropriate content for children"""
+    def __init__(self, language='vi'):
+        self.language = language
+        self.inappropriate_patterns = self._load_patterns()
     
-    BLOCKED_KEYWORDS = [
-        # Vietnamese
-        'bạo lực', 'máu', 'chết', 'giết',
-        # English
-        'violence', 'kill', 'death', 'blood',
-        # Add more as needed
-    ]
+    def _load_patterns(self):
+        """Load inappropriate word patterns based on language"""
+        patterns = {
+            'vi': [
+                r'\b(đồ|thằng|con)\s+(ngu|khốn|chó|lợn|điên)\b',
+                r'\b(đụ|địt|fuck|shit|damn)\b',
+                r'\b(giết|chết|tự tử|自殺)\b',
+            ],
+            'en': [
+                r'\b(fuck|shit|damn|bitch|asshole)\b',
+                r'\b(kill|die|suicide)\b',
+            ]
+        }
+        return patterns.get(self.language, patterns['en'])
     
-    @staticmethod
-    def is_safe(text: str) -> bool:
-        """Check if text is safe for kids"""
+    def filter(self, text):
+        """
+        Check if text contains inappropriate content
+        Returns: (is_safe, filtered_text)
+        """
         text_lower = text.lower()
         
-        for keyword in ContentFilter.BLOCKED_KEYWORDS:
-            if keyword in text_lower:
-                logger.warning(f"Blocked keyword detected: {keyword}")
-                return False
+        for pattern in self.inappropriate_patterns:
+            if re.search(pattern, text_lower, re.IGNORECASE):
+                return False, text
         
-        return True
-    
-    @staticmethod
-    def sanitize(text: str) -> str:
-        """Remove or replace unsafe content"""
-        if ContentFilter.is_safe(text):
-            return text
-        
-        return "Xin lỗi, tôi không thể trả lời câu hỏi này. Hãy hỏi điều gì khác nhé! 😊"
+        return True, text
