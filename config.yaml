@@ -1,5 +1,5 @@
 name: "Kids ChatBot Server"
-version: "1.0.1"
+version: "1.0.2"
 slug: "ha_chatbot_server"
 description: "AI ChatBot for Kids with Content Filter & Educational Responses"
 url: "https://github.com/yourname/ha-chatbot-server"
@@ -15,17 +15,16 @@ init: false
 hassio_api: true
 hassio_role: default
 
+map:
+  - share:rw
+
 options:
   openai_api_key: ""
   listening_port: 5000
   language: "vi"
   max_audio_size_mb: 25
   enable_content_filter: true
-  bad_words_list: 
-    - "ngu"
-    - "khùng"
-    - "đồ ngu"
-    - "chết tiệt"
+  bad_words_list: []
   response_voice: "nova"
   bot_personality: "gentle_teacher"
   educational_mode: true
@@ -40,7 +39,7 @@ schema:
   max_audio_size_mb: int(1,50)
   enable_content_filter: bool
   bad_words_list: 
-    - str
+    - str?
   response_voice: list(alloy|echo|fable|onyx|nova|shimmer)
   bot_personality: list(gentle_teacher|friendly_companion|strict_teacher)
   educational_mode: bool
@@ -53,3 +52,5 @@ ports:
 
 ports_description:
   5000/tcp: "Flask API server for ESP32 communication"
+
+image: "ghcr.io/{arch}-addon-ha-chatbot-server"
