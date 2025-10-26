@@ -1,34 +1,23 @@
-ARG BUILD_FROM
-FROM $BUILD_FROM
+FROM python:3.11-alpine
 
 # Install system dependencies
 RUN apk add --no-cache \
-    python3 \
-    py3-pip \
     ffmpeg \
-    jq \
-    curl \
-    && rm -rf /var/cache/apk/*
-
-# Set working directory
-WORKDIR /usr/bin
-
-# Copy requirements first for better caching
-COPY rootfs/usr/bin/requirements.txt .
+    gcc \
+    musl-dev \
+    linux-headers
 
 # Install Python packages
-RUN pip3 install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip3 install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir \
+    flask==3.0.0 \
+    flask-cors==4.0.0 \
+    openai>=1.0.0 \
+    python-dotenv==1.0.0
 
-# Copy ALL rootfs content
-COPY rootfs/ /
+# Copy application
+COPY rootfs /
 
 # Make run script executable
-RUN chmod a+x /run.sh
+RUN chmod a+x /usr/bin/run.sh
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:5000/health || exit 1
-
-# Start
-CMD ["/run.sh"]
+CMD ["/usr/bin/run.sh"]
