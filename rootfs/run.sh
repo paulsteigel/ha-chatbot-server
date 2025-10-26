@@ -1,4 +1,7 @@
 #!/usr/bin/with-contenv bashio
+# Debug mode
+bashio::log.info "Debug: Checking config availability..."
+bashio::log.info "Config file: $(cat /data/options.json)"
 
 # Banner
 bashio::log.info "=================================="
