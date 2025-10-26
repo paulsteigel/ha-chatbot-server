@@ -32,4 +32,5 @@ schema:
   port: port
   max_tokens: int(100,2000)?
   temperature: float(0.0,2.0)?
-image: ghcr.io/{arch}-addon-{slug}
+image: "ghcr.io/paulsteigel/{arch}-ha-chatbot-server"
+
