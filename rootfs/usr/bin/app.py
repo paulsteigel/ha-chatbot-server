@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import os
 import json
 import logging
@@ -6,190 +8,231 @@ from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from openai import OpenAI
 import tempfile
-from filters import ContentFilter
-from prompts import get_system_prompt
+from pathlib import Path
+from utils.content_filter import ContentFilter
+from utils.response_templates import ResponseTemplates
 
-# Configuration
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-MODEL = os.getenv('MODEL', 'gpt-4o-mini')
-PORT = int(os.getenv('LISTENING_PORT', 5000))
-LANGUAGE = os.getenv('LANGUAGE', 'vi')
-TTS_VOICE = os.getenv('TTS_VOICE', 'nova')
-ENABLE_FILTER = os.getenv('ENABLE_WORD_FILTER', 'true').lower() == 'true'
-ENABLE_EDU = os.getenv('ENABLE_EDUCATIONAL_MODE', 'true').lower() == 'true'
-POLITENESS = os.getenv('POLITENESS_LEVEL', 'high')
-LOG_LEVEL = os.getenv('LOG_LEVEL', 'info').upper()
+# Initialize Flask app
+app = Flask(__name__)
+CORS(app)
+
+# Load configuration from Home Assistant
+CONFIG_FILE = "/tmp/addon_config.json"
+
+def load_config():
+    """Load configuration from addon config file"""
+    try:
+        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        logging.error(f"Error loading config: {e}")
+        return {}
+
+config = load_config()
 
 # Setup logging
+log_level = config.get('log_level', 'info').upper()
 logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL),
+    level=getattr(logging, log_level),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Initialize Flask
-app = Flask(__name__)
-CORS(app)
+# Initialize OpenAI client
+client = OpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
 
-# Initialize OpenAI
-client = OpenAI(api_key=OPENAI_API_KEY)
+# Initialize content filter and response templates
+content_filter = ContentFilter(
+    enabled=config.get('enable_content_filter', True),
+    bad_words=config.get('bad_words_list', [])
+)
 
-# Initialize Content Filter
-content_filter = ContentFilter(enable=ENABLE_FILTER)
+response_templates = ResponseTemplates(
+    personality=config.get('bot_personality', 'gentle_teacher'),
+    educational_mode=config.get('educational_mode', True),
+    language=config.get('language', 'vi')
+)
 
-# Conversation history (in-memory, per session)
+# Conversation history storage
 conversations = {}
-
 
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
+    return jsonify({"status": "healthy", "service": "Kids ChatBot Server"}), 200
+
+@app.route('/api/info', methods=['GET'])
+def get_info():
+    """Get server information"""
     return jsonify({
-        'status': 'healthy',
-        'service': 'Kids Chatbot Server',
-        'version': '1.0.0'
+        "name": "Kids ChatBot Server",
+        "version": "1.0.0",
+        "language": config.get('language', 'vi'),
+        "content_filter": config.get('enable_content_filter', True),
+        "educational_mode": config.get('educational_mode', True)
     }), 200
 
-
 @app.route('/api/chat', methods=['POST'])
-def chat_endpoint():
+def chat():
     """
-    Main chat endpoint for ESP32
-    Accepts: audio file or text
-    Returns: audio response
+    Handle chat requests from ESP32
+    Expects: audio file or text input
+    Returns: text response + audio file URL
     """
     try:
-        session_id = request.form.get('session_id', 'default')
-        
-        # Initialize conversation history
-        if session_id not in conversations:
-            conversations[session_id] = []
+        user_id = request.form.get('user_id', 'default')
         
         # Handle audio input
         if 'audio' in request.files:
             audio_file = request.files['audio']
             
-            # Save temporarily
+            # Save temporary file
             with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_audio:
                 audio_file.save(temp_audio.name)
                 temp_audio_path = temp_audio.name
             
-            # Speech-to-Text
-            logger.info(f"Processing audio from session: {session_id}")
+            # Speech to text
+            logger.info("Transcribing audio...")
             with open(temp_audio_path, 'rb') as audio:
                 transcript = client.audio.transcriptions.create(
                     model="whisper-1",
                     file=audio,
-                    language=LANGUAGE
+                    language=config.get('language', 'vi')
                 )
             
             user_text = transcript.text
             os.unlink(temp_audio_path)
-            
+        
         # Handle text input
-        elif 'text' in request.form:
-            user_text = request.form['text']
+        elif request.json and 'text' in request.json:
+            user_text = request.json['text']
         else:
-            return jsonify({'error': 'No audio or text provided'}), 400
+            return jsonify({"error": "No audio or text provided"}), 400
         
         logger.info(f"User input: {user_text}")
         
-        # Check for inappropriate content
-        if ENABLE_FILTER:
-            filtered_result = content_filter.check_and_filter(user_text)
-            if filtered_result['contains_bad_words']:
-                logger.warning(f"Inappropriate content detected: {filtered_result['found_words']}")
-                response_text = content_filter.get_educational_response(
-                    filtered_result['found_words'],
-                    politeness_level=POLITENESS
-                )
-                # Generate audio response
-                response_audio_path = text_to_speech(response_text)
-                return send_file(response_audio_path, mimetype='audio/mpeg')
+        # Content filtering
+        filter_result = content_filter.check(user_text)
         
-        # Add to conversation history
-        conversations[session_id].append({
-            'role': 'user',
-            'content': user_text
-        })
+        if filter_result['is_inappropriate']:
+            # Generate educational response for inappropriate content
+            response_text = response_templates.get_inappropriate_response(
+                detected_words=filter_result['detected_words']
+            )
+            logger.warning(f"Inappropriate content detected: {filter_result['detected_words']}")
+        else:
+            # Generate normal AI response
+            response_text = generate_ai_response(user_text, user_id)
         
-        # Keep only last 10 messages
-        if len(conversations[session_id]) > 20:
-            conversations[session_id] = conversations[session_id][-20:]
+        # Text to speech
+        logger.info("Generating audio response...")
+        audio_response_path = text_to_speech(response_text)
         
-        # Get AI response
-        system_prompt = get_system_prompt(
-            language=LANGUAGE,
-            educational_mode=ENABLE_EDU,
-            politeness_level=POLITENESS
-        )
+        # Save conversation if enabled
+        if config.get('save_conversations', False):
+            save_conversation(user_id, user_text, response_text)
         
-        messages = [{'role': 'system', 'content': system_prompt}] + conversations[session_id]
+        return jsonify({
+            "success": True,
+            "user_text": user_text,
+            "response_text": response_text,
+            "audio_url": f"/api/audio/{Path(audio_response_path).name}",
+            "filtered": filter_result['is_inappropriate']
+        }), 200
+    
+    except Exception as e:
+        logger.error(f"Error in chat endpoint: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+def generate_ai_response(user_text, user_id):
+    """Generate AI response using OpenAI GPT"""
+    try:
+        # Get or create conversation history
+        if user_id not in conversations:
+            conversations[user_id] = []
         
-        logger.info("Requesting OpenAI chat completion...")
+        # System prompt for educational chatbot
+        system_prompt = response_templates.get_system_prompt()
+        
+        # Build messages
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(conversations[user_id][-10:])  # Last 10 messages
+        messages.append({"role": "user", "content": user_text})
+        
+        # Call OpenAI
         response = client.chat.completions.create(
-            model=MODEL,
+            model="gpt-4",
             messages=messages,
             temperature=0.7,
-            max_tokens=500
+            max_tokens=200
         )
         
-        assistant_text = response.choices[0].message.content
-        logger.info(f"AI response: {assistant_text}")
+        assistant_message = response.choices[0].message.content
         
-        # Add to conversation history
-        conversations[session_id].append({
-            'role': 'assistant',
-            'content': assistant_text
-        })
+        # Update conversation history
+        conversations[user_id].append({"role": "user", "content": user_text})
+        conversations[user_id].append({"role": "assistant", "content": assistant_message})
         
-        # Convert to speech
-        response_audio_path = text_to_speech(assistant_text)
+        # Add politeness reminder if enabled
+        if config.get('politeness_reminders', True):
+            assistant_message = response_templates.add_politeness_reminder(assistant_message)
         
-        return send_file(
-            response_audio_path,
-            mimetype='audio/mpeg',
-            as_attachment=True,
-            download_name='response.mp3'
-        )
-        
+        return assistant_message
+    
     except Exception as e:
-        logger.error(f"Error in chat endpoint: {str(e)}", exc_info=True)
-        return jsonify({'error': str(e)}), 500
-
+        logger.error(f"Error generating AI response: {e}")
+        return response_templates.get_error_response()
 
 def text_to_speech(text):
     """Convert text to speech using OpenAI TTS"""
     try:
         response = client.audio.speech.create(
             model="tts-1",
-            voice=TTS_VOICE,
+            voice=config.get('response_voice', 'nova'),
             input=text
         )
         
         # Save to temporary file
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
-        temp_file.write(response.content)
-        temp_file.close()
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3', dir='/tmp')
+        response.stream_to_file(temp_file.name)
         
         return temp_file.name
-        
+    
     except Exception as e:
-        logger.error(f"TTS error: {str(e)}")
+        logger.error(f"Error in text-to-speech: {e}")
         raise
 
+@app.route('/api/audio/<filename>', methods=['GET'])
+def get_audio(filename):
+    """Serve audio file"""
+    try:
+        file_path = f"/tmp/{filename}"
+        if os.path.exists(file_path):
+            return send_file(file_path, mimetype='audio/mpeg')
+        else:
+            return jsonify({"error": "File not found"}), 404
+    except Exception as e:
+        logger.error(f"Error serving audio: {e}")
+        return jsonify({"error": str(e)}), 500
 
-@app.route('/api/reset', methods=['POST'])
-def reset_conversation():
-    """Reset conversation history for a session"""
-    session_id = request.json.get('session_id', 'default')
-    if session_id in conversations:
-        conversations[session_id] = []
-    return jsonify({'status': 'reset', 'session_id': session_id})
-
+def save_conversation(user_id, user_text, response_text):
+    """Save conversation to file (optional)"""
+    try:
+        log_dir = "/share/chatbot_logs"
+        os.makedirs(log_dir, exist_ok=True)
+        
+        log_file = f"{log_dir}/{user_id}.jsonl"
+        with open(log_file, 'a', encoding='utf-8') as f:
+            entry = {
+                "timestamp": datetime.now().isoformat(),
+                "user": user_text,
+                "assistant": response_text
+            }
+            f.write(json.dumps(entry, ensure_ascii=False) + '\n')
+    except Exception as e:
+        logger.error(f"Error saving conversation: {e}")
 
 if __name__ == '__main__':
-    logger.info(f"Starting server on port {PORT}")
-    logger.info(f"Educational mode: {ENABLE_EDU}")
-    logger.info(f"Content filter: {ENABLE_FILTER}")
-    app.run(host='0.0.0.0', port=PORT, debug=False)
+    port = int(os.environ.get('LISTENING_PORT', 5000))
+    logger.info(f"Starting Flask server on port {port}...")
+    app.run(host='0.0.0.0', port=port, debug=False)
