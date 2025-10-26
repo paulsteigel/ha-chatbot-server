@@ -52,5 +52,3 @@ ports:
 
 ports_description:
   5000/tcp: "Flask API server for ESP32 communication"
-
-image: "ghcr.io/{arch}-addon-ha-chatbot-server"
