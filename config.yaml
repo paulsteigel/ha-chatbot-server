@@ -1,0 +1,68 @@
+name: "Kids Chatbot Server (Zhaozhi)"
+version: "1.0.0"
+slug: "ha_chatbot_server"
+description: "Educational AI voice assistant for children with content filtering"
+url: "https://github.com/yourname/ha-chatbot-server"
+arch:
+  - armhf
+  - armv7
+  - aarch64
+  - amd64
+  - i386
+
+startup: application
+boot: auto
+init: false
+hassio_api: true
+hassio_role: default
+
+options:
+  # OpenAI Configuration
+  openai_api_key: ""
+  model: "gpt-4o-mini"
+  
+  # Server Configuration
+  listening_port: 5000
+  max_audio_size_mb: 25
+  
+  # Language & Voice
+  language: "vi"
+  stt_language: "vi"
+  tts_voice: "nova"
+  
+  # Content Filtering
+  enable_word_filter: true
+  bad_words: 
+    - "ngu"
+    - "đần"
+    - "khùng"
+    - "điên"
+  
+  # Educational Response
+  enable_educational_mode: true
+  politeness_level: "high"
+  
+  # Logging
+  log_level: "info"
+  save_conversations: false
+
+schema:
+  openai_api_key: password
+  model: list(gpt-4o|gpt-4o-mini|gpt-4-turbo|gpt-3.5-turbo)
+  listening_port: port
+  max_audio_size_mb: int(1,50)?
+  language: list(vi|en|zh|ja)?
+  stt_language: str?
+  tts_voice: list(alloy|echo|fable|onyx|nova|shimmer)?
+  enable_word_filter: bool?
+  bad_words: [str]?
+  enable_educational_mode: bool?
+  politeness_level: list(low|medium|high)?
+  log_level: list(debug|info|warning|error)?
+  save_conversations: bool?
+
+ports:
+  5000/tcp: 5000
+
+ports_description:
+  5000/tcp: "Flask API server for ESP32 communication"
