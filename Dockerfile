@@ -7,6 +7,7 @@ RUN apk add --no-cache \
     py3-pip \
     ffmpeg \
     jq \
+    curl \
     && rm -rf /var/cache/apk/*
 
 # Set working directory
@@ -27,7 +28,7 @@ RUN chmod a+x /run.sh
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:5000/health || exit 1
+  CMD curl -f http://localhost:5000/health || exit 1
 
 # Start
 CMD ["/run.sh"]
