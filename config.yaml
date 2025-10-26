@@ -1,5 +1,5 @@
 name: "Kids ChatBot Server"
-version: "1.0.2"
+version: "1.0.3"
 slug: "ha_chatbot_server"
 description: "AI ChatBot for Kids with Content Filter & Educational Responses"
 url: "https://github.com/yourname/ha-chatbot-server"
