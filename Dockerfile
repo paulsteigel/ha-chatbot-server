@@ -17,7 +17,7 @@ WORKDIR /usr/bin
 COPY rootfs/usr/bin/requirements.txt .
 
 # Install Python packages
-RUN pip3 install --no-cache-dir --upgrade pip && \
+RUN pip3 install --no-cache-dir --upgrade pip setuptools wheel && \
     pip3 install --no-cache-dir -r requirements.txt
 
 # Copy ALL rootfs content
