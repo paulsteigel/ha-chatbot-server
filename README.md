@@ -1,32 +1,37 @@
-# 🤖 Kids ChatBot Server - Home Assistant Add-on
+# Kids ChatBot Server for Home Assistant
 
-AI Voice Assistant for children in schools, similar to Zhaozhi robot.
+OpenAI-powered voice chatbot add-on cho trẻ em với giao diện test tích hợp.
 
-## Features
+## Tính năng
 
-✨ **Speech-to-Text**: Transcribe children's voice using OpenAI Whisper
-🧠 **AI Chat**: Intelligent responses using GPT-4
-🗣️ **Text-to-Speech**: Natural voice responses
-🛡️ **Content Filter**: Filter inappropriate language
-📚 **Educational Mode**: Teach politeness and good behavior
-🔧 **Configurable**: Easy setup through Home Assistant UI
+- ✅ Chat bằng giọng nói (Speech-to-Text + Text-to-Speech)
+- ✅ Giao diện web test ngay trong add-on
+- ✅ Content filtering cho trẻ em
+- ✅ Hỗ trợ đa ngôn ngữ (Vietnamese, English, Japanese, Korean, Chinese)
+- ✅ Nhiều giọng đọc (6 voices)
+- ✅ Tùy chỉnh model OpenAI
 
-## Installation
+## Cài đặt
 
-1. Add this repository to Home Assistant:
-   - Go to **Supervisor** → **Add-on Store** → **⋮** → **Repositories**
-   - Add: `https://github.com/paulsteigel/ha-chatbot-server`
+1. Thêm repository: `https://github.com/paulsteigel/ha_chatbot_server`
+2. Cài đặt add-on "Kids ChatBot Server"
+3. Cấu hình OpenAI API key
+4. Start add-on
+5. Mở Web UI để test
 
-2. Install "Kids ChatBot Server" add-on
+## Cấu hình
 
-3. Configure:
-   - Add your OpenAI API Key
-   - Customize bad words list
-   - Choose bot personality
-   - Enable/disable features
+- **openai_api_key**: API key từ OpenAI (bắt buộc)
+- **port**: Port cho web server (mặc định: 5000)
+- **language**: Ngôn ngữ (vi/en/ja/ko/zh)
+- **model**: Model OpenAI (gpt-4o-mini khuyến nghị)
+- **voice**: Giọng đọc (nova/alloy/echo/fable/onyx/shimmer)
+- **content_filter_enabled**: Bật lọc nội dung không phù hợp
 
-4. Start the add-on
+## Tác giả
 
-## ESP32 Integration
+Đặng Đình Ngọc <ngocdd@sfdp.net>
 
-### Send audio to server:
+## License
+
+MIT
