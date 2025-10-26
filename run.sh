@@ -1,21 +1,29 @@
 #!/usr/bin/with-contenv bashio
 
-# Get configuration
-export OPENAI_API_KEY=$(bashio::config 'openai_api_key')
-export MODEL=$(bashio::config 'model')
-export LISTENING_PORT=$(bashio::config 'listening_port')
-export LANGUAGE=$(bashio::config 'language')
-export TTS_VOICE=$(bashio::config 'tts_voice')
-export ENABLE_WORD_FILTER=$(bashio::config 'enable_word_filter')
-export ENABLE_EDUCATIONAL_MODE=$(bashio::config 'enable_educational_mode')
-export POLITENESS_LEVEL=$(bashio::config 'politeness_level')
-export LOG_LEVEL=$(bashio::config 'log_level')
+# Get config values
+OPENAI_API_KEY=$(bashio::config 'openai_api_key')
+LISTENING_PORT=$(bashio::config 'listening_port')
+LANGUAGE=$(bashio::config 'language')
+LOG_LEVEL=$(bashio::config 'log_level')
 
-# Log startup
-bashio::log.info "Starting Kids Chatbot Server..."
-bashio::log.info "Port: ${LISTENING_PORT}"
-bashio::log.info "Language: ${LANGUAGE}"
-bashio::log.info "Educational Mode: ${ENABLE_EDUCATIONAL_MODE}"
+# Validate API key
+if [ -z "$OPENAI_API_KEY" ]; then
+    bashio::log.error "OpenAI API Key is required!"
+    exit 1
+fi
+
+# Export environment variables
+export OPENAI_API_KEY="$OPENAI_API_KEY"
+export LISTENING_PORT="$LISTENING_PORT"
+export LANGUAGE="$LANGUAGE"
+export LOG_LEVEL="$LOG_LEVEL"
+
+# Export all config as JSON for Python to read
+bashio::config > /tmp/addon_config.json
+
+bashio::log.info "Starting Kids ChatBot Server..."
+bashio::log.info "Listening on port: $LISTENING_PORT"
+bashio::log.info "Language: $LANGUAGE"
 
 # Start Flask app
 cd /usr/bin
