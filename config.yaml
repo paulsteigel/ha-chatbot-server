@@ -1,8 +1,8 @@
 name: Kids ChatBot Server
 version: "1.0.0"
-slug: kids_chatbot_server
+slug: kids-chatbot-server
 description: OpenAI ChatBot server với giao diện test âm thanh cho trẻ em
-url: https://github.com/paulsteigel/ha_chatbot_server
+url: https://github.com/paulsteigel/ha-chatbot-server
 arch:
   - aarch64
   - amd64
@@ -34,7 +34,7 @@ schema:
   voice: list(alloy|echo|fable|onyx|nova|shimmer)
   content_filter_enabled: bool
   log_level: list(debug|info|warning|error)
-image: ghcr.io/paulsteigel/ha_chatbot_server-{arch}
+image: ghcr.io/paulsteigel/kids-chatbot-server-{arch}
 webui: http://[HOST]:[PORT:5000]
 panel_icon: mdi:robot-happy
 startup: application
