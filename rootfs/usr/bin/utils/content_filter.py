@@ -1,40 +1,35 @@
-# -*- coding: utf-8 -*-
-
-import re
+"""Content safety filter for kids"""
 import logging
 
 logger = logging.getLogger(__name__)
 
 class ContentFilter:
-    """Content filter for inappropriate language"""
+    """Filter inappropriate content for children"""
     
-    def __init__(self, enabled=True, bad_words=None):
-        self.enabled = enabled
-        self.bad_words = bad_words or []
-        
-        # Additional default Vietnamese bad words
-        self.default_bad_words = [
-            "ngu", "khùng", "đồ ngu", "chết tiệt", "đồ khốn",
-            "ngu ngốc", "đần độn", "điên", "ngớ ngẩn"
-        ]
-        
-        # Combine lists
-        self.all_bad_words = list(set(self.bad_words + self.default_bad_words))
-        logger.info(f"Content filter initialized with {len(self.all_bad_words)} filtered words")
+    BLOCKED_KEYWORDS = [
+        # Vietnamese
+        'bạo lực', 'máu', 'chết', 'giết',
+        # English
+        'violence', 'kill', 'death', 'blood',
+        # Add more as needed
+    ]
     
-    def check(self, text):
-        """Check if text contains inappropriate content"""
-        if not self.enabled:
-            return {"is_inappropriate": False, "detected_words": []}
-        
+    @staticmethod
+    def is_safe(text: str) -> bool:
+        """Check if text is safe for kids"""
         text_lower = text.lower()
-        detected = []
         
-        for bad_word in self.all_bad_words:
-            if bad_word.lower() in text_lower:
-                detected.append(bad_word)
+        for keyword in ContentFilter.BLOCKED_KEYWORDS:
+            if keyword in text_lower:
+                logger.warning(f"Blocked keyword detected: {keyword}")
+                return False
         
-        return {
-            "is_inappropriate": len(detected) > 0,
-            "detected_words": detected
-        }
+        return True
+    
+    @staticmethod
+    def sanitize(text: str) -> str:
+        """Remove or replace unsafe content"""
+        if ContentFilter.is_safe(text):
+            return text
+        
+        return "Xin lỗi, tôi không thể trả lời câu hỏi này. Hãy hỏi điều gì khác nhé! 😊"
