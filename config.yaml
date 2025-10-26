@@ -4,11 +4,11 @@ slug: chatbot_server
 description: "Flask/FastAPI server to process audio from ESP32 and connect to OpenAI."
 arch:
   - amd64
-  - arm64
+  - armv7
+  - aarch64
 startup: services
 boot: auto
 ports:
   5000/tcp: 5000
 options: {}
 schema: {}
-
