@@ -21,5 +21,8 @@ COPY rootfs /
 # Make scripts executable
 RUN chmod a+x /usr/bin/run.sh /usr/bin/app.py
 
-# Run
+# Set working directory
+WORKDIR /usr/bin
+
+# Run the application
 CMD ["/usr/bin/run.sh"]
