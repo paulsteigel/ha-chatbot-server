@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kids ChatBot Test Interface</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #667eea;
+            text-align: center;
+        }
+        #chat-box {
+            height: 400px;
+            overflow-y: auto;
+            border: 2px solid #667eea;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 10px;
+            background: #f8f9fa;
+        }
+        .message {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 8px;
+        }
+        .user { background: #667eea; color: white; text-align: right; }
+        .assistant { background: #e9ecef; color: #333; }
+        input[type="text"] {
+            width: calc(100% - 110px);
+            padding: 10px;
+            border: 2px solid #667eea;
+            border-radius: 5px;
+        }
+        button {
+            padding: 10px 20px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-left: 10px;
+        }
+        button:hover { background: #5568d3; }
+        .status { text-align: center; color: #666; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 Kids ChatBot Test Interface</h1>
+        <div class="status" id="status">Ready</div>
+        <div id="chat-box"></div>
+        <div>
+            <input type="text" id="message-input" placeholder="Type your message...">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <script>
+        async function sendMessage() {
+            const input = document.getElementById('message-input');
+            const chatBox = document.getElementById('chat-box');
+            const status = document.getElementById('status');
+            const message = input.value.trim();
+            
+            if (!message) return;
+            
+            // Add user message
+            chatBox.innerHTML += `<div class="message user">${message}</div>`;
+            input.value = '';
+            status.textContent = 'Thinking...';
+            
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    chatBox.innerHTML += `<div class="message assistant">Error: ${data.error}</div>`;
+                } else {
+                    chatBox.innerHTML += `<div class="message assistant">${data.response}</div>`;
+                }
+                
+                status.textContent = 'Ready';
+                chatBox.scrollTop = chatBox.scrollHeight;
+            } catch (error) {
+                chatBox.innerHTML += `<div class="message assistant">Error: ${error.message}</div>`;
+                status.textContent = 'Error';
+            }
+        }
+        
+        document.getElementById('message-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+    </script>
+</body>
+</html>
