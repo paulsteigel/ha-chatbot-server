@@ -1,12 +1,7 @@
 name: Kids ChatBot Server
-version: "1.0.0"
+version: "1.0.6"
 slug: kids-chatbot-server
-description: OpenAI ChatBot server với giao diện test âm thanh cho trẻ em
-url: https://github.com/paulsteigel/ha-chatbot-server/tree/main
-name: Kids ChatBot Server
-version: "1.0.0"
-slug: kids-chatbot-server
-description: OpenAI ChatBot server với giao diện test âm thanh cho trẻ em
+description: OpenAI-powered voice chatbot with test interface for kids
 url: https://github.com/paulsteigel/ha-chatbot-server
 arch:
   - aarch64
@@ -15,31 +10,26 @@ arch:
   - armv7
   - i386
 init: false
+startup: application
+boot: auto
 ports:
   5000/tcp: 5000
 ports_description:
-  5000/tcp: Web UI và API endpoint
+  5000/tcp: Web interface and API
 options:
   openai_api_key: ""
+  openai_model: gpt-4o-mini
+  openai_voice: alloy
+  openai_language: vi
   port: 5000
-  language: "vi"
-  model: "gpt-4o-mini"
   max_tokens: 500
   temperature: 0.7
-  voice: "nova"
-  content_filter_enabled: true
-  log_level: "info"
 schema:
   openai_api_key: str
+  openai_model: list(gpt-4o-mini|gpt-4o|gpt-4-turbo|gpt-3.5-turbo)?
+  openai_voice: list(alloy|echo|fable|onyx|nova|shimmer)?
+  openai_language: list(vi|en|ja|ko|zh)?
   port: port
-  language: list(vi|en|ja|ko|zh)
-  model: list(gpt-4o|gpt-4o-mini|gpt-4-turbo|gpt-3.5-turbo)
-  max_tokens: int(100-2000)
-  temperature: float(0.0-2.0)
-  voice: list(alloy|echo|fable|onyx|nova|shimmer)
-  content_filter_enabled: bool
-  log_level: list(debug|info|warning|error)
-image: ghcr.io/paulsteigel/kids-chatbot-server-{arch}
-webui: http://[HOST]:[PORT:5000]
-panel_icon: mdi:robot-happy
-startup: application
+  max_tokens: int(100,2000)?
+  temperature: float(0.0,2.0)?
+image: ghcr.io/{arch}-addon-{slug}
