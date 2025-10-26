@@ -1,7 +1,7 @@
-name: "Kids Chatbot Server (Zhaozhi)"
+name: "Kids ChatBot Server"
 version: "1.0.0"
 slug: "ha_chatbot_server"
-description: "Educational AI voice assistant for children with content filtering"
+description: "AI ChatBot for Kids with Content Filter & Educational Responses"
 url: "https://github.com/yourname/ha-chatbot-server"
 arch:
   - armhf
@@ -9,7 +9,6 @@ arch:
   - aarch64
   - amd64
   - i386
-
 startup: application
 boot: auto
 init: false
@@ -17,30 +16,26 @@ hassio_api: true
 hassio_role: default
 
 options:
-  # OpenAI Configuration
   openai_api_key: ""
-  model: "gpt-4o-mini"
-  
-  # Server Configuration
   listening_port: 5000
+  language: "vi"
   max_audio_size_mb: 25
   
-  # Language & Voice
-  language: "vi"
-  stt_language: "vi"
-  tts_voice: "nova"
-  
-  # Content Filtering
-  enable_word_filter: true
-  bad_words: 
+  # Content Filter Settings
+  enable_content_filter: true
+  bad_words_list: 
     - "ngu"
-    - "đần"
     - "khùng"
-    - "điên"
+    - "đồ ngu"
+    - "chết tiệt"
   
-  # Educational Response
-  enable_educational_mode: true
-  politeness_level: "high"
+  # Response Settings
+  response_voice: "nova"
+  bot_personality: "gentle_teacher"
+  
+  # Educational Settings
+  educational_mode: true
+  politeness_reminders: true
   
   # Logging
   log_level: "info"
@@ -48,16 +43,16 @@ options:
 
 schema:
   openai_api_key: password
-  model: list(gpt-4o|gpt-4o-mini|gpt-4-turbo|gpt-3.5-turbo)
   listening_port: port
+  language: list(vi|en|zh)?
   max_audio_size_mb: int(1,50)?
-  language: list(vi|en|zh|ja)?
-  stt_language: str?
-  tts_voice: list(alloy|echo|fable|onyx|nova|shimmer)?
-  enable_word_filter: bool?
-  bad_words: [str]?
-  enable_educational_mode: bool?
-  politeness_level: list(low|medium|high)?
+  enable_content_filter: bool?
+  bad_words_list: 
+    - str
+  response_voice: list(alloy|echo|fable|onyx|nova|shimmer)?
+  bot_personality: list(gentle_teacher|friendly_companion|strict_teacher)?
+  educational_mode: bool?
+  politeness_reminders: bool?
   log_level: list(debug|info|warning|error)?
   save_conversations: bool?
 
