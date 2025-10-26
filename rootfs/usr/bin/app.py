@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
 """
 Kids ChatBot Server for Home Assistant
-Educational AI Voice Assistant with Content Filtering
+Compatible with OpenAI 0.28.1
 """
 
 import os
@@ -11,534 +10,359 @@ import json
 import logging
 import tempfile
 from datetime import datetime
-from pathlib import Path
-
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
-from openai import OpenAI
+import openai
 
-from utils import ContentFilter, ResponseTemplates
-
-# Initialize Flask app
-app = Flask(__name__)
-CORS(app)
-
-# Configuration file path (created by run.sh)
-CONFIG_FILE = "/tmp/addon_config.json"
+# ==================== CONFIGURATION ====================
+# Load config from run.sh
+CONFIG_FILE = '/tmp/addon_config.json'
 
 def load_config():
-    """Load configuration from Home Assistant addon config"""
+    """Load configuration from file"""
     try:
-        if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        else:
-            logging.warning(f"Config file not found: {CONFIG_FILE}")
-            return {}
+        with open(CONFIG_FILE, 'r') as f:
+            return json.load(f)
     except Exception as e:
-        logging.error(f"Error loading config: {e}")
+        print(f"Error loading config: {e}")
         return {}
 
-# Load configuration
 config = load_config()
 
-# Setup logging
-log_level = config.get('log_level', 'info').upper()
+# OpenAI Configuration
+OPENAI_API_KEY = config.get('openai_api_key', os.getenv('OPENAI_API_KEY', ''))
+openai.api_key = OPENAI_API_KEY
+
+# Server Configuration
+LISTENING_PORT = config.get('listening_port', 5000)
+LANGUAGE = config.get('language', 'vi')
+LOG_LEVEL = config.get('log_level', 'info').upper()
+
+# Features Configuration
+MAX_AUDIO_SIZE = config.get('max_audio_size_mb', 25) * 1024 * 1024  # Convert to bytes
+ENABLE_CONTENT_FILTER = config.get('enable_content_filter', True)
+BAD_WORDS_LIST = config.get('bad_words_list', [])
+RESPONSE_VOICE = config.get('response_voice', 'nova')
+BOT_PERSONALITY = config.get('bot_personality', 'gentle_teacher')
+EDUCATIONAL_MODE = config.get('educational_mode', True)
+POLITENESS_REMINDERS = config.get('politeness_reminders', True)
+SAVE_CONVERSATIONS = config.get('save_conversations', False)
+
+# Temp directories
+TEMP_DIR = '/tmp/chatbot_audio'
+LOG_DIR = '/share/chatbot_logs'
+os.makedirs(TEMP_DIR, exist_ok=True)
+os.makedirs(LOG_DIR, exist_ok=True)
+
+# ==================== LOGGING ====================
 logging.basicConfig(
-    level=getattr(logging, log_level),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=getattr(logging, LOG_LEVEL),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(f'{LOG_DIR}/chatbot.log')
+    ]
 )
 logger = logging.getLogger(__name__)
 
-# Get configuration values
-OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
-LISTENING_PORT = int(os.environ.get('LISTENING_PORT', 5000))
-LANGUAGE = config.get('language', 'vi')
-MAX_AUDIO_SIZE = config.get('max_audio_size_mb', 25) * 1024 * 1024  # Convert to bytes
-RESPONSE_VOICE = config.get('response_voice', 'nova')
-SAVE_CONVERSATIONS = config.get('save_conversations', False)
+# ==================== FLASK APP ====================
+app = Flask(__name__)
+CORS(app)
 
-# Validate API key
-if not OPENAI_API_KEY:
-    logger.error("OpenAI API Key is missing!")
-    raise ValueError("OpenAI API Key is required")
+logger.info("✓ OpenAI API Key configured")
+logger.info(f"✓ Server configured on port {LISTENING_PORT}")
 
-# Initialize OpenAI client
-try:
-    client = OpenAI(api_key=OPENAI_API_KEY)
-    logger.info("OpenAI client initialized successfully")
-except Exception as e:
-    logger.error(f"Failed to initialize OpenAI client: {e}")
-    raise
+# ==================== PERSONALITY PROMPTS ====================
+PERSONALITY_PROMPTS = {
+    'vi': {
+        'gentle_teacher': """Bạn là một giáo viên thân thiện và kiên nhẫn dành cho trẻ em. 
+        Hãy trả lời bằng tiếng Việt, sử dụng ngôn ngữ đơn giản, dễ hiểu.
+        Luôn động viên, khuyến khích học hỏi và tò mò.
+        Giải thích mọi thứ một cách vui vẻ, có thể dùng ví dụ sinh động.""",
+        
+        'friendly_companion': """Bạn là một người bạn thân thiện của trẻ em.
+        Hãy trò chuyện vui vẻ, hỏi han và chia sẻ bằng tiếng Việt.
+        Sử dụng ngôn ngữ gần gũi, dễ hiểu, có thể dùng emoji phù hợp.
+        Luôn lắng nghe và thể hiện sự quan tâm.""",
+        
+        'strict_teacher': """Bạn là một giáo viên nghiêm khắc nhưng công bằng.
+        Trả lời bằng tiếng Việt, rõ ràng và chính xác.
+        Nhắc nhở về quy tắc, kỷ luật và học tập đúng cách.
+        Luôn giải thích tại sao điều gì đó quan trọng."""
+    },
+    'en': {
+        'gentle_teacher': """You are a friendly and patient teacher for children.
+        Answer in English, use simple and understandable language.
+        Always encourage learning and curiosity.
+        Explain things in a fun way with vivid examples.""",
+        
+        'friendly_companion': """You are a friendly companion for children.
+        Chat cheerfully, ask questions and share in English.
+        Use approachable language, you can use appropriate emojis.
+        Always listen and show care.""",
+        
+        'strict_teacher': """You are a strict but fair teacher.
+        Answer in English, clearly and accurately.
+        Remind about rules, discipline and proper learning.
+        Always explain why something is important."""
+    }
+}
 
-# Initialize content filter
-content_filter = ContentFilter(
-    enabled=config.get('enable_content_filter', True),
-    bad_words=config.get('bad_words_list', [])
-)
-
-# Initialize response templates
-response_templates = ResponseTemplates(
-    personality=config.get('bot_personality', 'gentle_teacher'),
-    educational_mode=config.get('educational_mode', True),
-    language=LANGUAGE
-)
-
-# In-memory conversation storage
-# Format: {user_id: [{"role": "user", "content": "..."}, ...]}
-conversations = {}
-
-# Temporary audio files storage
-TEMP_AUDIO_DIR = "/tmp/chatbot_audio"
-os.makedirs(TEMP_AUDIO_DIR, exist_ok=True)
-
-
-# ============================================
-# HELPER FUNCTIONS
-# ============================================
-
-def get_conversation_history(user_id, max_messages=10):
-    """Get conversation history for a user"""
-    if user_id not in conversations:
-        conversations[user_id] = []
-    return conversations[user_id][-max_messages:]
-
-
-def add_to_conversation(user_id, role, content):
-    """Add a message to conversation history"""
-    if user_id not in conversations:
-        conversations[user_id] = []
+# ==================== CONTENT FILTER ====================
+def contains_bad_words(text):
+    """Check if text contains inappropriate words"""
+    if not ENABLE_CONTENT_FILTER or not BAD_WORDS_LIST:
+        return False
     
-    conversations[user_id].append({
-        "role": role,
-        "content": content,
-        "timestamp": datetime.now().isoformat()
-    })
-    
-    # Keep only last 20 messages to prevent memory issues
-    if len(conversations[user_id]) > 20:
-        conversations[user_id] = conversations[user_id][-20:]
+    text_lower = text.lower()
+    for word in BAD_WORDS_LIST:
+        if word.lower() in text_lower:
+            logger.warning(f"Inappropriate word detected: {word}")
+            return True
+    return False
 
+def get_content_filter_response():
+    """Return appropriate response for filtered content"""
+    if LANGUAGE == 'vi':
+        return "Con ơi, chúng ta nên nói những điều lịch sự và tốt đẹp nhé. Bạn có câu hỏi khác không?"
+    return "Let's use kind and polite words. Do you have another question?"
 
-def save_conversation_log(user_id, user_text, response_text, filtered=False):
-    """Save conversation to log file"""
-    if not SAVE_CONVERSATIONS:
-        return
-    
+# ==================== OPENAI FUNCTIONS ====================
+def transcribe_audio(audio_file_path):
+    """Convert audio to text using Whisper"""
     try:
-        log_dir = "/share/chatbot_logs"
-        os.makedirs(log_dir, exist_ok=True)
-        
-        log_file = os.path.join(log_dir, f"{user_id}.jsonl")
-        
-        with open(log_file, 'a', encoding='utf-8') as f:
-            entry = {
-                "timestamp": datetime.now().isoformat(),
-                "user_id": user_id,
-                "user_text": user_text,
-                "response_text": response_text,
-                "filtered": filtered
-            }
-            f.write(json.dumps(entry, ensure_ascii=False) + '\n')
-        
-        logger.debug(f"Conversation saved for user {user_id}")
-    
-    except Exception as e:
-        logger.error(f"Error saving conversation log: {e}")
-
-
-def speech_to_text(audio_file_path):
-    """Convert audio to text using OpenAI Whisper"""
-    try:
-        logger.info("Starting speech-to-text conversion...")
-        
         with open(audio_file_path, 'rb') as audio_file:
-            transcript = client.audio.transcriptions.create(
+            transcript = openai.Audio.transcribe(
                 model="whisper-1",
                 file=audio_file,
-                language=LANGUAGE
+                language=LANGUAGE if LANGUAGE != 'zh' else 'zh-CN'
             )
-        
-        logger.info(f"Transcription result: {transcript.text}")
-        return transcript.text
-    
+        return transcript['text']
     except Exception as e:
-        logger.error(f"Speech-to-text error: {e}")
+        logger.error(f"Transcription error: {e}")
         raise
 
-
-def generate_ai_response(user_text, user_id):
-    """Generate AI response using OpenAI GPT"""
+def generate_response(user_message, conversation_history=None):
+    """Generate AI response using GPT"""
     try:
-        logger.info(f"Generating AI response for user {user_id}...")
+        # Get personality prompt
+        personality_key = BOT_PERSONALITY if BOT_PERSONALITY in PERSONALITY_PROMPTS[LANGUAGE] else 'gentle_teacher'
+        system_prompt = PERSONALITY_PROMPTS[LANGUAGE][personality_key]
         
-        # Get system prompt
-        system_prompt = response_templates.get_system_prompt()
+        # Add educational mode instructions
+        if EDUCATIONAL_MODE:
+            if LANGUAGE == 'vi':
+                system_prompt += "\n\nLuôn giải thích thêm kiến thức liên quan để con học thêm được điều mới."
+            else:
+                system_prompt += "\n\nAlways provide additional related knowledge to help children learn something new."
         
-        # Build messages for API
+        # Build messages
         messages = [{"role": "system", "content": system_prompt}]
         
-        # Add conversation history
-        history = get_conversation_history(user_id, max_messages=10)
-        for msg in history:
-            if msg['role'] in ['user', 'assistant']:
-                messages.append({
-                    "role": msg['role'],
-                    "content": msg['content']
-                })
+        if conversation_history:
+            messages.extend(conversation_history)
         
-        # Add current user message
-        messages.append({"role": "user", "content": user_text})
+        messages.append({"role": "user", "content": user_message})
         
         # Call OpenAI API
-        response = client.chat.completions.create(
-            model="gpt-4",
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
             messages=messages,
             temperature=0.7,
-            max_tokens=300
+            max_tokens=500
         )
         
-        assistant_message = response.choices[0].message.content
-        logger.info(f"AI response: {assistant_message}")
+        answer = response['choices'][0]['message']['content']
         
-        # Add politeness reminder if enabled
-        if config.get('politeness_reminders', True):
-            assistant_message = response_templates.add_politeness_reminder(assistant_message)
+        # Add politeness reminder if needed
+        if POLITENESS_REMINDERS and LANGUAGE == 'vi':
+            if not any(word in user_message.lower() for word in ['cảm ơn', 'xin', 'chào', 'ạ']):
+                answer += "\n\n(Nhớ nói 'cảm ơn' và 'xin' nhé con!)"
         
-        return assistant_message
-    
+        return answer
+        
     except Exception as e:
-        logger.error(f"Error generating AI response: {e}")
-        return response_templates.get_error_response()
+        logger.error(f"Response generation error: {e}")
+        raise
 
-
-def text_to_speech(text):
+def text_to_speech(text, output_path):
     """Convert text to speech using OpenAI TTS"""
     try:
-        logger.info("Converting text to speech...")
-        
-        response = client.audio.speech.create(
+        response = openai.Audio.speech.create(
             model="tts-1",
             voice=RESPONSE_VOICE,
             input=text
         )
         
-        # Save to temporary file
-        temp_file = tempfile.NamedTemporaryFile(
-            delete=False,
-            suffix='.mp3',
-            dir=TEMP_AUDIO_DIR
-        )
+        # Write audio to file
+        with open(output_path, 'wb') as f:
+            f.write(response.content)
         
-        # Write audio content
-        response.stream_to_file(temp_file.name)
-        temp_file.close()
+        logger.info(f"✓ Audio file created: {output_path}")
+        return True
         
-        logger.info(f"Audio file created: {temp_file.name}")
-        return temp_file.name
-    
     except Exception as e:
-        logger.error(f"Text-to-speech error: {e}")
+        logger.error(f"TTS error: {e}")
         raise
 
+# ==================== CONVERSATION STORAGE ====================
+conversation_store = {}
 
-def cleanup_old_audio_files():
-    """Clean up old temporary audio files (older than 1 hour)"""
-    try:
-        import time
-        current_time = time.time()
-        
-        for filename in os.listdir(TEMP_AUDIO_DIR):
-            file_path = os.path.join(TEMP_AUDIO_DIR, filename)
-            
-            # Check if file is older than 1 hour (3600 seconds)
-            if os.path.isfile(file_path):
-                file_age = current_time - os.path.getmtime(file_path)
-                if file_age > 3600:
-                    os.remove(file_path)
-                    logger.debug(f"Cleaned up old audio file: {filename}")
+def save_conversation(session_id, message, response):
+    """Save conversation if enabled"""
+    if not SAVE_CONVERSATIONS:
+        return
     
-    except Exception as e:
-        logger.error(f"Error cleaning up audio files: {e}")
+    if session_id not in conversation_store:
+        conversation_store[session_id] = []
+    
+    conversation_store[session_id].append({
+        'timestamp': datetime.now().isoformat(),
+        'user': message,
+        'bot': response
+    })
+    
+    # Keep only last 50 messages
+    if len(conversation_store[session_id]) > 50:
+        conversation_store[session_id] = conversation_store[session_id][-50:]
 
-
-# ============================================
-# API ENDPOINTS
-# ============================================
-
-@app.route('/', methods=['GET'])
-def index():
-    """Root endpoint"""
-    return jsonify({
-        "service": "Kids ChatBot Server",
-        "version": "1.0.0",
-        "status": "running"
-    }), 200
-
-
+# ==================== API ENDPOINTS ====================
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
     return jsonify({
-        "status": "healthy",
-        "service": "Kids ChatBot Server",
-        "version": "1.0.0"
+        'status': 'healthy',
+        'timestamp': datetime.now().isoformat(),
+        'version': '1.0.3'
     }), 200
 
-
-@app.route('/api/info', methods=['GET'])
-def get_info():
-    """Get server information and configuration"""
-    return jsonify({
-        "name": "Kids ChatBot Server",
-        "version": "1.0.0",
-        "language": LANGUAGE,
-        "voice": RESPONSE_VOICE,
-        "content_filter_enabled": config.get('enable_content_filter', True),
-        "educational_mode": config.get('educational_mode', True),
-        "bot_personality": config.get('bot_personality', 'gentle_teacher'),
-        "max_audio_size_mb": config.get('max_audio_size_mb', 25)
-    }), 200
-
-
-@app.route('/api/chat', methods=['POST'])
+@app.route('/chat', methods=['POST'])
 def chat():
-    """
-    Main chat endpoint for ESP32 communication
-    
-    Accepts:
-        - Audio file (multipart/form-data)
-        - Text input (JSON)
-    
-    Returns:
-        - JSON response with text and audio URL
-    """
+    """Main chat endpoint - receives audio, returns audio response"""
     try:
-        # Clean up old files periodically
-        cleanup_old_audio_files()
+        # Check if audio file exists
+        if 'audio' not in request.files:
+            return jsonify({'error': 'No audio file provided'}), 400
         
-        # Get user ID
-        user_id = request.form.get('user_id', 'default') if request.form else \
-                  request.json.get('user_id', 'default') if request.json else 'default'
+        audio_file = request.files['audio']
         
-        logger.info(f"Processing chat request from user: {user_id}")
+        if audio_file.filename == '':
+            return jsonify({'error': 'Empty filename'}), 400
         
-        user_text = None
+        # Check file size
+        audio_file.seek(0, os.SEEK_END)
+        file_size = audio_file.tell()
+        audio_file.seek(0)
         
-        # Handle audio input
-        if 'audio' in request.files:
-            audio_file = request.files['audio']
-            
-            # Check file size
-            audio_file.seek(0, os.SEEK_END)
-            file_size = audio_file.tell()
-            audio_file.seek(0)
-            
-            if file_size > MAX_AUDIO_SIZE:
-                logger.warning(f"Audio file too large: {file_size} bytes")
-                return jsonify({
-                    "error": "Audio file too large",
-                    "max_size_mb": config.get('max_audio_size_mb', 25)
-                }), 400
-            
-            # Save temporary audio file
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_audio:
-                audio_file.save(temp_audio.name)
-                temp_audio_path = temp_audio.name
-            
-            logger.info(f"Audio file saved: {temp_audio_path}")
-            
-            # Speech to text
-            try:
-                user_text = speech_to_text(temp_audio_path)
-            finally:
-                # Clean up temporary file
-                if os.path.exists(temp_audio_path):
-                    os.unlink(temp_audio_path)
+        if file_size > MAX_AUDIO_SIZE:
+            return jsonify({'error': f'File too large. Max: {MAX_AUDIO_SIZE/1024/1024}MB'}), 413
         
-        # Handle text input
-        elif request.json and 'text' in request.json:
-            user_text = request.json['text']
+        # Get session ID
+        session_id = request.form.get('session_id', 'default')
         
-        elif request.form and 'text' in request.form:
-            user_text = request.form['text']
+        # Save uploaded audio
+        temp_audio_path = os.path.join(TEMP_DIR, f"input_{session_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.wav")
+        audio_file.save(temp_audio_path)
+        logger.info(f"✓ Audio saved: {temp_audio_path}")
         
+        # Step 1: Transcribe audio to text
+        logger.info("🎤 Transcribing audio...")
+        user_message = transcribe_audio(temp_audio_path)
+        logger.info(f"📝 Transcribed: {user_message}")
+        
+        # Step 2: Content filter
+        if contains_bad_words(user_message):
+            response_text = get_content_filter_response()
+            logger.warning("⚠️ Inappropriate content filtered")
         else:
-            logger.warning("No audio or text provided in request")
-            return jsonify({
-                "error": "No audio or text provided"
-            }), 400
+            # Step 3: Generate AI response
+            logger.info("🤖 Generating response...")
+            conversation_history = conversation_store.get(session_id, [])[-10:]  # Last 10 messages
+            response_text = generate_response(user_message, conversation_history)
+            logger.info(f"💬 Response: {response_text[:100]}...")
         
-        logger.info(f"User input: {user_text}")
+        # Step 4: Convert response to speech
+        logger.info("🔊 Converting to speech...")
+        output_audio_path = os.path.join(TEMP_DIR, f"output_{session_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp3")
+        text_to_speech(response_text, output_audio_path)
         
-        # Content filtering
-        filter_result = content_filter.check(user_text)
+        # Save conversation
+        save_conversation(session_id, user_message, response_text)
         
-        if filter_result['is_inappropriate']:
-            # Generate educational response for inappropriate content
-            response_text = response_templates.get_inappropriate_response(
-                detected_words=filter_result['detected_words']
-            )
-            logger.warning(f"Inappropriate content detected: {filter_result['detected_words']}")
-            filtered = True
+        # Clean up input file
+        try:
+            os.remove(temp_audio_path)
+        except:
+            pass
         
-        else:
-            # Add user message to history
-            add_to_conversation(user_id, 'user', user_text)
-            
-            # Generate normal AI response
-            response_text = generate_ai_response(user_text, user_id)
-            
-            # Add assistant message to history
-            add_to_conversation(user_id, 'assistant', response_text)
-            
-            filtered = False
-        
-        # Convert response to speech
-        audio_response_path = text_to_speech(response_text)
-        audio_filename = Path(audio_response_path).name
-        
-        # Save conversation log
-        save_conversation_log(user_id, user_text, response_text, filtered)
-        
-        # Return response
-        return jsonify({
-            "success": True,
-            "user_id": user_id,
-            "user_text": user_text,
-            "response_text": response_text,
-            "audio_url": f"/api/audio/{audio_filename}",
-            "filtered": filtered,
-            "detected_words": filter_result.get('detected_words', []) if filtered else []
-        }), 200
-    
-    except Exception as e:
-        logger.error(f"Error in chat endpoint: {str(e)}", exc_info=True)
-        return jsonify({
-            "error": str(e),
-            "success": False
-        }), 500
-
-
-@app.route('/api/audio/<filename>', methods=['GET'])
-def get_audio(filename):
-    """Serve audio file"""
-    try:
-        file_path = os.path.join(TEMP_AUDIO_DIR, filename)
-        
-        if not os.path.exists(file_path):
-            logger.warning(f"Audio file not found: {filename}")
-            return jsonify({"error": "File not found"}), 404
-        
+        # Return audio file
         return send_file(
-            file_path,
+            output_audio_path,
             mimetype='audio/mpeg',
             as_attachment=True,
-            download_name=filename
+            download_name='response.mp3'
         )
-    
-    except Exception as e:
-        logger.error(f"Error serving audio file: {e}")
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route('/api/reset', methods=['POST'])
-def reset_conversation():
-    """Reset conversation history for a user"""
-    try:
-        data = request.json if request.json else {}
-        user_id = data.get('user_id', 'default')
         
-        if user_id in conversations:
-            conversations[user_id] = []
-            logger.info(f"Conversation history reset for user: {user_id}")
+    except Exception as e:
+        logger.error(f"❌ Chat endpoint error: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/text-chat', methods=['POST'])
+def text_chat():
+    """Text-only chat endpoint"""
+    try:
+        data = request.get_json()
         
-        return jsonify({
-            "success": True,
-            "message": f"Conversation history reset for user {user_id}"
-        }), 200
-    
-    except Exception as e:
-        logger.error(f"Error resetting conversation: {e}")
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route('/api/conversations', methods=['GET'])
-def get_conversations():
-    """Get all active conversation user IDs"""
-    try:
-        return jsonify({
-            "user_ids": list(conversations.keys()),
-            "total_users": len(conversations)
-        }), 200
-    
-    except Exception as e:
-        logger.error(f"Error getting conversations: {e}")
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route('/api/history/<user_id>', methods=['GET'])
-def get_history(user_id):
-    """Get conversation history for a specific user"""
-    try:
-        history = get_conversation_history(user_id, max_messages=50)
+        if not data or 'message' not in data:
+            return jsonify({'error': 'No message provided'}), 400
+        
+        user_message = data['message']
+        session_id = data.get('session_id', 'default')
+        
+        logger.info(f"📝 Text chat: {user_message}")
+        
+        # Content filter
+        if contains_bad_words(user_message):
+            response_text = get_content_filter_response()
+        else:
+            conversation_history = conversation_store.get(session_id, [])[-10:]
+            response_text = generate_response(user_message, conversation_history)
+        
+        save_conversation(session_id, user_message, response_text)
         
         return jsonify({
-            "user_id": user_id,
-            "messages": history,
-            "count": len(history)
+            'response': response_text,
+            'timestamp': datetime.now().isoformat()
         }), 200
-    
+        
     except Exception as e:
-        logger.error(f"Error getting history: {e}")
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"❌ Text chat error: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
 
-
-# ============================================
-# ERROR HANDLERS
-# ============================================
-
-@app.errorhandler(404)
-def not_found(error):
-    """Handle 404 errors"""
+@app.route('/config', methods=['GET'])
+def get_config():
+    """Get current configuration"""
     return jsonify({
-        "error": "Endpoint not found",
-        "status": 404
-    }), 404
+        'language': LANGUAGE,
+        'voice': RESPONSE_VOICE,
+        'personality': BOT_PERSONALITY,
+        'educational_mode': EDUCATIONAL_MODE,
+        'content_filter': ENABLE_CONTENT_FILTER,
+        'politeness_reminders': POLITENESS_REMINDERS
+    }), 200
 
-
-@app.errorhandler(500)
-def internal_error(error):
-    """Handle 500 errors"""
-    logger.error(f"Internal server error: {error}")
-    return jsonify({
-        "error": "Internal server error",
-        "status": 500
-    }), 500
-
-
-# ============================================
-# MAIN
-# ============================================
-
+# ==================== MAIN ====================
 if __name__ == '__main__':
-    logger.info("=" * 60)
-    logger.info("Kids ChatBot Server Starting...")
-    logger.info("=" * 60)
-    logger.info(f"Port: {LISTENING_PORT}")
-    logger.info(f"Language: {LANGUAGE}")
-    logger.info(f"Voice: {RESPONSE_VOICE}")
-    logger.info(f"Content Filter: {config.get('enable_content_filter', True)}")
-    logger.info(f"Educational Mode: {config.get('educational_mode', True)}")
-    logger.info(f"Bot Personality: {config.get('bot_personality', 'gentle_teacher')}")
-    logger.info(f"Max Audio Size: {config.get('max_audio_size_mb', 25)} MB")
-    logger.info(f"Save Conversations: {SAVE_CONVERSATIONS}")
-    logger.info("=" * 60)
+    logger.info("=" * 50)
+    logger.info("🚀 Kids ChatBot Server Starting...")
+    logger.info(f"   Port: {LISTENING_PORT}")
+    logger.info(f"   Language: {LANGUAGE}")
+    logger.info(f"   Voice: {RESPONSE_VOICE}")
+    logger.info(f"   Personality: {BOT_PERSONALITY}")
+    logger.info("=" * 50)
     
-    # Run Flask app
     app.run(
         host='0.0.0.0',
         port=LISTENING_PORT,
-        debug=False,
-        threaded=True
+        debug=(LOG_LEVEL == 'DEBUG')
     )
