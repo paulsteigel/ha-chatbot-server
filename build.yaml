@@ -1,6 +1,14 @@
 build_from:
-  aarch64: ghcr.io/home-assistant/aarch64-base-python:3.11-alpine3.19
-  amd64: ghcr.io/home-assistant/amd64-base-python:3.11-alpine3.19
-  armhf: ghcr.io/home-assistant/armhf-base-python:3.11-alpine3.19
-  armv7: ghcr.io/home-assistant/armv7-base-python:3.11-alpine3.19
-  i386: ghcr.io/home-assistant/i386-base-python:3.11-alpine3.19
+  aarch64: ghcr.io/home-assistant/aarch64-base:3.19
+  amd64: ghcr.io/home-assistant/amd64-base:3.19
+  armhf: ghcr.io/home-assistant/armhf-base:3.19
+  armv7: ghcr.io/home-assistant/armv7-base:3.19
+  i386: ghcr.io/home-assistant/i386-base:3.19
+labels:
+  org.opencontainers.image.title: "Kids ChatBot Server"
+  org.opencontainers.image.description: "OpenAI ChatBot server với giao diện test âm thanh"
+  org.opencontainers.image.source: "https://github.com/paulsteigel/ha_chatbot_server"
+  org.opencontainers.image.authors: "Đặng Đình Ngọc <ngocdd@sfdp.net>"
+  org.opencontainers.image.licenses: "MIT"
+args:
+  PYTHON_VERSION: "3.11"
