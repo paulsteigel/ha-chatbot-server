@@ -6,7 +6,7 @@ RUN apk add --no-cache \
     python3 \
     py3-pip \
     ffmpeg \
-    libsndfile \
+    jq \
     && rm -rf /var/cache/apk/*
 
 # Set working directory
@@ -19,7 +19,7 @@ COPY rootfs/usr/bin/requirements.txt .
 RUN pip3 install --no-cache-dir --upgrade pip && \
     pip3 install --no-cache-dir -r requirements.txt
 
-# Copy ALL rootfs content (bao gồm run.sh)
+# Copy ALL rootfs content
 COPY rootfs/ /
 
 # Make run script executable
@@ -27,7 +27,7 @@ RUN chmod a+x /run.sh
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD python3 -c "import requests; requests.get('http://localhost:5000/health')" || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:5000/health || exit 1
 
 # Start
 CMD ["/run.sh"]
