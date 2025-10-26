@@ -1,8 +1,8 @@
 name: "Kids ChatBot Server"
-version: "1.0.0"
+version: "1.0.1"
 slug: "ha_chatbot_server"
 description: "AI ChatBot for Kids with Content Filter & Educational Responses"
-url: "https://github.com/paulsteigel/ha-chatbot-server"
+url: "https://github.com/yourname/ha-chatbot-server"
 arch:
   - armhf
   - armv7
@@ -20,41 +20,33 @@ options:
   listening_port: 5000
   language: "vi"
   max_audio_size_mb: 25
-  
-  # Content Filter Settings
   enable_content_filter: true
   bad_words_list: 
     - "ngu"
     - "khùng"
     - "đồ ngu"
     - "chết tiệt"
-  
-  # Response Settings
   response_voice: "nova"
   bot_personality: "gentle_teacher"
-  
-  # Educational Settings
   educational_mode: true
   politeness_reminders: true
-  
-  # Logging
   log_level: "info"
   save_conversations: false
 
 schema:
-  openai_api_key: password
+  openai_api_key: str
   listening_port: port
-  language: list(vi|en|zh)?
-  max_audio_size_mb: int(1,50)?
-  enable_content_filter: bool?
+  language: list(vi|en|zh)
+  max_audio_size_mb: int(1,50)
+  enable_content_filter: bool
   bad_words_list: 
     - str
-  response_voice: list(alloy|echo|fable|onyx|nova|shimmer)?
-  bot_personality: list(gentle_teacher|friendly_companion|strict_teacher)?
-  educational_mode: bool?
-  politeness_reminders: bool?
-  log_level: list(debug|info|warning|error)?
-  save_conversations: bool?
+  response_voice: list(alloy|echo|fable|onyx|nova|shimmer)
+  bot_personality: list(gentle_teacher|friendly_companion|strict_teacher)
+  educational_mode: bool
+  politeness_reminders: bool
+  log_level: list(debug|info|warning|error)
+  save_conversations: bool
 
 ports:
   5000/tcp: 5000
