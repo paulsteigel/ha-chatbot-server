@@ -15,7 +15,7 @@ AI Voice Assistant for children in schools, similar to Zhaozhi robot.
 
 1. Add this repository to Home Assistant:
    - Go to **Supervisor** → **Add-on Store** → **⋮** → **Repositories**
-   - Add: `https://github.com/yourname/ha-chatbot-server`
+   - Add: `https://github.com/paulsteigel/ha-chatbot-server`
 
 2. Install "Kids ChatBot Server" add-on
 
