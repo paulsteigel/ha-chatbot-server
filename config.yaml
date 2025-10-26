@@ -2,6 +2,11 @@ name: Kids ChatBot Server
 version: "1.0.0"
 slug: kids-chatbot-server
 description: OpenAI ChatBot server với giao diện test âm thanh cho trẻ em
+url: https://github.com/paulsteigel/ha-chatbot-server/tree/main
+name: Kids ChatBot Server
+version: "1.0.0"
+slug: kids-chatbot-server
+description: OpenAI ChatBot server với giao diện test âm thanh cho trẻ em
 url: https://github.com/paulsteigel/ha-chatbot-server
 arch:
   - aarch64
