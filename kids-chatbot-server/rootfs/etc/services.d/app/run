@@ -1,26 +1,30 @@
 #!/usr/bin/with-contenv bashio
+
 bashio::log.info "Starting Kids ChatBot Server..."
 
-# Get configuration
+# Get configuration from Home Assistant
 export OPENAI_API_KEY=$(bashio::config 'openai_api_key')
+export OPENAI_MODEL=$(bashio::config 'openai_model')
+export OPENAI_VOICE=$(bashio::config 'openai_voice')
+export OPENAI_LANGUAGE=$(bashio::config 'openai_language')
 export PORT=$(bashio::config 'port')
-export LANGUAGE=$(bashio::config 'language')
-export MODEL=$(bashio::config 'model')
 export MAX_TOKENS=$(bashio::config 'max_tokens')
 export TEMPERATURE=$(bashio::config 'temperature')
-export VOICE=$(bashio::config 'voice')
-export CONTENT_FILTER_ENABLED=$(bashio::config 'content_filter_enabled')
-export LOG_LEVEL=$(bashio::config 'log_level')
+export LOG_LEVEL="INFO"
+
+# Log configuration
+bashio::log.info "Configuration loaded successfully"
+bashio::log.info "Model: ${OPENAI_MODEL} | Language: ${OPENAI_LANGUAGE} | Voice: ${OPENAI_VOICE}"
 
 # Validate API key
-if [ -z "$OPENAI_API_KEY" ]; then
-    bashio::log.fatal "OpenAI API key is not configured!"
+if bashio::var.is_empty "${OPENAI_API_KEY}"; then
+    bashio::log.error "OpenAI API key is not configured!"
+    bashio::log.error "Please set 'openai_api_key' in the add-on configuration"
     exit 1
 fi
 
-bashio::log.info "Configuration loaded successfully"
-bashio::log.info "Model: $MODEL | Language: $LANGUAGE | Voice: $VOICE"
+# Change to app directory
+cd /usr/bin || exit 1
 
-# Start the application
-cd /usr/bin
+# Start Flask app
 exec python3 app.py
