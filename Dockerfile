@@ -13,16 +13,25 @@ RUN pip install --no-cache-dir \
     flask==3.0.0 \
     flask-cors==4.0.0 \
     openai>=1.0.0 \
-    python-dotenv==1.0.0
+    python-dotenv==1.0.0 \
+    gunicorn==21.2.0
 
 # Copy rootfs
 COPY rootfs /
 
 # Make scripts executable
-RUN chmod a+x /usr/bin/run.sh /usr/bin/app.py
+RUN chmod a+x /etc/services.d/app/run \
+    /etc/services.d/app/finish \
+    /usr/bin/app.py
 
-# Set working directory
 WORKDIR /usr/bin
 
-# Run the application
-CMD ["/usr/bin/run.sh"]
+# Expose port
+EXPOSE 5000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:5000/health || exit 1
+
+# Run via s6-overlay
+CMD ["/etc/services.d/app/run"]
