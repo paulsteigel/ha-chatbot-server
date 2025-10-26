@@ -1,7 +1,4 @@
 #!/usr/bin/with-contenv bashio
-# Debug mode
-bashio::log.info "Debug: Checking config availability..."
-bashio::log.info "Config file: $(cat /data/options.json)"
 
 # Banner
 bashio::log.info "=================================="
@@ -69,7 +66,6 @@ EOF
 
 # Add bad words list if exists
 if bashio::config.has_value 'bad_words_list'; then
-    # Get the list and update JSON
     BAD_WORDS=$(bashio::config 'bad_words_list[]' | jq -R -s -c 'split("\n") | map(select(length > 0))')
     jq --argjson words "$BAD_WORDS" '.bad_words_list = $words' /tmp/addon_config.json > /tmp/addon_config_tmp.json
     mv /tmp/addon_config_tmp.json /tmp/addon_config.json
