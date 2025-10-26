@@ -14,7 +14,7 @@ Home Assistant Add-on for educational AI voice assistant for children.
 ## Installation
 
 1. Add this repository to your Home Assistant Add-on Store
-2. Install "Kids Chatbot Server (Zhaozhi)"
+2. Install "Chatbot Server"
 3. Configure with your OpenAI API key
 4. Start the add-on
 
