@@ -2,7 +2,7 @@ name: "Kids ChatBot Server"
 version: "1.0.3"
 slug: "ha_chatbot_server"
 description: "AI ChatBot for Kids with Content Filter & Educational Responses"
-url: "https://github.com/yourname/ha-chatbot-server"
+url: "https://github.com/paulsteigel/ha-chatbot-server"
 arch:
   - armhf
   - armv7
