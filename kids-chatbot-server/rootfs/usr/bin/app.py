@@ -28,7 +28,7 @@ CORS(app)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_VOICE = os.getenv("OPENAI_VOICE", "alloy")
-OPENAI_LANGUAGE = os.getenv("OPENAI_LANGUAGE", "vi")
+OPENAI_LANGUAGE = os.getenv("OPENAI_LANGUAGE", "auto")  # Changed to 'auto'
 PORT = int(os.getenv("PORT", "5000"))
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", "500"))
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
@@ -52,6 +52,24 @@ client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 from utils.content_filter import is_safe_content
 from utils.response_templates import get_response_template
 
+def detect_language(text):
+    """
+    Simple language detection based on character set
+    Returns 'vi' for Vietnamese, 'en' for English, 'auto' for mixed/unknown
+    """
+    vietnamese_chars = 'àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ'
+    
+    text_lower = text.lower()
+    has_vietnamese = any(char in vietnamese_chars for char in text_lower)
+    has_english = any(char.isalpha() and char.isascii() for char in text_lower)
+    
+    if has_vietnamese and not has_english:
+        return 'vi'
+    elif has_english and not has_vietnamese:
+        return 'en'
+    else:
+        return 'auto'
+
 @app.route('/')
 def index():
     """Serve the test interface"""
@@ -72,19 +90,23 @@ def chat():
         if not user_message:
             return jsonify({'error': 'Message is required'}), 400
         
+        # Detect user's language
+        detected_lang = detect_language(user_message)
+        logger.info(f"Detected language: {detected_lang} for message: {user_message[:50]}")
+        
         # Content filtering
         if not is_safe_content(user_message):
             return jsonify({
-                'response': get_response_template('inappropriate', OPENAI_LANGUAGE)
+                'response': get_response_template('inappropriate', detected_lang)
             })
         
-        # Create chat completion
+        # Create chat completion with auto language detection
         response = client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[
                 {
                     "role": "system",
-                    "content": get_response_template('system', OPENAI_LANGUAGE)
+                    "content": get_response_template('system', 'auto')
                 },
                 {
                     "role": "user",
@@ -99,7 +121,8 @@ def chat():
         
         return jsonify({
             'response': assistant_message,
-            'model': OPENAI_MODEL
+            'model': OPENAI_MODEL,
+            'detected_language': detected_lang
         })
     
     except Exception as e:
@@ -126,12 +149,12 @@ def transcribe():
         with tempfile.NamedTemporaryFile(delete=False, suffix='.webm') as temp_audio:
             audio_file.save(temp_audio.name)
             
-            # Transcribe using Whisper
+            # Transcribe using Whisper - let it auto-detect language
             with open(temp_audio.name, 'rb') as audio_data:
                 transcript = client.audio.transcriptions.create(
                     model="whisper-1",
                     file=audio_data,
-                    language=OPENAI_LANGUAGE if OPENAI_LANGUAGE in ['vi', 'en'] else None
+                    # Don't specify language - let Whisper detect it automatically
                 )
             
             # Clean up
@@ -151,7 +174,7 @@ def transcribe():
 
 @app.route('/api/voice', methods=['POST'])
 def voice():
-    """Handle voice requests"""
+    """Handle voice requests with language detection"""
     if not client:
         return jsonify({
             'error': 'OpenAI API key not configured'
@@ -164,10 +187,16 @@ def voice():
         if not text:
             return jsonify({'error': 'Text is required'}), 400
         
+        # Detect language to choose appropriate voice
+        detected_lang = detect_language(text)
+        
+        # Choose voice based on language (optional - you can keep same voice)
+        voice = OPENAI_VOICE
+        
         # Generate speech
         response = client.audio.speech.create(
             model="tts-1",
-            voice=OPENAI_VOICE,
+            voice=voice,
             input=text
         )
         
