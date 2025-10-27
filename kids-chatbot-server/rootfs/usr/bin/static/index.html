@@ -150,6 +150,24 @@
             color: #666;
             line-height: 1.6;
         }
+        .new-chat-container {
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .new-chat-btn {
+            background: #dc3545;
+            padding: 8px 16px;
+            font-size: 14px;
+        }
+        .new-chat-btn:hover {
+            background: #c82333;
+        }
+        .session-info {
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
@@ -161,13 +179,20 @@
             <h3>Hướng dẫn sử dụng:</h3>
             <p>
                 <strong>Cách 1:</strong> Nhập câu hỏi vào ô bên dưới và nhấn "Gửi"<br>
-                <strong>Cách 2:</strong> Nhấn nút 🎤 để bắt đầu nói, nhấn lại để dừng. Bot sẽ tự động trả lời bằng giọng nói.
+                <strong>Cách 2:</strong> Nhấn nút 🎤 để bắt đầu nói, nhấn lại để dừng. Bot sẽ tự động trả lời bằng giọng nói.<br>
+                <strong>Lưu ý:</strong> Bot sẽ nhớ cuộc trò chuyện của bạn. Nhấn "🔄 Cuộc trò chuyện mới" để bắt đầu lại.
             </p>
         </div>
         
         <div class="status ready" id="status">✓ Sẵn sàng</div>
         
         <div id="chat-box"></div>
+        
+        <div class="new-chat-container">
+            <button class="new-chat-btn" onclick="startNewChat()">
+                🔄 Cuộc trò chuyện mới
+            </button>
+        </div>
         
         <div class="controls">
             <button id="mic-button" onclick="toggleRecording()" title="Nhấn để nói">
@@ -179,6 +204,10 @@
                 <span>Gửi</span>
             </button>
         </div>
+        
+        <div class="session-info" id="session-info">
+            Chưa có phiên trò chuyện
+        </div>
     </div>
 
     <script>
@@ -186,9 +215,13 @@
         let mediaRecorder = null;
         let audioChunks = [];
         let currentAudio = null;
+        
+        // ✅ LƯU SESSION_ID VÀO LOCALSTORAGE
+        let chatSessionId = localStorage.getItem('chat_session_id');
 
         // Initialize
         checkBrowserSupport();
+        updateSessionInfo();
 
         function checkBrowserSupport() {
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -207,6 +240,15 @@
             };
             status.textContent = `${icons[type]} ${message}`;
             status.className = `status ${type}`;
+        }
+
+        function updateSessionInfo() {
+            const sessionInfo = document.getElementById('session-info');
+            if (chatSessionId) {
+                sessionInfo.textContent = `Phiên: ${chatSessionId.substring(0, 8)}... (đang nhớ ngữ cảnh)`;
+            } else {
+                sessionInfo.textContent = 'Chưa có phiên trò chuyện';
+            }
         }
 
         function addMessage(text, isUser = false) {
@@ -271,7 +313,6 @@
 
         async function processAudio(audioBlob) {
             try {
-                // Convert audio to text using OpenAI Whisper
                 updateStatus('Đang nhận dạng giọng nói...', 'processing');
                 
                 const formData = new FormData();
@@ -296,16 +337,29 @@
                 
                 addMessage(userMessage, true);
                 
-                // Get chat response
+                // ✅ GỬI KÈM SESSION_ID
                 updateStatus('Đang suy nghĩ...', 'processing');
+                
+                const payload = { message: userMessage };
+                if (chatSessionId) {
+                    payload.session_id = chatSessionId;
+                }
                 
                 const chatResponse = await fetch('/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: userMessage })
+                    body: JSON.stringify(payload)
                 });
                 
                 const chatData = await chatResponse.json();
+                
+                // ✅ LƯU SESSION_ID LẦN ĐẦU
+                if (!chatSessionId && chatData.session_id) {
+                    chatSessionId = chatData.session_id;
+                    localStorage.setItem('chat_session_id', chatSessionId);
+                    updateSessionInfo();
+                    console.log('✅ Session created:', chatSessionId);
+                }
                 
                 if (chatData.error) {
                     addMessage(`Lỗi: ${chatData.error}`, false);
@@ -315,7 +369,6 @@
                 
                 addMessage(chatData.response, false);
                 
-                // Convert response to speech and play
                 updateStatus('Đang tạo giọng nói...', 'processing');
                 await speakResponse(chatData.response);
                 
@@ -340,7 +393,6 @@
                 const audioBlob = await response.blob();
                 const audioUrl = URL.createObjectURL(audioBlob);
                 
-                // Stop current audio if playing
                 if (currentAudio) {
                     currentAudio.pause();
                     currentAudio = null;
@@ -381,21 +433,33 @@
             updateStatus('Đang suy nghĩ...', 'processing');
             
             try {
+                // ✅ GỬI KÈM SESSION_ID
+                const payload = { message };
+                if (chatSessionId) {
+                    payload.session_id = chatSessionId;
+                }
+                
                 const response = await fetch('/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message })
+                    body: JSON.stringify(payload)
                 });
                 
                 const data = await response.json();
+                
+                // ✅ LƯU SESSION_ID LẦN ĐẦU
+                if (!chatSessionId && data.session_id) {
+                    chatSessionId = data.session_id;
+                    localStorage.setItem('chat_session_id', chatSessionId);
+                    updateSessionInfo();
+                    console.log('✅ Session created:', chatSessionId);
+                }
                 
                 if (data.error) {
                     addMessage(`Lỗi: ${data.error}`, false);
                     updateStatus('Có lỗi xảy ra', 'error');
                 } else {
                     addMessage(data.response, false);
-                    
-                    // Auto speak response
                     await speakResponse(data.response);
                 }
             } catch (error) {
@@ -404,10 +468,30 @@
             }
         }
         
+        // ✅ HÀM BẮT ĐẦU CUỘC TRÒ CHUYỆN MỚI
+        function startNewChat() {
+            if (confirm('Bạn có chắc muốn bắt đầu cuộc trò chuyện mới?\n\n(Lịch sử và ngữ cảnh hiện tại sẽ bị xóa)')) {
+                localStorage.removeItem('chat_session_id');
+                chatSessionId = null;
+                document.getElementById('chat-box').innerHTML = '';
+                updateSessionInfo();
+                updateStatus('✨ Đã tạo phiên mới - Hãy bắt đầu trò chuyện!', 'ready');
+                console.log('🔄 New session started');
+            }
+        }
+        
         // Enter key to send
         document.getElementById('message-input').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') sendMessage();
         });
+        
+        // ✅ LOG KHỞI TẠO
+        console.log('🤖 Yên Hoà ChatBot initialized');
+        if (chatSessionId) {
+            console.log('📝 Existing session:', chatSessionId);
+        } else {
+            console.log('✨ No existing session - will create on first message');
+        }
     </script>
 </body>
 </html>
