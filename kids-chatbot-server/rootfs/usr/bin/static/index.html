@@ -3,111 +3,629 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kids ChatBot Test Interface</title>
+    <title>Bạn đồng hành - Yên Hòa</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 50px auto;
-            padding: 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
         .container {
             background: white;
-            padding: 30px;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 800px;
+            width: 100%;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 90vh;
         }
-        h1 {
-            color: #667eea;
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px;
             text-align: center;
         }
-        #chat-box {
-            height: 400px;
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .status {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 25px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+            font-size: 12px;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #28a745;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .chat-box {
+            flex: 1;
             overflow-y: auto;
-            border: 2px solid #667eea;
-            padding: 15px;
-            margin: 20px 0;
-            border-radius: 10px;
+            padding: 20px;
             background: #f8f9fa;
         }
+
         .message {
-            margin: 10px 0;
-            padding: 10px;
-            border-radius: 8px;
+            margin-bottom: 15px;
+            display: flex;
+            gap: 10px;
+            animation: slideIn 0.3s ease-out;
         }
-        .user { background: #667eea; color: white; text-align: right; }
-        .assistant { background: #e9ecef; color: #333; }
-        input[type="text"] {
-            width: calc(100% - 110px);
-            padding: 10px;
-            border: 2px solid #667eea;
-            border-radius: 5px;
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
-        button {
-            padding: 10px 20px;
+
+        .message.user {
+            flex-direction: row-reverse;
+        }
+
+        .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+
+        .message.user .avatar {
+            background: #667eea;
+        }
+
+        .message.bot .avatar {
+            background: #28a745;
+        }
+
+        .bubble {
+            max-width: 70%;
+            padding: 12px 16px;
+            border-radius: 18px;
+            word-wrap: break-word;
+        }
+
+        .message.user .bubble {
             background: #667eea;
             color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            margin-left: 10px;
+            border-bottom-right-radius: 4px;
         }
-        button:hover { background: #5568d3; }
-        .status { text-align: center; color: #666; margin: 10px 0; }
+
+        .message.bot .bubble {
+            background: white;
+            color: #333;
+            border-bottom-left-radius: 4px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+
+        .bubble .bot-name {
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+            font-size: 13px;
+        }
+
+        .speaker-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            margin-left: 8px;
+            font-size: 16px;
+            opacity: 0.7;
+            transition: opacity 0.2s;
+        }
+
+        .speaker-btn:hover {
+            opacity: 1;
+        }
+
+        .speaker-btn.playing {
+            animation: soundWave 0.5s infinite;
+        }
+
+        @keyframes soundWave {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+        }
+
+        .input-area {
+            padding: 20px;
+            background: white;
+            border-top: 1px solid #dee2e6;
+        }
+
+        .input-wrapper {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        #messageInput {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #dee2e6;
+            border-radius: 25px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        #messageInput:focus {
+            border-color: #667eea;
+        }
+
+        .btn {
+            width: 50px;
+            height: 50px;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+        }
+
+        .btn:hover {
+            transform: scale(1.1);
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        #voiceBtn {
+            background: #28a745;
+            color: white;
+        }
+
+        #voiceBtn.recording {
+            background: #dc3545;
+            animation: recordPulse 1s infinite;
+        }
+
+        @keyframes recordPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7); }
+            50% { box-shadow: 0 0 0 10px rgba(220, 53, 69, 0); }
+        }
+
+        #sendBtn {
+            background: #667eea;
+            color: white;
+        }
+
+        #sendBtn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .typing-indicator {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .typing-indicator.show {
+            display: flex;
+        }
+
+        .typing-dots {
+            display: flex;
+            gap: 4px;
+        }
+
+        .typing-dots span {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #667eea;
+            animation: typing 1.4s infinite;
+        }
+
+        .typing-dots span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .typing-dots span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes typing {
+            0%, 60%, 100% {
+                transform: translateY(0);
+            }
+            30% {
+                transform: translateY(-10px);
+            }
+        }
+
+        .error {
+            color: #dc3545;
+            font-size: 12px;
+            margin-top: 5px;
+            display: none;
+        }
+
+        .error.show {
+            display: block;
+        }
+
+        /* Mobile responsive */
+        @media (max-width: 600px) {
+            .container {
+                height: 100vh;
+                border-radius: 0;
+            }
+            
+            .header h1 {
+                font-size: 22px;
+            }
+            
+            .bubble {
+                max-width: 85%;
+            }
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🤖 Kids ChatBot Test Interface</h1>
-        <div class="status" id="status">Ready</div>
-        <div id="chat-box"></div>
-        <div>
-            <input type="text" id="message-input" placeholder="Type your message...">
-            <button onclick="sendMessage()">Send</button>
+        <!-- Header -->
+        <div class="header">
+            <h1>🎓 <span id="botNameDisplay">Bạn đồng hành - Yên Hòa</span></h1>
+            <p>Trường TH & THCS Yên Hòa - Đà Bắc, Hòa Bình</p>
+        </div>
+
+        <!-- Status bar -->
+        <div class="status">
+            <div class="status-item">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">Đang kết nối...</span>
+            </div>
+            <div class="status-item">
+                <span id="modelText">Model: -</span>
+            </div>
+        </div>
+
+        <!-- Chat box -->
+        <div class="chat-box" id="chatBox">
+            <!-- Welcome message -->
+            <div class="message bot">
+                <div class="avatar">🤖</div>
+                <div class="bubble">
+                    <div class="bot-name" id="botNameInChat">Bạn đồng hành - Yên Hòa</div>
+                    Xin chào các em! 👋<br>
+                    Em có thể gõ hoặc <strong>nhấn micro 🎤</strong> để hỏi bất cứ điều gì nhé!<br>
+                    Thầy sẵn sàng giúp em học Toán, Tiếng Anh, Khoa học... 📚✨
+                </div>
+            </div>
+        </div>
+
+        <!-- Typing indicator -->
+        <div class="typing-indicator" id="typingIndicator">
+            <div class="avatar">🤖</div>
+            <div class="typing-dots">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+        </div>
+
+        <!-- Input area -->
+        <div class="input-area">
+            <div class="input-wrapper">
+                <button class="btn" id="voiceBtn" title="Nhấn để nói">🎤</button>
+                <input 
+                    type="text" 
+                    id="messageInput" 
+                    placeholder="Gõ câu hỏi hoặc nhấn micro để nói..."
+                    autocomplete="off"
+                >
+                <button class="btn" id="sendBtn" title="Gửi">📤</button>
+            </div>
+            <div class="error" id="errorMsg"></div>
         </div>
     </div>
 
     <script>
+        // Configuration
+        let CONFIG = {
+            botName: 'Bạn đồng hành - Yên Hòa',
+            language: 'vi',
+            voiceEnabled: true
+        };
+
+        // DOM elements
+        const chatBox = document.getElementById('chatBox');
+        const messageInput = document.getElementById('messageInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const voiceBtn = document.getElementById('voiceBtn');
+        const typingIndicator = document.getElementById('typingIndicator');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const modelText = document.getElementById('modelText');
+        const errorMsg = document.getElementById('errorMsg');
+        const botNameDisplay = document.getElementById('botNameDisplay');
+        const botNameInChat = document.getElementById('botNameInChat');
+
+        // Speech Recognition
+        let recognition = null;
+        let isRecording = false;
+
+        // Speech Synthesis
+        let synthesis = window.speechSynthesis;
+        let currentUtterance = null;
+
+        // Initialize
+        async function init() {
+            // Check health
+            try {
+                const response = await fetch('/api/health');
+                const data = await response.json();
+                
+                if (data.status === 'ok') {
+                    statusDot.style.background = '#28a745';
+                    statusText.textContent = 'Sẵn sàng';
+                    modelText.textContent = `Model: ${data.model || 'Unknown'}`;
+                    
+                    // Update bot name if available
+                    if (data.bot_name) {
+                        CONFIG.botName = data.bot_name;
+                        botNameDisplay.textContent = data.bot_name;
+                        botNameInChat.textContent = data.bot_name;
+                    }
+                    
+                    if (data.language) {
+                        CONFIG.language = data.language;
+                    }
+                }
+            } catch (error) {
+                statusDot.style.background = '#dc3545';
+                statusText.textContent = 'Lỗi kết nối';
+                showError('Không thể kết nối đến server');
+            }
+
+            // Initialize speech recognition
+            initSpeechRecognition();
+
+            // Event listeners
+            sendBtn.addEventListener('click', sendMessage);
+            messageInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') sendMessage();
+            });
+            voiceBtn.addEventListener('click', toggleVoiceRecording);
+        }
+
+        // Initialize Speech Recognition
+        function initSpeechRecognition() {
+            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                console.warn('Speech recognition not supported');
+                voiceBtn.disabled = true;
+                voiceBtn.style.opacity = '0.3';
+                return;
+            }
+
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            
+            recognition.lang = CONFIG.language === 'vi' ? 'vi-VN' : 'en-US';
+            recognition.continuous = false;
+            recognition.interimResults = false;
+
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                messageInput.value = transcript;
+                sendMessage();
+            };
+
+            recognition.onerror = (event) => {
+                console.error('Speech recognition error:', event.error);
+                stopRecording();
+                if (event.error === 'no-speech') {
+                    showError('Không nghe thấy giọng nói. Vui lòng thử lại!');
+                } else {
+                    showError('Lỗi micro: ' + event.error);
+                }
+            };
+
+            recognition.onend = () => {
+                stopRecording();
+            };
+        }
+
+        // Toggle voice recording
+        function toggleVoiceRecording() {
+            if (!recognition) {
+                showError('Trình duyệt không hỗ trợ ghi âm');
+                return;
+            }
+
+            if (isRecording) {
+                recognition.stop();
+            } else {
+                try {
+                    recognition.start();
+                    isRecording = true;
+                    voiceBtn.classList.add('recording');
+                    voiceBtn.textContent = '🔴';
+                    messageInput.placeholder = 'Đang nghe... Hãy nói câu hỏi của em!';
+                } catch (error) {
+                    console.error('Error starting recognition:', error);
+                    showError('Không thể bật micro');
+                }
+            }
+        }
+
+        // Stop recording
+        function stopRecording() {
+            isRecording = false;
+            voiceBtn.classList.remove('recording');
+            voiceBtn.textContent = '🎤';
+            messageInput.placeholder = 'Gõ câu hỏi hoặc nhấn micro để nói...';
+        }
+
+        // Text to speech
+        function speak(text) {
+            if (!CONFIG.voiceEnabled) return;
+
+            // Stop any current speech
+            if (synthesis.speaking) {
+                synthesis.cancel();
+            }
+
+            currentUtterance = new SpeechSynthesisUtterance(text);
+            currentUtterance.lang = CONFIG.language === 'vi' ? 'vi-VN' : 'en-US';
+            currentUtterance.rate = 0.9;
+            currentUtterance.pitch = 1;
+            
+            synthesis.speak(currentUtterance);
+        }
+
+        // Send message
         async function sendMessage() {
-            const input = document.getElementById('message-input');
-            const chatBox = document.getElementById('chat-box');
-            const status = document.getElementById('status');
-            const message = input.value.trim();
-            
+            const message = messageInput.value.trim();
             if (!message) return;
-            
+
             // Add user message
-            chatBox.innerHTML += `<div class="message user">${message}</div>`;
-            input.value = '';
-            status.textContent = 'Thinking...';
-            
+            addMessage(message, 'user');
+            messageInput.value = '';
+
+            // Show typing indicator
+            typingIndicator.classList.add('show');
+            chatBox.scrollTop = chatBox.scrollHeight;
+
             try {
                 const response = await fetch('/api/chat', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
                     body: JSON.stringify({ message })
                 });
-                
+
                 const data = await response.json();
-                
-                if (data.error) {
-                    chatBox.innerHTML += `<div class="message assistant">Error: ${data.error}</div>`;
+
+                if (response.ok) {
+                    addMessage(data.response, 'bot');
+                    speak(data.response); // Auto speak response
                 } else {
-                    chatBox.innerHTML += `<div class="message assistant">${data.response}</div>`;
+                    addMessage(data.error || 'Xin lỗi, có lỗi xảy ra', 'bot');
+                    showError(data.error);
                 }
-                
-                status.textContent = 'Ready';
-                chatBox.scrollTop = chatBox.scrollHeight;
             } catch (error) {
-                chatBox.innerHTML += `<div class="message assistant">Error: ${error.message}</div>`;
-                status.textContent = 'Error';
+                console.error('Error:', error);
+                addMessage('Xin lỗi, không thể kết nối đến server. Vui lòng thử lại!', 'bot');
+                showError('Lỗi kết nối');
+            } finally {
+                typingIndicator.classList.remove('show');
             }
         }
-        
-        document.getElementById('message-input').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') sendMessage();
-        });
+
+        // Add message to chat
+        function addMessage(text, type) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+
+            const avatar = document.createElement('div');
+            avatar.className = 'avatar';
+            avatar.textContent = type === 'user' ? '👦' : '🤖';
+
+            const bubble = document.createElement('div');
+            bubble.className = 'bubble';
+            
+            if (type === 'bot') {
+                const botNameEl = document.createElement('div');
+                botNameEl.className = 'bot-name';
+                botNameEl.textContent = CONFIG.botName;
+                bubble.appendChild(botNameEl);
+                
+                const textEl = document.createElement('div');
+                textEl.innerHTML = text.replace(/\n/g, '<br>');
+                bubble.appendChild(textEl);
+                
+                // Add speaker button
+                const speakerBtn = document.createElement('button');
+                speakerBtn.className = 'speaker-btn';
+                speakerBtn.textContent = '🔊';
+                speakerBtn.title = 'Nghe lại';
+                speakerBtn.onclick = () => {
+                    speak(text);
+                    speakerBtn.classList.add('playing');
+                    setTimeout(() => speakerBtn.classList.remove('playing'), 1000);
+                };
+                bubble.appendChild(speakerBtn);
+            } else {
+                bubble.textContent = text;
+            }
+
+            messageDiv.appendChild(avatar);
+            messageDiv.appendChild(bubble);
+            chatBox.appendChild(messageDiv);
+
+            // Scroll to bottom
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        // Show error message
+        function showError(message) {
+            errorMsg.textContent = message;
+            errorMsg.classList.add('show');
+            setTimeout(() => {
+                errorMsg.classList.remove('show');
+            }, 3000);
+        }
+
+        // Initialize on load
+        init();
     </script>
 </body>
 </html>
