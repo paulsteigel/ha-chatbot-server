@@ -46,4 +46,4 @@ schema:
   max_message_length: "int(100,1000)?"
 
 # ← SỬA DÒNG NÀY - QUAN TRỌNG!
-image: "ghcr.io/yourusername/yen-hoa-chatbot-{arch}"
+image: "ghcr.io/paulsteigel/yen-hoa-chatbot-{arch}"
