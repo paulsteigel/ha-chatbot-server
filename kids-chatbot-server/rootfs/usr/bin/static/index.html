@@ -3,629 +3,411 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bạn đồng hành - Yên Hòa</title>
+    <title>Yên Hoà ChatBot - Test Interface</title>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
             padding: 20px;
         }
-
         .container {
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
             max-width: 800px;
-            width: 100%;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-            height: 90vh;
-        }
-
-        .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 25px;
-            text-align: center;
-        }
-
-        .header h1 {
-            font-size: 28px;
-            margin-bottom: 5px;
-        }
-
-        .header p {
-            font-size: 14px;
-            opacity: 0.9;
-        }
-
-        .status {
-            display: flex;
-            justify-content: space-between;
-            padding: 10px 25px;
-            background: #f8f9fa;
-            border-bottom: 1px solid #dee2e6;
-            font-size: 12px;
-        }
-
-        .status-item {
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #28a745;
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
-        .chat-box {
-            flex: 1;
-            overflow-y: auto;
-            padding: 20px;
-            background: #f8f9fa;
-        }
-
-        .message {
-            margin-bottom: 15px;
-            display: flex;
-            gap: 10px;
-            animation: slideIn 0.3s ease-out;
-        }
-
-        @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .message.user {
-            flex-direction: row-reverse;
-        }
-
-        .avatar {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 20px;
-            flex-shrink: 0;
-        }
-
-        .message.user .avatar {
-            background: #667eea;
-        }
-
-        .message.bot .avatar {
-            background: #28a745;
-        }
-
-        .bubble {
-            max-width: 70%;
-            padding: 12px 16px;
-            border-radius: 18px;
-            word-wrap: break-word;
-        }
-
-        .message.user .bubble {
-            background: #667eea;
-            color: white;
-            border-bottom-right-radius: 4px;
-        }
-
-        .message.bot .bubble {
+            margin: 0 auto;
             background: white;
-            color: #333;
-            border-bottom-left-radius: 4px;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 15px 50px rgba(0,0,0,0.3);
         }
-
-        .bubble .bot-name {
-            font-weight: bold;
+        h1 {
             color: #667eea;
-            margin-bottom: 5px;
-            font-size: 13px;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 2em;
         }
-
-        .speaker-btn {
-            background: none;
-            border: none;
-            cursor: pointer;
-            margin-left: 8px;
-            font-size: 16px;
-            opacity: 0.7;
-            transition: opacity 0.2s;
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 20px;
+            font-style: italic;
         }
-
-        .speaker-btn:hover {
-            opacity: 1;
-        }
-
-        .speaker-btn.playing {
-            animation: soundWave 0.5s infinite;
-        }
-
-        @keyframes soundWave {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.2); }
-        }
-
-        .input-area {
+        #chat-box {
+            height: 450px;
+            overflow-y: auto;
+            border: 2px solid #667eea;
             padding: 20px;
-            background: white;
-            border-top: 1px solid #dee2e6;
+            margin: 20px 0;
+            border-radius: 15px;
+            background: #f8f9fa;
         }
-
-        .input-wrapper {
+        .message {
+            margin: 15px 0;
+            padding: 12px 16px;
+            border-radius: 12px;
+            max-width: 80%;
+            word-wrap: break-word;
+            animation: fadeIn 0.3s;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .user {
+            background: #667eea;
+            color: white;
+            margin-left: auto;
+            text-align: right;
+        }
+        .assistant {
+            background: #e9ecef;
+            color: #333;
+            margin-right: auto;
+        }
+        .controls {
             display: flex;
             gap: 10px;
             align-items: center;
         }
-
-        #messageInput {
+        input[type="text"] {
             flex: 1;
-            padding: 12px 16px;
-            border: 2px solid #dee2e6;
-            border-radius: 25px;
-            font-size: 14px;
-            outline: none;
+            padding: 12px 15px;
+            border: 2px solid #667eea;
+            border-radius: 10px;
+            font-size: 16px;
             transition: border-color 0.3s;
         }
-
-        #messageInput:focus {
-            border-color: #667eea;
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #5568d3;
         }
-
-        .btn {
-            width: 50px;
-            height: 50px;
-            border: none;
-            border-radius: 50%;
-            cursor: pointer;
-            font-size: 24px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.3s;
-        }
-
-        .btn:hover {
-            transform: scale(1.1);
-        }
-
-        .btn:active {
-            transform: scale(0.95);
-        }
-
-        #voiceBtn {
-            background: #28a745;
-            color: white;
-        }
-
-        #voiceBtn.recording {
-            background: #dc3545;
-            animation: recordPulse 1s infinite;
-        }
-
-        @keyframes recordPulse {
-            0%, 100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7); }
-            50% { box-shadow: 0 0 0 10px rgba(220, 53, 69, 0); }
-        }
-
-        #sendBtn {
+        button {
+            padding: 12px 24px;
             background: #667eea;
             color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
-
-        #sendBtn:disabled {
+        button:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        button:disabled {
             background: #ccc;
             cursor: not-allowed;
+            transform: none;
         }
-
-        .typing-indicator {
-            display: none;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-
-        .typing-indicator.show {
-            display: flex;
-        }
-
-        .typing-dots {
-            display: flex;
-            gap: 4px;
-        }
-
-        .typing-dots span {
-            width: 8px;
-            height: 8px;
+        #mic-button {
+            width: 60px;
+            height: 60px;
             border-radius: 50%;
-            background: #667eea;
-            animation: typing 1.4s infinite;
+            padding: 0;
+            justify-content: center;
+            font-size: 24px;
         }
-
-        .typing-dots span:nth-child(2) {
-            animation-delay: 0.2s;
+        #mic-button.recording {
+            background: #dc3545;
+            animation: pulse 1.5s infinite;
         }
-
-        .typing-dots span:nth-child(3) {
-            animation-delay: 0.4s;
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
         }
-
-        @keyframes typing {
-            0%, 60%, 100% {
-                transform: translateY(0);
-            }
-            30% {
-                transform: translateY(-10px);
-            }
+        .status {
+            text-align: center;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 8px;
+            font-weight: 500;
         }
-
-        .error {
-            color: #dc3545;
-            font-size: 12px;
-            margin-top: 5px;
-            display: none;
+        .status.ready { background: #d4edda; color: #155724; }
+        .status.processing { background: #fff3cd; color: #856404; }
+        .status.error { background: #f8d7da; color: #721c24; }
+        .status.listening { background: #cce5ff; color: #004085; }
+        .info-box {
+            background: #e7f3ff;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 8px;
         }
-
-        .error.show {
-            display: block;
+        .info-box h3 {
+            color: #667eea;
+            margin-bottom: 8px;
         }
-
-        /* Mobile responsive */
-        @media (max-width: 600px) {
-            .container {
-                height: 100vh;
-                border-radius: 0;
-            }
-            
-            .header h1 {
-                font-size: 22px;
-            }
-            
-            .bubble {
-                max-width: 85%;
-            }
+        .info-box p {
+            color: #666;
+            line-height: 1.6;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <!-- Header -->
-        <div class="header">
-            <h1>🎓 <span id="botNameDisplay">Bạn đồng hành - Yên Hòa</span></h1>
-            <p>Trường TH & THCS Yên Hòa - Đà Bắc, Hòa Bình</p>
+        <h1>🤖 Yên Hoà ChatBot</h1>
+        <div class="subtitle">Trợ lý học tập thông minh cho các em học sinh</div>
+        
+        <div class="info-box">
+            <h3>Hướng dẫn sử dụng:</h3>
+            <p>
+                <strong>Cách 1:</strong> Nhập câu hỏi vào ô bên dưới và nhấn "Gửi"<br>
+                <strong>Cách 2:</strong> Nhấn nút 🎤 để bắt đầu nói, nhấn lại để dừng. Bot sẽ tự động trả lời bằng giọng nói.
+            </p>
         </div>
-
-        <!-- Status bar -->
-        <div class="status">
-            <div class="status-item">
-                <div class="status-dot" id="statusDot"></div>
-                <span id="statusText">Đang kết nối...</span>
-            </div>
-            <div class="status-item">
-                <span id="modelText">Model: -</span>
-            </div>
-        </div>
-
-        <!-- Chat box -->
-        <div class="chat-box" id="chatBox">
-            <!-- Welcome message -->
-            <div class="message bot">
-                <div class="avatar">🤖</div>
-                <div class="bubble">
-                    <div class="bot-name" id="botNameInChat">Bạn đồng hành - Yên Hòa</div>
-                    Xin chào các em! 👋<br>
-                    Em có thể gõ hoặc <strong>nhấn micro 🎤</strong> để hỏi bất cứ điều gì nhé!<br>
-                    Thầy sẵn sàng giúp em học Toán, Tiếng Anh, Khoa học... 📚✨
-                </div>
-            </div>
-        </div>
-
-        <!-- Typing indicator -->
-        <div class="typing-indicator" id="typingIndicator">
-            <div class="avatar">🤖</div>
-            <div class="typing-dots">
-                <span></span>
-                <span></span>
-                <span></span>
-            </div>
-        </div>
-
-        <!-- Input area -->
-        <div class="input-area">
-            <div class="input-wrapper">
-                <button class="btn" id="voiceBtn" title="Nhấn để nói">🎤</button>
-                <input 
-                    type="text" 
-                    id="messageInput" 
-                    placeholder="Gõ câu hỏi hoặc nhấn micro để nói..."
-                    autocomplete="off"
-                >
-                <button class="btn" id="sendBtn" title="Gửi">📤</button>
-            </div>
-            <div class="error" id="errorMsg"></div>
+        
+        <div class="status ready" id="status">✓ Sẵn sàng</div>
+        
+        <div id="chat-box"></div>
+        
+        <div class="controls">
+            <button id="mic-button" onclick="toggleRecording()" title="Nhấn để nói">
+                🎤
+            </button>
+            <input type="text" id="message-input" placeholder="Hoặc gõ câu hỏi tại đây...">
+            <button onclick="sendMessage()">
+                <span>📤</span>
+                <span>Gửi</span>
+            </button>
         </div>
     </div>
 
     <script>
-        // Configuration
-        let CONFIG = {
-            botName: 'Bạn đồng hành - Yên Hòa',
-            language: 'vi',
-            voiceEnabled: true
-        };
-
-        // DOM elements
-        const chatBox = document.getElementById('chatBox');
-        const messageInput = document.getElementById('messageInput');
-        const sendBtn = document.getElementById('sendBtn');
-        const voiceBtn = document.getElementById('voiceBtn');
-        const typingIndicator = document.getElementById('typingIndicator');
-        const statusDot = document.getElementById('statusDot');
-        const statusText = document.getElementById('statusText');
-        const modelText = document.getElementById('modelText');
-        const errorMsg = document.getElementById('errorMsg');
-        const botNameDisplay = document.getElementById('botNameDisplay');
-        const botNameInChat = document.getElementById('botNameInChat');
-
-        // Speech Recognition
-        let recognition = null;
         let isRecording = false;
-
-        // Speech Synthesis
-        let synthesis = window.speechSynthesis;
-        let currentUtterance = null;
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let currentAudio = null;
 
         // Initialize
-        async function init() {
-            // Check health
-            try {
-                const response = await fetch('/api/health');
-                const data = await response.json();
-                
-                if (data.status === 'ok') {
-                    statusDot.style.background = '#28a745';
-                    statusText.textContent = 'Sẵn sàng';
-                    modelText.textContent = `Model: ${data.model || 'Unknown'}`;
-                    
-                    // Update bot name if available
-                    if (data.bot_name) {
-                        CONFIG.botName = data.bot_name;
-                        botNameDisplay.textContent = data.bot_name;
-                        botNameInChat.textContent = data.bot_name;
-                    }
-                    
-                    if (data.language) {
-                        CONFIG.language = data.language;
-                    }
-                }
-            } catch (error) {
-                statusDot.style.background = '#dc3545';
-                statusText.textContent = 'Lỗi kết nối';
-                showError('Không thể kết nối đến server');
+        checkBrowserSupport();
+
+        function checkBrowserSupport() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                updateStatus('Trình duyệt không hỗ trợ ghi âm', 'error');
+                document.getElementById('mic-button').disabled = true;
             }
-
-            // Initialize speech recognition
-            initSpeechRecognition();
-
-            // Event listeners
-            sendBtn.addEventListener('click', sendMessage);
-            messageInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') sendMessage();
-            });
-            voiceBtn.addEventListener('click', toggleVoiceRecording);
         }
 
-        // Initialize Speech Recognition
-        function initSpeechRecognition() {
-            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-                console.warn('Speech recognition not supported');
-                voiceBtn.disabled = true;
-                voiceBtn.style.opacity = '0.3';
-                return;
-            }
-
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            recognition = new SpeechRecognition();
-            
-            recognition.lang = CONFIG.language === 'vi' ? 'vi-VN' : 'en-US';
-            recognition.continuous = false;
-            recognition.interimResults = false;
-
-            recognition.onresult = (event) => {
-                const transcript = event.results[0][0].transcript;
-                messageInput.value = transcript;
-                sendMessage();
+        function updateStatus(message, type = 'ready') {
+            const status = document.getElementById('status');
+            const icons = {
+                ready: '✓',
+                processing: '⏳',
+                error: '❌',
+                listening: '🎤'
             };
-
-            recognition.onerror = (event) => {
-                console.error('Speech recognition error:', event.error);
-                stopRecording();
-                if (event.error === 'no-speech') {
-                    showError('Không nghe thấy giọng nói. Vui lòng thử lại!');
-                } else {
-                    showError('Lỗi micro: ' + event.error);
-                }
-            };
-
-            recognition.onend = () => {
-                stopRecording();
-            };
+            status.textContent = `${icons[type]} ${message}`;
+            status.className = `status ${type}`;
         }
 
-        // Toggle voice recording
-        function toggleVoiceRecording() {
-            if (!recognition) {
-                showError('Trình duyệt không hỗ trợ ghi âm');
-                return;
-            }
-
-            if (isRecording) {
-                recognition.stop();
-            } else {
-                try {
-                    recognition.start();
-                    isRecording = true;
-                    voiceBtn.classList.add('recording');
-                    voiceBtn.textContent = '🔴';
-                    messageInput.placeholder = 'Đang nghe... Hãy nói câu hỏi của em!';
-                } catch (error) {
-                    console.error('Error starting recognition:', error);
-                    showError('Không thể bật micro');
-                }
-            }
-        }
-
-        // Stop recording
-        function stopRecording() {
-            isRecording = false;
-            voiceBtn.classList.remove('recording');
-            voiceBtn.textContent = '🎤';
-            messageInput.placeholder = 'Gõ câu hỏi hoặc nhấn micro để nói...';
-        }
-
-        // Text to speech
-        function speak(text) {
-            if (!CONFIG.voiceEnabled) return;
-
-            // Stop any current speech
-            if (synthesis.speaking) {
-                synthesis.cancel();
-            }
-
-            currentUtterance = new SpeechSynthesisUtterance(text);
-            currentUtterance.lang = CONFIG.language === 'vi' ? 'vi-VN' : 'en-US';
-            currentUtterance.rate = 0.9;
-            currentUtterance.pitch = 1;
-            
-            synthesis.speak(currentUtterance);
-        }
-
-        // Send message
-        async function sendMessage() {
-            const message = messageInput.value.trim();
-            if (!message) return;
-
-            // Add user message
-            addMessage(message, 'user');
-            messageInput.value = '';
-
-            // Show typing indicator
-            typingIndicator.classList.add('show');
+        function addMessage(text, isUser = false) {
+            const chatBox = document.getElementById('chat-box');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user' : 'assistant'}`;
+            messageDiv.textContent = text;
+            chatBox.appendChild(messageDiv);
             chatBox.scrollTop = chatBox.scrollHeight;
+        }
 
+        async function toggleRecording() {
+            if (isRecording) {
+                stopRecording();
+            } else {
+                await startRecording();
+            }
+        }
+
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = (event) => {
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    await processAudio(audioBlob);
+                    stream.getTracks().forEach(track => track.stop());
+                };
+
+                mediaRecorder.start();
+                isRecording = true;
+                
+                const micButton = document.getElementById('mic-button');
+                micButton.classList.add('recording');
+                micButton.innerHTML = '⏹️';
+                
+                updateStatus('Đang nghe... Nhấn lại để dừng', 'listening');
+            } catch (error) {
+                console.error('Error accessing microphone:', error);
+                updateStatus('Không thể truy cập microphone', 'error');
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && isRecording) {
+                mediaRecorder.stop();
+                isRecording = false;
+                
+                const micButton = document.getElementById('mic-button');
+                micButton.classList.remove('recording');
+                micButton.innerHTML = '🎤';
+                
+                updateStatus('Đang xử lý...', 'processing');
+            }
+        }
+
+        async function processAudio(audioBlob) {
+            try {
+                // Convert audio to text using OpenAI Whisper
+                updateStatus('Đang nhận dạng giọng nói...', 'processing');
+                
+                const formData = new FormData();
+                formData.append('audio', audioBlob, 'recording.webm');
+                
+                const transcribeResponse = await fetch('/api/transcribe', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!transcribeResponse.ok) {
+                    throw new Error('Transcription failed');
+                }
+                
+                const transcribeData = await transcribeResponse.json();
+                const userMessage = transcribeData.text;
+                
+                if (!userMessage || userMessage.trim() === '') {
+                    updateStatus('Không nghe rõ. Vui lòng thử lại', 'error');
+                    return;
+                }
+                
+                addMessage(userMessage, true);
+                
+                // Get chat response
+                updateStatus('Đang suy nghĩ...', 'processing');
+                
+                const chatResponse = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: userMessage })
+                });
+                
+                const chatData = await chatResponse.json();
+                
+                if (chatData.error) {
+                    addMessage(`Lỗi: ${chatData.error}`, false);
+                    updateStatus('Có lỗi xảy ra', 'error');
+                    return;
+                }
+                
+                addMessage(chatData.response, false);
+                
+                // Convert response to speech and play
+                updateStatus('Đang tạo giọng nói...', 'processing');
+                await speakResponse(chatData.response);
+                
+            } catch (error) {
+                console.error('Error processing audio:', error);
+                updateStatus('Có lỗi xảy ra: ' + error.message, 'error');
+            }
+        }
+
+        async function speakResponse(text) {
+            try {
+                const response = await fetch('/api/voice', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text })
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Voice generation failed');
+                }
+                
+                const audioBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(audioBlob);
+                
+                // Stop current audio if playing
+                if (currentAudio) {
+                    currentAudio.pause();
+                    currentAudio = null;
+                }
+                
+                currentAudio = new Audio(audioUrl);
+                
+                currentAudio.onplay = () => {
+                    updateStatus('Đang phát âm thanh...', 'processing');
+                };
+                
+                currentAudio.onended = () => {
+                    updateStatus('Sẵn sàng', 'ready');
+                    URL.revokeObjectURL(audioUrl);
+                    currentAudio = null;
+                };
+                
+                currentAudio.onerror = () => {
+                    updateStatus('Lỗi phát âm thanh', 'error');
+                };
+                
+                await currentAudio.play();
+                
+            } catch (error) {
+                console.error('Error speaking response:', error);
+                updateStatus('Sẵn sàng (không thể phát âm)', 'ready');
+            }
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('message-input');
+            const message = input.value.trim();
+            
+            if (!message) return;
+            
+            addMessage(message, true);
+            input.value = '';
+            updateStatus('Đang suy nghĩ...', 'processing');
+            
             try {
                 const response = await fetch('/api/chat', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message })
                 });
-
+                
                 const data = await response.json();
-
-                if (response.ok) {
-                    addMessage(data.response, 'bot');
-                    speak(data.response); // Auto speak response
+                
+                if (data.error) {
+                    addMessage(`Lỗi: ${data.error}`, false);
+                    updateStatus('Có lỗi xảy ra', 'error');
                 } else {
-                    addMessage(data.error || 'Xin lỗi, có lỗi xảy ra', 'bot');
-                    showError(data.error);
+                    addMessage(data.response, false);
+                    
+                    // Auto speak response
+                    await speakResponse(data.response);
                 }
             } catch (error) {
-                console.error('Error:', error);
-                addMessage('Xin lỗi, không thể kết nối đến server. Vui lòng thử lại!', 'bot');
-                showError('Lỗi kết nối');
-            } finally {
-                typingIndicator.classList.remove('show');
+                addMessage(`Lỗi: ${error.message}`, false);
+                updateStatus('Có lỗi xảy ra', 'error');
             }
         }
-
-        // Add message to chat
-        function addMessage(text, type) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${type}`;
-
-            const avatar = document.createElement('div');
-            avatar.className = 'avatar';
-            avatar.textContent = type === 'user' ? '👦' : '🤖';
-
-            const bubble = document.createElement('div');
-            bubble.className = 'bubble';
-            
-            if (type === 'bot') {
-                const botNameEl = document.createElement('div');
-                botNameEl.className = 'bot-name';
-                botNameEl.textContent = CONFIG.botName;
-                bubble.appendChild(botNameEl);
-                
-                const textEl = document.createElement('div');
-                textEl.innerHTML = text.replace(/\n/g, '<br>');
-                bubble.appendChild(textEl);
-                
-                // Add speaker button
-                const speakerBtn = document.createElement('button');
-                speakerBtn.className = 'speaker-btn';
-                speakerBtn.textContent = '🔊';
-                speakerBtn.title = 'Nghe lại';
-                speakerBtn.onclick = () => {
-                    speak(text);
-                    speakerBtn.classList.add('playing');
-                    setTimeout(() => speakerBtn.classList.remove('playing'), 1000);
-                };
-                bubble.appendChild(speakerBtn);
-            } else {
-                bubble.textContent = text;
-            }
-
-            messageDiv.appendChild(avatar);
-            messageDiv.appendChild(bubble);
-            chatBox.appendChild(messageDiv);
-
-            // Scroll to bottom
-            chatBox.scrollTop = chatBox.scrollHeight;
-        }
-
-        // Show error message
-        function showError(message) {
-            errorMsg.textContent = message;
-            errorMsg.classList.add('show');
-            setTimeout(() => {
-                errorMsg.classList.remove('show');
-            }, 3000);
-        }
-
-        // Initialize on load
-        init();
+        
+        // Enter key to send
+        document.getElementById('message-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
     </script>
 </body>
 </html>
