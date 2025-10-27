@@ -1,49 +1,36 @@
-name: "Bạn đồng hành - Yên Hòa"
-version: "1.0.12"  # ← Tăng version
-slug: "yen-hoa-chatbot"
-description: "AI Chatbot hỗ trợ học tập cho học sinh Yên Hòa"
-url: "https://github.com/yourusername/yen-hoa-chatbot"
+name: Kids ChatBot Server
+version: "1.0.12"
+slug: kids-chatbot-server
+description: OpenAI-powered voice chatbot with test interface for kids
+url: https://github.com/paulsteigel/ha-chatbot-server
 arch:
   - aarch64
   - amd64
+  - armhf
   - armv7
+  - i386
 init: false
-
+startup: application
+boot: auto
+hassio_api: true
+hassio_role: default
 ports:
   5000/tcp: 5000
 ports_description:
-  5000/tcp: "Web interface and API"
-
+  5000/tcp: Web interface and API
 options:
-  bot_name: "Bạn đồng hành - Yên Hòa"
   openai_api_key: ""
-  openai_model: "gpt-4o-mini"
-  openai_voice: "nova"
-  openai_language: "vi"
-  voice_enabled: true
-  auto_speak: true
-  content_filter_enabled: true
-  blocked_keywords:
-    - "bạo lực"
-    - "đánh nhau"
-    - "giết"
-    - "súng"
-    - "dao"
-    - "ma túy"
-  max_message_length: 500
-
+  openai_model: gpt-4o-mini
+  openai_voice: alloy
+  openai_language: vi
+  port: 5000
+  max_tokens: 500
+  temperature: 0.7
 schema:
-  bot_name: "str"
-  openai_api_key: "str"
-  openai_model: "list(gpt-4o-mini|gpt-4o|gpt-4-turbo|gpt-3.5-turbo)"
-  openai_voice: "list(alloy|echo|fable|nova|onyx|shimmer)"
-  openai_language: "list(vi|en)"
-  voice_enabled: "bool?"
-  auto_speak: "bool?"
-  content_filter_enabled: "bool?"
-  blocked_keywords:
-    - "str"
-  max_message_length: "int(100,1000)?"
-
-# ← SỬA DÒNG NÀY - QUAN TRỌNG!
-image: "ghcr.io/paulsteigel/yen-hoa-chatbot-{arch}"
+  openai_api_key: str
+  openai_model: list(gpt-4o-mini|gpt-4o|gpt-4-turbo|gpt-3.5-turbo)?
+  openai_voice: list(alloy|echo|fable|onyx|nova|shimmer)?
+  openai_language: list(vi|en|ja|ko|zh)?
+  port: port
+  max_tokens: int(100,2000)?
+  temperature: float(0.0,2.0)?
