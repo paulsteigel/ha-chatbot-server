@@ -1,3 +1,5 @@
+"""Response templates for different scenarios"""
+
 def get_response_template(template_type, language='auto'):
     """Get response templates for different scenarios"""
     
@@ -78,6 +80,18 @@ Keep responses:
             'auto': "I'm here to help with learning and positive topics. Let's talk about something educational or fun!",
             'vi': "Mình ở đây để giúp các bạn học tập và những chủ đề tích cực. Hãy nói về điều gì đó mang tính giáo dục hoặc vui vẻ nhé!",
             'en': "I'm here to help with learning and positive topics. Let's talk about something educational or fun!"
+        },
+        
+        'error': {
+            'auto': "Oops! Something went wrong. Can you try asking again?",
+            'vi': "Ối! Có lỗi xảy ra. Bạn có thể thử hỏi lại không?",
+            'en': "Oops! Something went wrong. Can you try asking again?"
+        },
+        
+        'greeting': {
+            'auto': "Hello! I'm Yên Hoà, your learning assistant. How can I help you today?",
+            'vi': "Xin chào! Mình là Yên Hoà, trợ lý học tập của bạn. Mình có thể giúp gì cho bạn hôm nay?",
+            'en': "Hello! I'm Yên Hoà, your learning assistant. How can I help you today?"
         }
     }
     
