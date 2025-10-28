@@ -401,6 +401,107 @@ def voice():
             'error': str(e)
         }), 500
 
+@app.route('/api/voice-chat', methods=['POST'])
+def voice_chat():
+    """Handle voice chat - receive audio, return audio"""
+    if not client:
+        return jsonify({'error': 'OpenAI API key not configured'}), 500
+    
+    try:
+        # Get session ID
+        session_id = request.headers.get('X-Session-ID') or request.headers.get('X-User-ID')
+        
+        # Get audio data
+        audio_data = request.data
+        
+        if len(audio_data) == 0:
+            return jsonify({'error': 'No audio data'}), 400
+        
+        logger.info(f"📥 Received {len(audio_data)} bytes of audio")
+        
+        # Save to temp file for Whisper
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_audio:
+            temp_audio.write(audio_data)
+            temp_path = temp_audio.name
+        
+        try:
+            # 1. Transcribe audio
+            logger.info("🎤 Transcribing audio...")
+            with open(temp_path, 'rb') as audio_file:
+                transcript = client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file,
+                )
+            
+            user_message = transcript.text
+            logger.info(f"📝 Transcribed: {user_message}")
+            
+            if not user_message:
+                return jsonify({'error': 'Could not transcribe audio'}), 400
+            
+            # 2. Get or create session
+            if CONTEXT_ENABLED:
+                session_id = ConversationManager.get_or_create_session(session_id)
+                ConversationManager.add_message(session_id, "user", user_message)
+                messages = ConversationManager.get_messages(session_id)
+            else:
+                messages = [
+                    {"role": "system", "content": get_response_template('system', 'auto')},
+                    {"role": "user", "content": user_message}
+                ]
+            
+            # 3. Get ChatGPT response
+            logger.info("🤖 Getting ChatGPT response...")
+            chat_response = client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=messages,
+                max_tokens=MAX_TOKENS,
+                temperature=TEMPERATURE
+            )
+            
+            assistant_message = chat_response.choices[0].message.content
+            logger.info(f"💬 Response: {assistant_message}")
+            
+            if CONTEXT_ENABLED:
+                ConversationManager.add_message(session_id, "assistant", assistant_message)
+            
+            # 4. Convert response to speech
+            logger.info("🔊 Converting to speech...")
+            speech_response = client.audio.speech.create(
+                model="tts-1",
+                voice=OPENAI_VOICE,
+                input=assistant_message
+            )
+            
+            # Save speech to temp file
+            speech_path = Path("/tmp/speech_response.mp3")
+            speech_response.stream_to_file(speech_path)
+            
+            # Read audio file
+            with open(speech_path, 'rb') as audio_file:
+                audio_bytes = audio_file.read()
+            
+            logger.info(f"✅ Returning {len(audio_bytes)} bytes of audio")
+            
+            # Return audio with metadata in headers
+            response = make_response(audio_bytes)
+            response.headers['Content-Type'] = 'audio/mpeg'
+            response.headers['X-Transcription'] = user_message
+            response.headers['X-Response-Text'] = assistant_message
+            response.headers['X-Session-ID'] = session_id
+            
+            return response
+            
+        finally:
+            # Cleanup temp files
+            os.unlink(temp_path)
+            if os.path.exists(speech_path):
+                os.unlink(speech_path)
+    
+    except Exception as e:
+        logger.error(f"Error in voice_chat: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/health', methods=['GET'])
 def health():
     """Health check endpoint"""
