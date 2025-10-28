@@ -3,8 +3,9 @@ import os
 import logging
 import tempfile
 import secrets
+import wave
 from datetime import datetime, timedelta
-from flask import Flask, request, make_response, generate_error_response, jsonify, send_from_directory
+from flask import Flask, request, make_response, jsonify, send_from_directory
 from flask_cors import CORS
 from openai import OpenAI
 from pathlib import Path
@@ -33,7 +34,7 @@ PORT = int(os.getenv("PORT", "5000"))
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", "500"))
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
 
-# ✅ NEW: Context management settings
+# Context management settings
 CONTEXT_ENABLED = os.getenv("CONTEXT_ENABLED", "true").lower() == "true"
 CONTEXT_MAX_MESSAGES = int(os.getenv("CONTEXT_MAX_MESSAGES", "20"))
 CONTEXT_TIMEOUT_MINUTES = int(os.getenv("CONTEXT_TIMEOUT_MINUTES", "30"))
@@ -59,9 +60,12 @@ client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 from utils.content_filter import is_safe_content
 from utils.response_templates import get_response_template
 
-# ✅ NEW: In-memory conversation storage
+# In-memory conversation storage
 conversations = {}
 
+# ============================================================
+# ConversationManager class
+# ============================================================
 class ConversationManager:
     """Quản lý context cho mỗi session"""
     
@@ -69,11 +73,9 @@ class ConversationManager:
     def get_or_create_session(session_id=None):
         """Lấy hoặc tạo session ID mới"""
         if session_id and session_id in conversations:
-            # Update last activity
             conversations[session_id]['last_activity'] = datetime.now()
             return session_id
         
-        # Tạo session mới
         new_session_id = session_id or secrets.token_hex(16)
         conversations[new_session_id] = {
             'messages': [
@@ -100,10 +102,8 @@ class ConversationManager:
         })
         conversations[session_id]['last_activity'] = datetime.now()
         
-        # Giới hạn số lượng tin nhắn (giữ system prompt + N tin nhắn gần nhất)
         messages = conversations[session_id]['messages']
-        if len(messages) > CONTEXT_MAX_MESSAGES + 1:  # +1 cho system prompt
-            # Giữ system prompt + tin nhắn gần nhất
+        if len(messages) > CONTEXT_MAX_MESSAGES + 1:
             conversations[session_id]['messages'] = [messages[0]] + messages[-(CONTEXT_MAX_MESSAGES):]
             logger.info(f"🔄 Trimmed context for session {session_id}")
     
@@ -125,7 +125,7 @@ class ConversationManager:
     
     @staticmethod
     def cleanup_old_sessions():
-        """Xóa các session không hoạt động (chạy định kỳ)"""
+        """Xóa các session không hoạt động"""
         now = datetime.now()
         timeout = timedelta(minutes=CONTEXT_TIMEOUT_MINUTES)
         
@@ -140,11 +140,12 @@ class ConversationManager:
         
         return len(expired_sessions)
 
+# ============================================================
+# Helper Functions
+# ============================================================
+
 def detect_language(text):
-    """
-    Simple language detection based on character set
-    Returns 'vi' for Vietnamese, 'en' for English, 'auto' for mixed/unknown
-    """
+    """Simple language detection based on character set"""
     vietnamese_chars = 'àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ'
     
     text_lower = text.lower()
@@ -157,6 +158,59 @@ def detect_language(text):
         return 'en'
     else:
         return 'auto'
+
+def pcm_to_wav(pcm_data, sample_rate, channels=1, sample_width=2):
+    """
+    Convert raw PCM data to WAV format
+    
+    Args:
+        pcm_data: Raw PCM bytes
+        sample_rate: Sample rate (8000 or 16000)
+        channels: Number of channels (1=mono, 2=stereo)
+        sample_width: Bytes per sample (2 for 16-bit)
+    
+    Returns:
+        bytes: WAV formatted audio
+    """
+    import io
+    
+    wav_buffer = io.BytesIO()
+    
+    with wave.open(wav_buffer, 'wb') as wav_file:
+        wav_file.setnchannels(channels)
+        wav_file.setsampwidth(sample_width)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(pcm_data)
+    
+    return wav_buffer.getvalue()
+
+def generate_error_response(error_text, session_id):
+    """Generate error speech response"""
+    try:
+        import base64
+        speech_path = Path(tempfile.gettempdir()) / f"error_{session_id}.mp3"
+        
+        with client.audio.speech.with_streaming_response.create(
+            model="tts-1",
+            voice=OPENAI_VOICE,
+            input=error_text,
+            response_format="mp3"
+        ) as response:
+            response.stream_to_file(speech_path)
+        
+        with open(speech_path, 'rb') as f:
+            audio_bytes = f.read()
+        
+        os.unlink(speech_path)
+        
+        response = make_response(audio_bytes)
+        response.headers['Content-Type'] = 'audio/mpeg'
+        response.headers['X-Response-Text-B64'] = base64.b64encode(error_text.encode('utf-8')).decode('ascii')
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error generating error response: {e}")
+        return jsonify({'error': error_text}), 500
 
 @app.route('/')
 def index():
