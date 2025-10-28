@@ -3,8 +3,6 @@ import os
 import logging
 import tempfile
 import secrets
-import wave
-import time
 from datetime import datetime, timedelta
 from flask import Flask, request, make_response, jsonify, send_from_directory
 from flask_cors import CORS
@@ -35,14 +33,10 @@ PORT = int(os.getenv("PORT", "5000"))
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", "500"))
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
 
-# Context management settings
+# ✅ NEW: Context management settings
 CONTEXT_ENABLED = os.getenv("CONTEXT_ENABLED", "true").lower() == "true"
 CONTEXT_MAX_MESSAGES = int(os.getenv("CONTEXT_MAX_MESSAGES", "20"))
 CONTEXT_TIMEOUT_MINUTES = int(os.getenv("CONTEXT_TIMEOUT_MINUTES", "30"))
-
-# ✅ THÊM DÒNG NÀY - Audio storage directory
-TEMP_AUDIO_DIR = os.getenv("TEMP_AUDIO_DIR", "/tmp/audio")
-os.makedirs(TEMP_AUDIO_DIR, exist_ok=True)
 
 logger.info(f"Starting Yên Hoà ChatBot Server")
 logger.info(f"Model: {OPENAI_MODEL}")
@@ -50,7 +44,6 @@ logger.info(f"Voice: {OPENAI_VOICE}")
 logger.info(f"Language: {OPENAI_LANGUAGE}")
 logger.info(f"Context Enabled: {CONTEXT_ENABLED}")
 logger.info(f"Max Context Messages: {CONTEXT_MAX_MESSAGES}")
-logger.info(f"Audio Directory: {TEMP_AUDIO_DIR}")
 logger.info(f"Port: {PORT}")
 
 # Validate API key
@@ -66,12 +59,9 @@ client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 from utils.content_filter import is_safe_content
 from utils.response_templates import get_response_template
 
-# In-memory conversation storage
+# ✅ NEW: In-memory conversation storage
 conversations = {}
 
-# ============================================================
-# ConversationManager class
-# ============================================================
 class ConversationManager:
     """Quản lý context cho mỗi session"""
     
@@ -79,9 +69,11 @@ class ConversationManager:
     def get_or_create_session(session_id=None):
         """Lấy hoặc tạo session ID mới"""
         if session_id and session_id in conversations:
+            # Update last activity
             conversations[session_id]['last_activity'] = datetime.now()
             return session_id
         
+        # Tạo session mới
         new_session_id = session_id or secrets.token_hex(16)
         conversations[new_session_id] = {
             'messages': [
@@ -108,8 +100,10 @@ class ConversationManager:
         })
         conversations[session_id]['last_activity'] = datetime.now()
         
+        # Giới hạn số lượng tin nhắn (giữ system prompt + N tin nhắn gần nhất)
         messages = conversations[session_id]['messages']
-        if len(messages) > CONTEXT_MAX_MESSAGES + 1:
+        if len(messages) > CONTEXT_MAX_MESSAGES + 1:  # +1 cho system prompt
+            # Giữ system prompt + tin nhắn gần nhất
             conversations[session_id]['messages'] = [messages[0]] + messages[-(CONTEXT_MAX_MESSAGES):]
             logger.info(f"🔄 Trimmed context for session {session_id}")
     
@@ -131,7 +125,7 @@ class ConversationManager:
     
     @staticmethod
     def cleanup_old_sessions():
-        """Xóa các session không hoạt động"""
+        """Xóa các session không hoạt động (chạy định kỳ)"""
         now = datetime.now()
         timeout = timedelta(minutes=CONTEXT_TIMEOUT_MINUTES)
         
@@ -146,12 +140,11 @@ class ConversationManager:
         
         return len(expired_sessions)
 
-# ============================================================
-# Helper Functions
-# ============================================================
-
 def detect_language(text):
-    """Simple language detection based on character set"""
+    """
+    Simple language detection based on character set
+    Returns 'vi' for Vietnamese, 'en' for English, 'auto' for mixed/unknown
+    """
     vietnamese_chars = 'àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ'
     
     text_lower = text.lower()
@@ -408,159 +401,165 @@ def voice():
             'error': str(e)
         }), 500
 
-# ============================================================
-# ESP32 VOICE CHAT ENDPOINT
-# ============================================================
-
 @app.route('/api/voice-chat', methods=['POST'])
 def voice_chat():
     """
-    Xử lý voice chat từ ESP32
-    Input: Raw audio data (8kHz, 16-bit, mono)
-    Output: JSON với URL của file MP3 response
+    Complete voice chat flow for ESP32:
+    Audio IN → Transcribe → Chat → TTS → Audio OUT
     """
     if not client:
         return jsonify({'error': 'OpenAI API key not configured'}), 500
     
+    audio_path = None
+    speech_path = None
+    
     try:
-        # 1. Lấy audio data từ request
+        # Get session ID from header
+        session_id = request.headers.get('X-User-ID', 'anonymous')
+        
+        # Get raw audio data from ESP32
         audio_data = request.data
-        user_id = request.headers.get('X-User-ID', 'unknown')
-        sample_rate = int(request.headers.get('X-Sample-Rate', '8000'))
-        channels = int(request.headers.get('X-Channels', '1'))
         
-        logger.info(f"📥 Received audio: {len(audio_data)} bytes from {user_id}")
-        logger.info(f"   Sample rate: {sample_rate}Hz, Channels: {channels}")
+        if len(audio_data) == 0:
+            return jsonify({'error': 'No audio data received'}), 400
         
-        # 2. Lưu audio tạm để gửi OpenAI (cần WAV header)
-        session_id = f"{user_id}_{int(time.time())}"
-        input_filename = f"input_{session_id}.wav"
-        input_path = os.path.join(TEMP_AUDIO_DIR, input_filename)
+        logger.info(f"🎤 [ESP32] Received {len(audio_data)} bytes from {session_id}")
         
-        # Tạo WAV header
-        with wave.open(input_path, 'wb') as wav_file:
-            wav_file.setnchannels(channels)
-            wav_file.setsampwidth(2)  # 16-bit = 2 bytes
-            wav_file.setframerate(sample_rate)
-            wav_file.writeframes(audio_data)
+        # Check if it's WAV format
+        if audio_data[:4] != b'RIFF':
+            logger.error("❌ Not a valid WAV file")
+            return jsonify({'error': 'Invalid WAV format'}), 400
         
-        logger.info(f"💾 Saved input: {input_path}")
+        # Save audio to temp file for Whisper
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_audio:
+            temp_audio.write(audio_data)
+            audio_path = temp_audio.name
         
-        # 3. Gửi lên OpenAI Whisper để transcribe
-        logger.info("🎤 Transcribing...")
-        with open(input_path, 'rb') as audio_file:
-            transcription = client.audio.transcriptions.create(
-                model="whisper-1",
-                file=audio_file,
-                language="vi"  # Tiếng Việt
-            )
+        logger.info(f"💾 Saved to: {audio_path}")
         
-        transcription_text = transcription.text
-        logger.info(f"📝 Transcription: {transcription_text}")
-        
-        # 4. Gửi lên ChatGPT để có response text
-        logger.info("💬 Getting response...")
-        chat_response = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": "Bạn là trợ lý AI thân thiện, trả lời ngắn gọn bằng tiếng Việt."},
-                {"role": "user", "content": transcription_text}
-            ],
-            max_tokens=150
-        )
-        
-        response_text = chat_response.choices[0].message.content
-        logger.info(f"💭 Response: {response_text}")
-        
-        # 5. Chuyển response text thành MP3 (TTS)
-        logger.info("🔊 Generating speech...")
-        speech_response = client.audio.speech.create(
-            model="tts-1",
-            voice=OPENAI_VOICE,
-            input=response_text,
-            response_format="mp3"
-        )
-        
-        # 6. Lưu MP3 response
-        mp3_filename = f"response_{session_id}.mp3"
-        mp3_path = os.path.join(TEMP_AUDIO_DIR, mp3_filename)
-        
-        with open(mp3_path, 'wb') as mp3_file:
-            mp3_file.write(speech_response.content)
-        
-        logger.info(f"💾 Saved MP3: {mp3_path} ({len(speech_response.content)} bytes)")
-        
-        # 7. Tạo URL public cho MP3
-        audio_url = f"{request.url_root}audio/{mp3_filename}"
-        
-        logger.info(f"✅ Done! Audio URL: {audio_url}")
-        
-        # 8. Cleanup input file
+        # STEP 1: Transcribe audio to text
+        logger.info("📝 Step 1: Transcribing...")
         try:
-            os.unlink(input_path)
-        except:
-            pass
+            with open(audio_path, 'rb') as audio_file:
+                transcript = client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file,
+                    language="vi"  # Force Vietnamese
+                )
+            
+            user_text = transcript.text
+            logger.info(f"✅ Transcribed: {user_text}")
+            
+        except Exception as e:
+            logger.error(f"❌ Transcription failed: {str(e)}")
+            return jsonify({'error': f'Transcription failed: {str(e)}'}), 500
         
-        # 9. Trả về JSON response
-        return jsonify({
-            'success': True,
-            'audio_url': audio_url,
-            'transcription': transcription_text,
-            'response_text': response_text,
-            'session_id': session_id,
-            'audio_size': len(speech_response.content)
-        }), 200
+        if not user_text or len(user_text.strip()) == 0:
+            return jsonify({'error': 'Could not transcribe audio'}), 400
+        
+        # STEP 2: Get chat response
+        logger.info("💬 Step 2: Getting chat response...")
+        
+        if CONTEXT_ENABLED:
+            session_id = ConversationManager.get_or_create_session(session_id)
+            ConversationManager.add_message(session_id, "user", user_text)
+            messages = ConversationManager.get_messages(session_id)
+        else:
+            detected_lang = detect_language(user_text)
+            messages = [
+                {"role": "system", "content": get_response_template('system', detected_lang)},
+                {"role": "user", "content": user_text}
+            ]
+        
+        try:
+            chat_response = client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=messages,
+                max_tokens=MAX_TOKENS,
+                temperature=TEMPERATURE
+            )
+            
+            bot_text = chat_response.choices[0].message.content
+            logger.info(f"✅ Response: {bot_text}")
+            
+            if CONTEXT_ENABLED:
+                ConversationManager.add_message(session_id, "assistant", bot_text)
+                
+        except Exception as e:
+            logger.error(f"❌ Chat failed: {str(e)}")
+            return jsonify({'error': f'Chat failed: {str(e)}'}), 500
+        
+        # STEP 3: Convert to speech
+        logger.info("🔊 Step 3: Converting to speech...")
+        try:
+            speech_response = client.audio.speech.create(
+                model="tts-1",
+                voice=OPENAI_VOICE,
+                input=bot_text
+            )
+            
+            # Save speech to temp file
+            speech_path = Path(tempfile.gettempdir()) / f"esp32_speech_{session_id}.mp3"
+            
+            # Use with_streaming_response to avoid deprecation warning
+            with client.audio.speech.with_streaming_response.create(
+                model="tts-1",
+                voice=OPENAI_VOICE,
+                input=bot_text
+            ) as response:
+                response.stream_to_file(speech_path)
+            
+            # Read audio file
+            with open(speech_path, 'rb') as audio_file:
+                audio_bytes = audio_file.read()
+            
+            logger.info(f"✅ Generated {len(audio_bytes)} bytes of audio")
+            
+        except Exception as e:
+            logger.error(f"❌ TTS failed: {str(e)}")
+            return jsonify({'error': f'TTS failed: {str(e)}'}), 500
+        
+        # Return audio with metadata
+        # IMPORTANT: Use custom headers that nginx can pass through
+        import base64
+        
+        # Encode to base64
+        transcription_b64 = base64.b64encode(user_text.encode('utf-8')).decode('ascii')
+        response_text_b64 = base64.b64encode(bot_text.encode('utf-8')).decode('ascii')
+        
+        response = make_response(audio_bytes)
+        response.headers['Content-Type'] = 'audio/mpeg'
+        response.headers['Content-Length'] = str(len(audio_bytes))
+        
+        # Use standard headers that nginx won't strip
+        response.headers['X-Transcription-B64'] = transcription_b64
+        response.headers['X-Response-Text-B64'] = response_text_b64
+        response.headers['X-Session-ID'] = session_id
+        
+        # Also add as cookies for backup (nginx passes these)
+        response.set_cookie('transcription', transcription_b64, max_age=60)
+        response.set_cookie('response_text', response_text_b64, max_age=60)
+        
+        logger.info(f"✅ Returning {len(audio_bytes)} bytes")
+        logger.info(f"   Headers: T={transcription_b64[:20]}..., R={response_text_b64[:20]}...")
+        
+        return response
         
     except Exception as e:
         logger.error(f"❌ Error in voice_chat: {str(e)}")
         import traceback
         traceback.print_exc()
-        
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-
-@app.route('/audio/<filename>')
-def serve_audio(filename):
-    """Serve audio files từ thư mục tạm"""
-    try:
-        return send_from_directory(
-            TEMP_AUDIO_DIR, 
-            filename, 
-            mimetype='audio/mpeg',
-            as_attachment=False
-        )
-    except FileNotFoundError:
-        return jsonify({'error': 'File not found'}), 404
-
-
-@app.route('/api/cleanup')
-def cleanup_old_files():
-    """Xóa các file audio cũ hơn 1 giờ"""
-    try:
-        current_time = time.time()
-        deleted = 0
-        
-        for filename in os.listdir(TEMP_AUDIO_DIR):
-            filepath = os.path.join(TEMP_AUDIO_DIR, filename)
-            
-            # Xóa file cũ hơn 3600 giây (1 giờ)
-            if os.path.isfile(filepath):
-                file_age = current_time - os.path.getmtime(filepath)
-                if file_age > 3600:
-                    os.remove(filepath)
-                    deleted += 1
-        
-        return jsonify({
-            'success': True,
-            'deleted_files': deleted
-        })
-        
-    except Exception as e:
         return jsonify({'error': str(e)}), 500
-
+        
+    finally:
+        # Cleanup temp files
+        try:
+            if audio_path and os.path.exists(audio_path):
+                os.unlink(audio_path)
+            if speech_path and os.path.exists(speech_path):
+                os.unlink(speech_path)
+        except Exception as e:
+            logger.error(f"⚠️  Cleanup error: {str(e)}")
 
 @app.route('/api/health', methods=['GET'])
 def health():
@@ -572,12 +571,8 @@ def health():
         'language': OPENAI_LANGUAGE,
         'api_key_configured': bool(OPENAI_API_KEY),
         'context_enabled': CONTEXT_ENABLED,
-        'active_sessions': len(conversations),
-        'audio_directory': TEMP_AUDIO_DIR
+        'active_sessions': len(conversations)
     })
 
 if __name__ == '__main__':
-    logger.info("🚀 Starting Voice Chat Server...")
-    logger.info(f"📁 Audio directory: {TEMP_AUDIO_DIR}")
-    
     app.run(host='0.0.0.0', port=PORT, debug=(LOG_LEVEL == 'DEBUG'))
