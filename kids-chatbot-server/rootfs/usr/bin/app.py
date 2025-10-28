@@ -403,55 +403,59 @@ def voice():
 
 @app.route('/api/voice-chat', methods=['POST'])
 def voice_chat():
-    """Handle voice chat - receive audio, return audio"""
+    """
+    Complete voice chat flow for ESP32:
+    Audio IN → Transcribe → Chat → TTS → Audio OUT
+    """
     if not client:
         return jsonify({'error': 'OpenAI API key not configured'}), 500
     
     try:
-        # Get session ID
-        session_id = request.headers.get('X-Session-ID') or request.headers.get('X-User-ID')
+        # Get session ID from header
+        session_id = request.headers.get('X-User-ID', 'anonymous')
         
-        # Get audio data
+        # Get raw audio data from ESP32
         audio_data = request.data
         
         if len(audio_data) == 0:
-            return jsonify({'error': 'No audio data'}), 400
+            return jsonify({'error': 'No audio data received'}), 400
         
-        logger.info(f"📥 Received {len(audio_data)} bytes of audio")
+        logger.info(f"🎤 [ESP32] Received {len(audio_data)} bytes from {session_id}")
         
-        # Save to temp file for Whisper
+        # Save audio to temp file for Whisper
         with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_audio:
             temp_audio.write(audio_data)
-            temp_path = temp_audio.name
+            audio_path = temp_audio.name
         
         try:
-            # 1. Transcribe audio
-            logger.info("🎤 Transcribing audio...")
-            with open(temp_path, 'rb') as audio_file:
+            # STEP 1: Transcribe audio to text
+            logger.info("📝 Step 1: Transcribing...")
+            with open(audio_path, 'rb') as audio_file:
                 transcript = client.audio.transcriptions.create(
                     model="whisper-1",
                     file=audio_file,
                 )
             
-            user_message = transcript.text
-            logger.info(f"📝 Transcribed: {user_message}")
+            user_text = transcript.text
+            logger.info(f"✅ Transcribed: {user_text}")
             
-            if not user_message:
+            if not user_text:
                 return jsonify({'error': 'Could not transcribe audio'}), 400
             
-            # 2. Get or create session
+            # STEP 2: Get chat response
+            logger.info("💬 Step 2: Getting chat response...")
+            
             if CONTEXT_ENABLED:
                 session_id = ConversationManager.get_or_create_session(session_id)
-                ConversationManager.add_message(session_id, "user", user_message)
+                ConversationManager.add_message(session_id, "user", user_text)
                 messages = ConversationManager.get_messages(session_id)
             else:
+                detected_lang = detect_language(user_text)
                 messages = [
-                    {"role": "system", "content": get_response_template('system', 'auto')},
-                    {"role": "user", "content": user_message}
+                    {"role": "system", "content": get_response_template('system', detected_lang)},
+                    {"role": "user", "content": user_text}
                 ]
             
-            # 3. Get ChatGPT response
-            logger.info("🤖 Getting ChatGPT response...")
             chat_response = client.chat.completions.create(
                 model=OPENAI_MODEL,
                 messages=messages,
@@ -459,22 +463,22 @@ def voice_chat():
                 temperature=TEMPERATURE
             )
             
-            assistant_message = chat_response.choices[0].message.content
-            logger.info(f"💬 Response: {assistant_message}")
+            bot_text = chat_response.choices[0].message.content
+            logger.info(f"✅ Response: {bot_text}")
             
             if CONTEXT_ENABLED:
-                ConversationManager.add_message(session_id, "assistant", assistant_message)
+                ConversationManager.add_message(session_id, "assistant", bot_text)
             
-            # 4. Convert response to speech
-            logger.info("🔊 Converting to speech...")
+            # STEP 3: Convert to speech
+            logger.info("🔊 Step 3: Converting to speech...")
             speech_response = client.audio.speech.create(
                 model="tts-1",
                 voice=OPENAI_VOICE,
-                input=assistant_message
+                input=bot_text
             )
             
             # Save speech to temp file
-            speech_path = Path("/tmp/speech_response.mp3")
+            speech_path = Path("/tmp/esp32_speech.mp3")
             speech_response.stream_to_file(speech_path)
             
             # Read audio file
@@ -486,20 +490,21 @@ def voice_chat():
             # Return audio with metadata in headers
             response = make_response(audio_bytes)
             response.headers['Content-Type'] = 'audio/mpeg'
-            response.headers['X-Transcription'] = user_message
-            response.headers['X-Response-Text'] = assistant_message
+            response.headers['X-Transcription'] = user_text
+            response.headers['X-Response-Text'] = bot_text
             response.headers['X-Session-ID'] = session_id
             
             return response
             
         finally:
             # Cleanup temp files
-            os.unlink(temp_path)
+            if os.path.exists(audio_path):
+                os.unlink(audio_path)
             if os.path.exists(speech_path):
                 os.unlink(speech_path)
     
     except Exception as e:
-        logger.error(f"Error in voice_chat: {str(e)}")
+        logger.error(f"❌ Error in voice_chat: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/health', methods=['GET'])
