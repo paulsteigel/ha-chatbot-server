@@ -403,170 +403,44 @@ def voice():
             'error': str(e)
         }), 500
 
-import gzip
-import io
-
 @app.route('/api/voice-chat', methods=['POST'])
 def voice_chat():
-    """
-    Complete voice chat flow for ESP32 với GZIP compression:
-    Audio IN (GZIP) → Decompress → Transcribe → Chat → TTS → MP3 Stream OUT
-    """
-    if not client:
-        return jsonify({'error': 'OpenAI API key not configured'}), 500
+    """Voice chat với MP3 URL response"""
     
-    audio_path = None
-    speech_path = None
+    # ... (giữ nguyên phần xử lý audio input)
     
     try:
-        # Get session ID and metadata from headers
-        session_id = request.headers.get('X-User-ID', 'anonymous')
-        sample_rate = int(request.headers.get('X-Sample-Rate', '16000'))
-        channels = int(request.headers.get('X-Channels', '1'))
-        is_compressed = request.headers.get('X-Compressed', 'false').lower() == 'true'
+        # Generate speech MP3
+        speech_response = client.audio.speech.create(
+            model="tts-1",
+            voice=OPENAI_VOICE,
+            input=bot_text,
+            response_format="mp3"
+        )
         
-        # Get raw audio data from ESP32
-        audio_data = request.data
+        # ✅ Lưu MP3 vào folder public
+        mp3_filename = f"speech_{session_id}_{int(time.time())}.mp3"
+        mp3_path = Path("/usr/bin/static/audio") / mp3_filename
         
-        if len(audio_data) == 0:
-            return jsonify({'error': 'No audio data received'}), 400
+        # Tạo folder nếu chưa có
+        mp3_path.parent.mkdir(parents=True, exist_ok=True)
         
-        logger.info(f"🎤 [ESP32] Received {len(audio_data)} bytes from {session_id}")
-        logger.info(f"   Sample Rate: {sample_rate}Hz, Channels: {channels}, Compressed: {is_compressed}")
+        speech_response.stream_to_file(mp3_path)
         
-        # ✅ STEP 0: Decompress if needed
-        if is_compressed:
-            try:
-                logger.info("📦 Decompressing GZIP data...")
-                audio_data = gzip.decompress(audio_data)
-                logger.info(f"✅ Decompressed to {len(audio_data)} bytes")
-            except Exception as e:
-                logger.error(f"❌ Decompression failed: {str(e)}")
-                return jsonify({'error': 'Invalid GZIP data'}), 400
+        # ✅ Trả về JSON với URL
+        audio_url = f"{serverUrl}/static/audio/{mp3_filename}"
         
-        # Convert raw PCM to WAV format for Whisper
-        import wave
-        import struct
-        
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav', mode='wb') as temp_audio:
-            with wave.open(temp_audio, 'wb') as wav_file:
-                wav_file.setnchannels(channels)
-                wav_file.setsampwidth(2)  # 16-bit
-                wav_file.setframerate(sample_rate)
-                wav_file.writeframes(audio_data)
-            
-            audio_path = temp_audio.name
-        
-        logger.info(f"💾 Converted to WAV: {audio_path}")
-        
-        # STEP 1: Transcribe audio to text
-        logger.info("📝 Step 1: Transcribing...")
-        try:
-            with open(audio_path, 'rb') as audio_file:
-                transcript = client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file,
-                    language="vi"  # Vietnamese
-                )
-            
-            user_text = transcript.text
-            logger.info(f"✅ Transcribed: {user_text}")
-            
-        except Exception as e:
-            logger.error(f"❌ Transcription failed: {str(e)}")
-            return jsonify({'error': f'Transcription failed: {str(e)}'}), 500
-        
-        if not user_text or len(user_text.strip()) == 0:
-            return jsonify({'error': 'Could not transcribe audio'}), 400
-        
-        # STEP 2: Get chat response
-        logger.info("💬 Step 2: Getting chat response...")
-        
-        if CONTEXT_ENABLED:
-            session_id = ConversationManager.get_or_create_session(session_id)
-            ConversationManager.add_message(session_id, "user", user_text)
-            messages = ConversationManager.get_messages(session_id)
-        else:
-            detected_lang = detect_language(user_text)
-            messages = [
-                {"role": "system", "content": get_response_template('system', detected_lang)},
-                {"role": "user", "content": user_text}
-            ]
-        
-        try:
-            chat_response = client.chat.completions.create(
-                model=OPENAI_MODEL,
-                messages=messages,
-                max_tokens=MAX_TOKENS,
-                temperature=TEMPERATURE
-            )
-            
-            bot_text = chat_response.choices[0].message.content
-            logger.info(f"✅ Response: {bot_text}")
-            
-            if CONTEXT_ENABLED:
-                ConversationManager.add_message(session_id, "assistant", bot_text)
-                
-        except Exception as e:
-            logger.error(f"❌ Chat failed: {str(e)}")
-            return jsonify({'error': f'Chat failed: {str(e)}'}), 500
-        
-        # STEP 3: Convert to speech (MP3)
-        logger.info("🔊 Step 3: Converting to speech...")
-        try:
-            speech_response = client.audio.speech.create(
-                model="tts-1",
-                voice=OPENAI_VOICE,
-                input=bot_text,
-                response_format="mp3"
-            )
-            
-            # Save to temp file
-            speech_path = Path(tempfile.gettempdir()) / f"esp32_speech_{session_id}.mp3"
-            speech_response.stream_to_file(speech_path)
-            
-            # Read MP3 file
-            with open(speech_path, 'rb') as audio_file:
-                audio_bytes = audio_file.read()
-            
-            logger.info(f"✅ Generated {len(audio_bytes)} bytes MP3")
-            
-        except Exception as e:
-            logger.error(f"❌ TTS failed: {str(e)}")
-            return jsonify({'error': f'TTS failed: {str(e)}'}), 500
-        
-        # Return MP3 audio with metadata in headers
-        import base64
-        
-        transcription_b64 = base64.b64encode(user_text.encode('utf-8')).decode('ascii')
-        response_text_b64 = base64.b64encode(bot_text.encode('utf-8')).decode('ascii')
-        
-        response = make_response(audio_bytes)
-        response.headers['Content-Type'] = 'audio/mpeg'
-        response.headers['Content-Length'] = str(len(audio_bytes))
-        response.headers['X-Transcription'] = transcription_b64
-        response.headers['X-Response-Text'] = response_text_b64
-        response.headers['X-Session-ID'] = session_id
-        
-        logger.info(f"✅ Returning {len(audio_bytes)} bytes MP3")
-        
-        return response
+        return jsonify({
+            'success': True,
+            'audio_url': audio_url,
+            'transcription': user_text,
+            'response_text': bot_text,
+            'session_id': session_id
+        })
         
     except Exception as e:
-        logger.error(f"❌ Error in voice_chat: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"❌ Error: {str(e)}")
         return jsonify({'error': str(e)}), 500
-        
-    finally:
-        # Cleanup
-        try:
-            if audio_path and os.path.exists(audio_path):
-                os.unlink(audio_path)
-            if speech_path and os.path.exists(speech_path):
-                os.unlink(speech_path)
-        except Exception as e:
-            logger.error(f"⚠️  Cleanup error: {str(e)}")
 
 @app.route('/api/health', methods=['GET'])
 def health():
