@@ -4,6 +4,7 @@ import logging
 import tempfile
 import secrets
 import wave
+import time
 from datetime import datetime, timedelta
 from flask import Flask, request, make_response, jsonify, send_from_directory
 from flask_cors import CORS
@@ -39,12 +40,17 @@ CONTEXT_ENABLED = os.getenv("CONTEXT_ENABLED", "true").lower() == "true"
 CONTEXT_MAX_MESSAGES = int(os.getenv("CONTEXT_MAX_MESSAGES", "20"))
 CONTEXT_TIMEOUT_MINUTES = int(os.getenv("CONTEXT_TIMEOUT_MINUTES", "30"))
 
+# ✅ THÊM DÒNG NÀY - Audio storage directory
+TEMP_AUDIO_DIR = os.getenv("TEMP_AUDIO_DIR", "/tmp/audio")
+os.makedirs(TEMP_AUDIO_DIR, exist_ok=True)
+
 logger.info(f"Starting Yên Hoà ChatBot Server")
 logger.info(f"Model: {OPENAI_MODEL}")
 logger.info(f"Voice: {OPENAI_VOICE}")
 logger.info(f"Language: {OPENAI_LANGUAGE}")
 logger.info(f"Context Enabled: {CONTEXT_ENABLED}")
 logger.info(f"Max Context Messages: {CONTEXT_MAX_MESSAGES}")
+logger.info(f"Audio Directory: {TEMP_AUDIO_DIR}")
 logger.info(f"Port: {PORT}")
 
 # Validate API key
@@ -403,62 +409,9 @@ def voice():
         }), 500
 
 # ============================================================
-# ✨ Helper functions
+# ESP32 VOICE CHAT ENDPOINT
 # ============================================================
 
-def pcm_to_wav(pcm_data, sample_rate, channels=1, sample_width=2):
-    """
-    Convert raw PCM data to WAV format
-    
-    Args:
-        pcm_data: Raw PCM bytes
-        sample_rate: Sample rate (8000 or 16000)
-        channels: Number of channels (1=mono, 2=stereo)
-        sample_width: Bytes per sample (2 for 16-bit)
-    
-    Returns:
-        bytes: WAV formatted audio
-    """
-    import io
-    
-    wav_buffer = io.BytesIO()
-    
-    with wave.open(wav_buffer, 'wb') as wav_file:
-        wav_file.setnchannels(channels)
-        wav_file.setsampwidth(sample_width)
-        wav_file.setframerate(sample_rate)
-        wav_file.writeframes(pcm_data)
-    
-    return wav_buffer.getvalue()
-
-def generate_error_response(error_text, session_id):
-    """Generate error speech response"""
-    try:
-        import base64
-        speech_path = Path(tempfile.gettempdir()) / f"error_{session_id}.mp3"
-        
-        with client.audio.speech.with_streaming_response.create(
-            model="tts-1",
-            voice=OPENAI_VOICE,
-            input=error_text,
-            response_format="mp3"
-        ) as response:
-            response.stream_to_file(speech_path)
-        
-        with open(speech_path, 'rb') as f:
-            audio_bytes = f.read()
-        
-        os.unlink(speech_path)
-        
-        response = make_response(audio_bytes)
-        response.headers['Content-Type'] = 'audio/mpeg'
-        response.headers['X-Response-Text-B64'] = base64.b64encode(error_text.encode('utf-8')).decode('ascii')
-        return response
-        
-    except Exception as e:
-        logger.error(f"Error generating error response: {e}")
-        return jsonify({'error': error_text}), 500
-        
 @app.route('/api/voice-chat', methods=['POST'])
 def voice_chat():
     """
@@ -466,15 +419,18 @@ def voice_chat():
     Input: Raw audio data (8kHz, 16-bit, mono)
     Output: JSON với URL của file MP3 response
     """
+    if not client:
+        return jsonify({'error': 'OpenAI API key not configured'}), 500
+    
     try:
         # 1. Lấy audio data từ request
         audio_data = request.data
         user_id = request.headers.get('X-User-ID', 'unknown')
-        sample_rate = request.headers.get('X-Sample-Rate', '8000')
-        channels = request.headers.get('X-Channels', '1')
+        sample_rate = int(request.headers.get('X-Sample-Rate', '8000'))
+        channels = int(request.headers.get('X-Channels', '1'))
         
-        print(f"📥 Received audio: {len(audio_data)} bytes from {user_id}")
-        print(f"   Sample rate: {sample_rate}Hz, Channels: {channels}")
+        logger.info(f"📥 Received audio: {len(audio_data)} bytes from {user_id}")
+        logger.info(f"   Sample rate: {sample_rate}Hz, Channels: {channels}")
         
         # 2. Lưu audio tạm để gửi OpenAI (cần WAV header)
         session_id = f"{user_id}_{int(time.time())}"
@@ -482,17 +438,16 @@ def voice_chat():
         input_path = os.path.join(TEMP_AUDIO_DIR, input_filename)
         
         # Tạo WAV header
-        import wave
         with wave.open(input_path, 'wb') as wav_file:
-            wav_file.setnchannels(int(channels))
+            wav_file.setnchannels(channels)
             wav_file.setsampwidth(2)  # 16-bit = 2 bytes
-            wav_file.setframerate(int(sample_rate))
+            wav_file.setframerate(sample_rate)
             wav_file.writeframes(audio_data)
         
-        print(f"💾 Saved input: {input_path}")
+        logger.info(f"💾 Saved input: {input_path}")
         
         # 3. Gửi lên OpenAI Whisper để transcribe
-        print("🎤 Transcribing...")
+        logger.info("🎤 Transcribing...")
         with open(input_path, 'rb') as audio_file:
             transcription = client.audio.transcriptions.create(
                 model="whisper-1",
@@ -501,12 +456,12 @@ def voice_chat():
             )
         
         transcription_text = transcription.text
-        print(f"📝 Transcription: {transcription_text}")
+        logger.info(f"📝 Transcription: {transcription_text}")
         
         # 4. Gửi lên ChatGPT để có response text
-        print("💬 Getting response...")
+        logger.info("💬 Getting response...")
         chat_response = client.chat.completions.create(
-            model="gpt-4",
+            model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": "Bạn là trợ lý AI thân thiện, trả lời ngắn gọn bằng tiếng Việt."},
                 {"role": "user", "content": transcription_text}
@@ -515,13 +470,13 @@ def voice_chat():
         )
         
         response_text = chat_response.choices[0].message.content
-        print(f"💭 Response: {response_text}")
+        logger.info(f"💭 Response: {response_text}")
         
         # 5. Chuyển response text thành MP3 (TTS)
-        print("🔊 Generating speech...")
+        logger.info("🔊 Generating speech...")
         speech_response = client.audio.speech.create(
             model="tts-1",
-            voice="nova",  # nova, alloy, echo, fable, onyx, shimmer
+            voice=OPENAI_VOICE,
             input=response_text,
             response_format="mp3"
         )
@@ -533,15 +488,20 @@ def voice_chat():
         with open(mp3_path, 'wb') as mp3_file:
             mp3_file.write(speech_response.content)
         
-        print(f"💾 Saved MP3: {mp3_path} ({len(speech_response.content)} bytes)")
+        logger.info(f"💾 Saved MP3: {mp3_path} ({len(speech_response.content)} bytes)")
         
         # 7. Tạo URL public cho MP3
-        # Giả sử server chạy tại https://school.sfdp.net
         audio_url = f"{request.url_root}audio/{mp3_filename}"
         
-        print(f"✅ Done! Audio URL: {audio_url}")
+        logger.info(f"✅ Done! Audio URL: {audio_url}")
         
-        # 8. Trả về JSON response
+        # 8. Cleanup input file
+        try:
+            os.unlink(input_path)
+        except:
+            pass
+        
+        # 9. Trả về JSON response
         return jsonify({
             'success': True,
             'audio_url': audio_url,
@@ -552,7 +512,7 @@ def voice_chat():
         }), 200
         
     except Exception as e:
-        print(f"❌ Error: {str(e)}")
+        logger.error(f"❌ Error in voice_chat: {str(e)}")
         import traceback
         traceback.print_exc()
         
@@ -564,9 +524,7 @@ def voice_chat():
 
 @app.route('/audio/<filename>')
 def serve_audio(filename):
-    """
-    Serve audio files từ thư mục tạm
-    """
+    """Serve audio files từ thư mục tạm"""
     try:
         return send_from_directory(
             TEMP_AUDIO_DIR, 
@@ -577,12 +535,10 @@ def serve_audio(filename):
     except FileNotFoundError:
         return jsonify({'error': 'File not found'}), 404
 
-# Cleanup old files (chạy định kỳ)
+
 @app.route('/api/cleanup')
 def cleanup_old_files():
-    """
-    Xóa các file audio cũ hơn 1 giờ
-    """
+    """Xóa các file audio cũ hơn 1 giờ"""
     try:
         current_time = time.time()
         deleted = 0
@@ -606,46 +562,6 @@ def cleanup_old_files():
         return jsonify({'error': str(e)}), 500
 
 
-if __name__ == '__main__':
-    print("🚀 Starting Voice Chat Server...")
-    print(f"📁 Audio directory: {TEMP_AUDIO_DIR}")
-    
-    # Chạy server
-    app.run(
-        host='0.0.0.0',
-        port=5000,
-        debug=True,
-        ssl_context=('cert.pem', 'key.pem')  # Nếu dùng HTTPS
-    )
-
-def generate_error_response(error_text, session_id):
-    """Generate error speech response"""
-    try:
-        import base64
-        speech_path = Path(tempfile.gettempdir()) / f"error_{session_id}.mp3"
-        
-        with client.audio.speech.with_streaming_response.create(
-            model="tts-1",
-            voice=OPENAI_VOICE,
-            input=error_text,
-            response_format="mp3"
-        ) as response:
-            response.stream_to_file(speech_path)
-        
-        with open(speech_path, 'rb') as f:
-            audio_bytes = f.read()
-        
-        os.unlink(speech_path)
-        
-        response = make_response(audio_bytes)
-        response.headers['Content-Type'] = 'audio/mpeg'
-        response.headers['X-Response-Text-B64'] = base64.b64encode(error_text.encode('utf-8')).decode('ascii')
-        return response
-        
-    except Exception as e:
-        logger.error(f"Error generating error response: {e}")
-        return jsonify({'error': error_text}), 500
-
 @app.route('/api/health', methods=['GET'])
 def health():
     """Health check endpoint"""
@@ -656,8 +572,12 @@ def health():
         'language': OPENAI_LANGUAGE,
         'api_key_configured': bool(OPENAI_API_KEY),
         'context_enabled': CONTEXT_ENABLED,
-        'active_sessions': len(conversations)
+        'active_sessions': len(conversations),
+        'audio_directory': TEMP_AUDIO_DIR
     })
 
 if __name__ == '__main__':
+    logger.info("🚀 Starting Voice Chat Server...")
+    logger.info(f"📁 Audio directory: {TEMP_AUDIO_DIR}")
+    
     app.run(host='0.0.0.0', port=PORT, debug=(LOG_LEVEL == 'DEBUG'))
