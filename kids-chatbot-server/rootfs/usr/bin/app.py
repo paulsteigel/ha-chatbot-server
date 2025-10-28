@@ -10,6 +10,8 @@ from openai import OpenAI
 from pathlib import Path
 import gzip
 import io
+import wave
+import struct
 
 # Set up logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -405,12 +407,85 @@ def voice():
 
 @app.route('/api/voice-chat', methods=['POST'])
 def voice_chat():
-    """Voice chat với MP3 URL response"""
+    """
+    Voice chat cho ESP32:
+    RAW PCM → WAV → Whisper → GPT → TTS → MP3 URL
+    """
+    if not client:
+        return jsonify({'error': 'OpenAI API key not configured'}), 500
     
-    # ... (giữ nguyên phần xử lý audio input)
+    audio_path = None
+    speech_path = None
     
     try:
-        # Generate speech MP3
+        session_id = request.headers.get('X-User-ID', 'anonymous')
+        sample_rate = int(request.headers.get('X-Sample-Rate', '16000'))
+        channels = int(request.headers.get('X-Channels', '1'))
+        
+        audio_data = request.data
+        
+        if len(audio_data) == 0:
+            return jsonify({'error': 'No audio data'}), 400
+        
+        logger.info(f"🎤 [ESP32] Received {len(audio_data)} bytes from {session_id}")
+        
+        # Convert PCM to WAV
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav', mode='wb') as temp_audio:
+            with wave.open(temp_audio, 'wb') as wav_file:
+                wav_file.setnchannels(channels)
+                wav_file.setsampwidth(2)  # 16-bit
+                wav_file.setframerate(sample_rate)
+                wav_file.writeframes(audio_data)
+            
+            audio_path = temp_audio.name
+        
+        logger.info(f"💾 Converted to WAV: {audio_path}")
+        
+        # STEP 1: Transcribe
+        logger.info("📝 Transcribing...")
+        with open(audio_path, 'rb') as audio_file:
+            transcript = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file,
+                language="vi"
+            )
+        
+        user_text = transcript.text
+        logger.info(f"✅ Transcribed: {user_text}")
+        
+        if not user_text or len(user_text.strip()) == 0:
+            return jsonify({'error': 'Empty transcription'}), 400
+        
+        # STEP 2: Get chat response
+        logger.info("💬 Getting chat response...")
+        
+        if CONTEXT_ENABLED:
+            session_id = ConversationManager.get_or_create_session(session_id)
+            ConversationManager.add_message(session_id, "user", user_text)
+            messages = ConversationManager.get_messages(session_id)
+        else:
+            detected_lang = detect_language(user_text)
+            messages = [
+                {"role": "system", "content": get_response_template('system', detected_lang)},
+                {"role": "user", "content": user_text}
+            ]
+        
+        chat_response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=messages,
+            max_tokens=MAX_TOKENS,
+            temperature=TEMPERATURE
+        )
+        
+        bot_text = chat_response.choices[0].message.content
+        logger.info(f"✅ Response: {bot_text}")
+        
+        if CONTEXT_ENABLED:
+            ConversationManager.add_message(session_id, "assistant", bot_text)
+        
+        # STEP 3: Generate speech MP3
+        logger.info("🔊 Generating speech...")
+        
         speech_response = client.audio.speech.create(
             model="tts-1",
             voice=OPENAI_VOICE,
@@ -418,18 +493,21 @@ def voice_chat():
             response_format="mp3"
         )
         
-        # ✅ Lưu MP3 vào folder public
+        # Save MP3 to static folder
+        import time
         mp3_filename = f"speech_{session_id}_{int(time.time())}.mp3"
         mp3_path = Path("/usr/bin/static/audio") / mp3_filename
         
-        # Tạo folder nếu chưa có
         mp3_path.parent.mkdir(parents=True, exist_ok=True)
         
         speech_response.stream_to_file(mp3_path)
         
-        # ✅ Trả về JSON với URL
+        # Generate public URL
         audio_url = f"{serverUrl}/static/audio/{mp3_filename}"
         
+        logger.info(f"✅ MP3 saved: {audio_url}")
+        
+        # Return JSON with audio URL
         return jsonify({
             'success': True,
             'audio_url': audio_url,
@@ -440,7 +518,13 @@ def voice_chat():
         
     except Exception as e:
         logger.error(f"❌ Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+        
+    finally:
+        if audio_path and os.path.exists(audio_path):
+            os.unlink(audio_path)
 
 @app.route('/api/health', methods=['GET'])
 def health():
