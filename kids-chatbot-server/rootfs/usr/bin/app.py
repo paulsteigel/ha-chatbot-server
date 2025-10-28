@@ -4,7 +4,7 @@ import logging
 import tempfile
 import secrets
 from datetime import datetime, timedelta
-from flask import Flask, request, make_response, jsonify, send_from_directory
+from flask import Flask, request, make_response, generate_error_response, jsonify, send_from_directory
 from flask_cors import CORS
 from openai import OpenAI
 from pathlib import Path
@@ -401,166 +401,63 @@ def voice():
             'error': str(e)
         }), 500
 
-@app.route('/api/voice-chat', methods=['POST'])
-def voice_chat():
+# ============================================================
+# ✨ Helper functions
+# ============================================================
+
+def pcm_to_wav(pcm_data, sample_rate, channels=1, sample_width=2):
     """
-    Complete voice chat flow for ESP32:
-    Audio IN → Transcribe → Chat → TTS → Audio OUT
+    Convert raw PCM data to WAV format
+    
+    Args:
+        pcm_data: Raw PCM bytes
+        sample_rate: Sample rate (8000 or 16000)
+        channels: Number of channels (1=mono, 2=stereo)
+        sample_width: Bytes per sample (2 for 16-bit)
+    
+    Returns:
+        bytes: WAV formatted audio
     """
-    if not client:
-        return jsonify({'error': 'OpenAI API key not configured'}), 500
+    import io
     
-    audio_path = None
-    speech_path = None
+    wav_buffer = io.BytesIO()
     
+    with wave.open(wav_buffer, 'wb') as wav_file:
+        wav_file.setnchannels(channels)
+        wav_file.setsampwidth(sample_width)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(pcm_data)
+    
+    return wav_buffer.getvalue()
+
+def generate_error_response(error_text, session_id):
+    """Generate error speech response"""
     try:
-        # Get session ID from header
-        session_id = request.headers.get('X-User-ID', 'anonymous')
-        
-        # Get raw audio data from ESP32
-        audio_data = request.data
-        
-        if len(audio_data) == 0:
-            return jsonify({'error': 'No audio data received'}), 400
-        
-        logger.info(f"🎤 [ESP32] Received {len(audio_data)} bytes from {session_id}")
-        
-        # Check if it's WAV format
-        if audio_data[:4] != b'RIFF':
-            logger.error("❌ Not a valid WAV file")
-            return jsonify({'error': 'Invalid WAV format'}), 400
-        
-        # Save audio to temp file for Whisper
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_audio:
-            temp_audio.write(audio_data)
-            audio_path = temp_audio.name
-        
-        logger.info(f"💾 Saved to: {audio_path}")
-        
-        # STEP 1: Transcribe audio to text
-        logger.info("📝 Step 1: Transcribing...")
-        try:
-            with open(audio_path, 'rb') as audio_file:
-                transcript = client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file,
-                    language="vi"  # Force Vietnamese
-                )
-            
-            user_text = transcript.text
-            logger.info(f"✅ Transcribed: {user_text}")
-            
-        except Exception as e:
-            logger.error(f"❌ Transcription failed: {str(e)}")
-            return jsonify({'error': f'Transcription failed: {str(e)}'}), 500
-        
-        if not user_text or len(user_text.strip()) == 0:
-            return jsonify({'error': 'Could not transcribe audio'}), 400
-        
-        # STEP 2: Get chat response
-        logger.info("💬 Step 2: Getting chat response...")
-        
-        if CONTEXT_ENABLED:
-            session_id = ConversationManager.get_or_create_session(session_id)
-            ConversationManager.add_message(session_id, "user", user_text)
-            messages = ConversationManager.get_messages(session_id)
-        else:
-            detected_lang = detect_language(user_text)
-            messages = [
-                {"role": "system", "content": get_response_template('system', detected_lang)},
-                {"role": "user", "content": user_text}
-            ]
-        
-        try:
-            chat_response = client.chat.completions.create(
-                model=OPENAI_MODEL,
-                messages=messages,
-                max_tokens=MAX_TOKENS,
-                temperature=TEMPERATURE
-            )
-            
-            bot_text = chat_response.choices[0].message.content
-            logger.info(f"✅ Response: {bot_text}")
-            
-            if CONTEXT_ENABLED:
-                ConversationManager.add_message(session_id, "assistant", bot_text)
-                
-        except Exception as e:
-            logger.error(f"❌ Chat failed: {str(e)}")
-            return jsonify({'error': f'Chat failed: {str(e)}'}), 500
-        
-        # STEP 3: Convert to speech
-        logger.info("🔊 Step 3: Converting to speech...")
-        try:
-            speech_response = client.audio.speech.create(
-                model="tts-1",
-                voice=OPENAI_VOICE,
-                input=bot_text
-            )
-            
-            # Save speech to temp file
-            speech_path = Path(tempfile.gettempdir()) / f"esp32_speech_{session_id}.mp3"
-            
-            # Use with_streaming_response to avoid deprecation warning
-            with client.audio.speech.with_streaming_response.create(
-                model="tts-1",
-                voice=OPENAI_VOICE,
-                input=bot_text
-            ) as response:
-                response.stream_to_file(speech_path)
-            
-            # Read audio file
-            with open(speech_path, 'rb') as audio_file:
-                audio_bytes = audio_file.read()
-            
-            logger.info(f"✅ Generated {len(audio_bytes)} bytes of audio")
-            
-        except Exception as e:
-            logger.error(f"❌ TTS failed: {str(e)}")
-            return jsonify({'error': f'TTS failed: {str(e)}'}), 500
-        
-        # Return audio with metadata
-        # IMPORTANT: Use custom headers that nginx can pass through
         import base64
+        speech_path = Path(tempfile.gettempdir()) / f"error_{session_id}.mp3"
         
-        # Encode to base64
-        transcription_b64 = base64.b64encode(user_text.encode('utf-8')).decode('ascii')
-        response_text_b64 = base64.b64encode(bot_text.encode('utf-8')).decode('ascii')
+        with client.audio.speech.with_streaming_response.create(
+            model="tts-1",
+            voice=OPENAI_VOICE,
+            input=error_text,
+            response_format="mp3"
+        ) as response:
+            response.stream_to_file(speech_path)
+        
+        with open(speech_path, 'rb') as f:
+            audio_bytes = f.read()
+        
+        os.unlink(speech_path)
         
         response = make_response(audio_bytes)
         response.headers['Content-Type'] = 'audio/mpeg'
-        response.headers['Content-Length'] = str(len(audio_bytes))
-        
-        # Use standard headers that nginx won't strip
-        response.headers['X-Transcription-B64'] = transcription_b64
-        response.headers['X-Response-Text-B64'] = response_text_b64
-        response.headers['X-Session-ID'] = session_id
-        
-        # Also add as cookies for backup (nginx passes these)
-        response.set_cookie('transcription', transcription_b64, max_age=60)
-        response.set_cookie('response_text', response_text_b64, max_age=60)
-        
-        logger.info(f"✅ Returning {len(audio_bytes)} bytes")
-        logger.info(f"   Headers: T={transcription_b64[:20]}..., R={response_text_b64[:20]}...")
-        
+        response.headers['X-Response-Text-B64'] = base64.b64encode(error_text.encode('utf-8')).decode('ascii')
         return response
         
     except Exception as e:
-        logger.error(f"❌ Error in voice_chat: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error generating error response: {e}")
+        return jsonify({'error': error_text}), 500
         
-    finally:
-        # Cleanup temp files
-        try:
-            if audio_path and os.path.exists(audio_path):
-                os.unlink(audio_path)
-            if speech_path and os.path.exists(speech_path):
-                os.unlink(speech_path)
-        except Exception as e:
-            logger.error(f"⚠️  Cleanup error: {str(e)}")
-
 @app.route('/api/health', methods=['GET'])
 def health():
     """Health check endpoint"""
