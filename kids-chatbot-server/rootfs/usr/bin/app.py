@@ -520,19 +520,28 @@ def voice_chat():
             return jsonify({'error': f'TTS failed: {str(e)}'}), 500
         
         # Return audio with metadata
-        # IMPORTANT: Encode Vietnamese text to base64 to avoid latin-1 error
+        # IMPORTANT: Use custom headers that nginx can pass through
         import base64
+        
+        # Encode to base64
+        transcription_b64 = base64.b64encode(user_text.encode('utf-8')).decode('ascii')
+        response_text_b64 = base64.b64encode(bot_text.encode('utf-8')).decode('ascii')
         
         response = make_response(audio_bytes)
         response.headers['Content-Type'] = 'audio/mpeg'
         response.headers['Content-Length'] = str(len(audio_bytes))
         
-        # Encode Vietnamese text as base64
-        response.headers['X-Transcription-B64'] = base64.b64encode(user_text.encode('utf-8')).decode('ascii')
-        response.headers['X-Response-Text-B64'] = base64.b64encode(bot_text.encode('utf-8')).decode('ascii')
+        # Use standard headers that nginx won't strip
+        response.headers['X-Transcription-B64'] = transcription_b64
+        response.headers['X-Response-Text-B64'] = response_text_b64
         response.headers['X-Session-ID'] = session_id
         
+        # Also add as cookies for backup (nginx passes these)
+        response.set_cookie('transcription', transcription_b64, max_age=60)
+        response.set_cookie('response_text', response_text_b64, max_age=60)
+        
         logger.info(f"✅ Returning {len(audio_bytes)} bytes")
+        logger.info(f"   Headers: T={transcription_b64[:20]}..., R={response_text_b64[:20]}...")
         
         return response
         
