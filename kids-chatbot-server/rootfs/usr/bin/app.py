@@ -410,6 +410,9 @@ def voice_chat():
     if not client:
         return jsonify({'error': 'OpenAI API key not configured'}), 500
     
+    audio_path = None
+    speech_path = None
+    
     try:
         # Get session ID from header
         session_id = request.headers.get('X-User-ID', 'anonymous')
@@ -422,40 +425,53 @@ def voice_chat():
         
         logger.info(f"🎤 [ESP32] Received {len(audio_data)} bytes from {session_id}")
         
+        # Check if it's WAV format
+        if audio_data[:4] != b'RIFF':
+            logger.error("❌ Not a valid WAV file")
+            return jsonify({'error': 'Invalid WAV format'}), 400
+        
         # Save audio to temp file for Whisper
         with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_audio:
             temp_audio.write(audio_data)
             audio_path = temp_audio.name
         
+        logger.info(f"💾 Saved to: {audio_path}")
+        
+        # STEP 1: Transcribe audio to text
+        logger.info("📝 Step 1: Transcribing...")
         try:
-            # STEP 1: Transcribe audio to text
-            logger.info("📝 Step 1: Transcribing...")
             with open(audio_path, 'rb') as audio_file:
                 transcript = client.audio.transcriptions.create(
                     model="whisper-1",
                     file=audio_file,
+                    language="vi"  # Force Vietnamese
                 )
             
             user_text = transcript.text
             logger.info(f"✅ Transcribed: {user_text}")
             
-            if not user_text:
-                return jsonify({'error': 'Could not transcribe audio'}), 400
-            
-            # STEP 2: Get chat response
-            logger.info("💬 Step 2: Getting chat response...")
-            
-            if CONTEXT_ENABLED:
-                session_id = ConversationManager.get_or_create_session(session_id)
-                ConversationManager.add_message(session_id, "user", user_text)
-                messages = ConversationManager.get_messages(session_id)
-            else:
-                detected_lang = detect_language(user_text)
-                messages = [
-                    {"role": "system", "content": get_response_template('system', detected_lang)},
-                    {"role": "user", "content": user_text}
-                ]
-            
+        except Exception as e:
+            logger.error(f"❌ Transcription failed: {str(e)}")
+            return jsonify({'error': f'Transcription failed: {str(e)}'}), 500
+        
+        if not user_text or len(user_text.strip()) == 0:
+            return jsonify({'error': 'Could not transcribe audio'}), 400
+        
+        # STEP 2: Get chat response
+        logger.info("💬 Step 2: Getting chat response...")
+        
+        if CONTEXT_ENABLED:
+            session_id = ConversationManager.get_or_create_session(session_id)
+            ConversationManager.add_message(session_id, "user", user_text)
+            messages = ConversationManager.get_messages(session_id)
+        else:
+            detected_lang = detect_language(user_text)
+            messages = [
+                {"role": "system", "content": get_response_template('system', detected_lang)},
+                {"role": "user", "content": user_text}
+            ]
+        
+        try:
             chat_response = client.chat.completions.create(
                 model=OPENAI_MODEL,
                 messages=messages,
@@ -468,9 +484,14 @@ def voice_chat():
             
             if CONTEXT_ENABLED:
                 ConversationManager.add_message(session_id, "assistant", bot_text)
-            
-            # STEP 3: Convert to speech
-            logger.info("🔊 Step 3: Converting to speech...")
+                
+        except Exception as e:
+            logger.error(f"❌ Chat failed: {str(e)}")
+            return jsonify({'error': f'Chat failed: {str(e)}'}), 500
+        
+        # STEP 3: Convert to speech
+        logger.info("🔊 Step 3: Converting to speech...")
+        try:
             speech_response = client.audio.speech.create(
                 model="tts-1",
                 voice=OPENAI_VOICE,
@@ -478,34 +499,58 @@ def voice_chat():
             )
             
             # Save speech to temp file
-            speech_path = Path("/tmp/esp32_speech.mp3")
-            speech_response.stream_to_file(speech_path)
+            speech_path = Path(tempfile.gettempdir()) / f"esp32_speech_{session_id}.mp3"
+            
+            # Use with_streaming_response to avoid deprecation warning
+            with client.audio.speech.with_streaming_response.create(
+                model="tts-1",
+                voice=OPENAI_VOICE,
+                input=bot_text
+            ) as response:
+                response.stream_to_file(speech_path)
             
             # Read audio file
             with open(speech_path, 'rb') as audio_file:
                 audio_bytes = audio_file.read()
             
-            logger.info(f"✅ Returning {len(audio_bytes)} bytes of audio")
+            logger.info(f"✅ Generated {len(audio_bytes)} bytes of audio")
             
-            # Return audio with metadata in headers
-            response = make_response(audio_bytes)
-            response.headers['Content-Type'] = 'audio/mpeg'
-            response.headers['X-Transcription'] = user_text
-            response.headers['X-Response-Text'] = bot_text
-            response.headers['X-Session-ID'] = session_id
-            
-            return response
-            
-        finally:
-            # Cleanup temp files
-            if os.path.exists(audio_path):
-                os.unlink(audio_path)
-            if os.path.exists(speech_path):
-                os.unlink(speech_path)
-    
+        except Exception as e:
+            logger.error(f"❌ TTS failed: {str(e)}")
+            return jsonify({'error': f'TTS failed: {str(e)}'}), 500
+        
+        # Return audio with metadata
+        # IMPORTANT: Encode Vietnamese text to base64 to avoid latin-1 error
+        import base64
+        
+        response = make_response(audio_bytes)
+        response.headers['Content-Type'] = 'audio/mpeg'
+        response.headers['Content-Length'] = str(len(audio_bytes))
+        
+        # Encode Vietnamese text as base64
+        response.headers['X-Transcription-B64'] = base64.b64encode(user_text.encode('utf-8')).decode('ascii')
+        response.headers['X-Response-Text-B64'] = base64.b64encode(bot_text.encode('utf-8')).decode('ascii')
+        response.headers['X-Session-ID'] = session_id
+        
+        logger.info(f"✅ Returning {len(audio_bytes)} bytes")
+        
+        return response
+        
     except Exception as e:
         logger.error(f"❌ Error in voice_chat: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+        
+    finally:
+        # Cleanup temp files
+        try:
+            if audio_path and os.path.exists(audio_path):
+                os.unlink(audio_path)
+            if speech_path and os.path.exists(speech_path):
+                os.unlink(speech_path)
+        except Exception as e:
+            logger.error(f"⚠️  Cleanup error: {str(e)}")
 
 @app.route('/api/health', methods=['GET'])
 def health():
