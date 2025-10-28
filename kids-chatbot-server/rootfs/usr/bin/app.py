@@ -159,59 +159,6 @@ def detect_language(text):
     else:
         return 'auto'
 
-def pcm_to_wav(pcm_data, sample_rate, channels=1, sample_width=2):
-    """
-    Convert raw PCM data to WAV format
-    
-    Args:
-        pcm_data: Raw PCM bytes
-        sample_rate: Sample rate (8000 or 16000)
-        channels: Number of channels (1=mono, 2=stereo)
-        sample_width: Bytes per sample (2 for 16-bit)
-    
-    Returns:
-        bytes: WAV formatted audio
-    """
-    import io
-    
-    wav_buffer = io.BytesIO()
-    
-    with wave.open(wav_buffer, 'wb') as wav_file:
-        wav_file.setnchannels(channels)
-        wav_file.setsampwidth(sample_width)
-        wav_file.setframerate(sample_rate)
-        wav_file.writeframes(pcm_data)
-    
-    return wav_buffer.getvalue()
-
-def generate_error_response(error_text, session_id):
-    """Generate error speech response"""
-    try:
-        import base64
-        speech_path = Path(tempfile.gettempdir()) / f"error_{session_id}.mp3"
-        
-        with client.audio.speech.with_streaming_response.create(
-            model="tts-1",
-            voice=OPENAI_VOICE,
-            input=error_text,
-            response_format="mp3"
-        ) as response:
-            response.stream_to_file(speech_path)
-        
-        with open(speech_path, 'rb') as f:
-            audio_bytes = f.read()
-        
-        os.unlink(speech_path)
-        
-        response = make_response(audio_bytes)
-        response.headers['Content-Type'] = 'audio/mpeg'
-        response.headers['X-Response-Text-B64'] = base64.b64encode(error_text.encode('utf-8')).decode('ascii')
-        return response
-        
-    except Exception as e:
-        logger.error(f"Error generating error response: {e}")
-        return jsonify({'error': error_text}), 500
-
 @app.route('/')
 def index():
     """Serve the test interface"""
@@ -512,6 +459,193 @@ def generate_error_response(error_text, session_id):
         logger.error(f"Error generating error response: {e}")
         return jsonify({'error': error_text}), 500
         
+@app.route('/api/voice-chat', methods=['POST'])
+def voice_chat():
+    """
+    Xử lý voice chat từ ESP32
+    Input: Raw audio data (8kHz, 16-bit, mono)
+    Output: JSON với URL của file MP3 response
+    """
+    try:
+        # 1. Lấy audio data từ request
+        audio_data = request.data
+        user_id = request.headers.get('X-User-ID', 'unknown')
+        sample_rate = request.headers.get('X-Sample-Rate', '8000')
+        channels = request.headers.get('X-Channels', '1')
+        
+        print(f"📥 Received audio: {len(audio_data)} bytes from {user_id}")
+        print(f"   Sample rate: {sample_rate}Hz, Channels: {channels}")
+        
+        # 2. Lưu audio tạm để gửi OpenAI (cần WAV header)
+        session_id = f"{user_id}_{int(time.time())}"
+        input_filename = f"input_{session_id}.wav"
+        input_path = os.path.join(TEMP_AUDIO_DIR, input_filename)
+        
+        # Tạo WAV header
+        import wave
+        with wave.open(input_path, 'wb') as wav_file:
+            wav_file.setnchannels(int(channels))
+            wav_file.setsampwidth(2)  # 16-bit = 2 bytes
+            wav_file.setframerate(int(sample_rate))
+            wav_file.writeframes(audio_data)
+        
+        print(f"💾 Saved input: {input_path}")
+        
+        # 3. Gửi lên OpenAI Whisper để transcribe
+        print("🎤 Transcribing...")
+        with open(input_path, 'rb') as audio_file:
+            transcription = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file,
+                language="vi"  # Tiếng Việt
+            )
+        
+        transcription_text = transcription.text
+        print(f"📝 Transcription: {transcription_text}")
+        
+        # 4. Gửi lên ChatGPT để có response text
+        print("💬 Getting response...")
+        chat_response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "Bạn là trợ lý AI thân thiện, trả lời ngắn gọn bằng tiếng Việt."},
+                {"role": "user", "content": transcription_text}
+            ],
+            max_tokens=150
+        )
+        
+        response_text = chat_response.choices[0].message.content
+        print(f"💭 Response: {response_text}")
+        
+        # 5. Chuyển response text thành MP3 (TTS)
+        print("🔊 Generating speech...")
+        speech_response = client.audio.speech.create(
+            model="tts-1",
+            voice="nova",  # nova, alloy, echo, fable, onyx, shimmer
+            input=response_text,
+            response_format="mp3"
+        )
+        
+        # 6. Lưu MP3 response
+        mp3_filename = f"response_{session_id}.mp3"
+        mp3_path = os.path.join(TEMP_AUDIO_DIR, mp3_filename)
+        
+        with open(mp3_path, 'wb') as mp3_file:
+            mp3_file.write(speech_response.content)
+        
+        print(f"💾 Saved MP3: {mp3_path} ({len(speech_response.content)} bytes)")
+        
+        # 7. Tạo URL public cho MP3
+        # Giả sử server chạy tại https://school.sfdp.net
+        audio_url = f"{request.url_root}audio/{mp3_filename}"
+        
+        print(f"✅ Done! Audio URL: {audio_url}")
+        
+        # 8. Trả về JSON response
+        return jsonify({
+            'success': True,
+            'audio_url': audio_url,
+            'transcription': transcription_text,
+            'response_text': response_text,
+            'session_id': session_id,
+            'audio_size': len(speech_response.content)
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/audio/<filename>')
+def serve_audio(filename):
+    """
+    Serve audio files từ thư mục tạm
+    """
+    try:
+        return send_from_directory(
+            TEMP_AUDIO_DIR, 
+            filename, 
+            mimetype='audio/mpeg',
+            as_attachment=False
+        )
+    except FileNotFoundError:
+        return jsonify({'error': 'File not found'}), 404
+
+# Cleanup old files (chạy định kỳ)
+@app.route('/api/cleanup')
+def cleanup_old_files():
+    """
+    Xóa các file audio cũ hơn 1 giờ
+    """
+    try:
+        current_time = time.time()
+        deleted = 0
+        
+        for filename in os.listdir(TEMP_AUDIO_DIR):
+            filepath = os.path.join(TEMP_AUDIO_DIR, filename)
+            
+            # Xóa file cũ hơn 3600 giây (1 giờ)
+            if os.path.isfile(filepath):
+                file_age = current_time - os.path.getmtime(filepath)
+                if file_age > 3600:
+                    os.remove(filepath)
+                    deleted += 1
+        
+        return jsonify({
+            'success': True,
+            'deleted_files': deleted
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+if __name__ == '__main__':
+    print("🚀 Starting Voice Chat Server...")
+    print(f"📁 Audio directory: {TEMP_AUDIO_DIR}")
+    
+    # Chạy server
+    app.run(
+        host='0.0.0.0',
+        port=5000,
+        debug=True,
+        ssl_context=('cert.pem', 'key.pem')  # Nếu dùng HTTPS
+    )
+
+def generate_error_response(error_text, session_id):
+    """Generate error speech response"""
+    try:
+        import base64
+        speech_path = Path(tempfile.gettempdir()) / f"error_{session_id}.mp3"
+        
+        with client.audio.speech.with_streaming_response.create(
+            model="tts-1",
+            voice=OPENAI_VOICE,
+            input=error_text,
+            response_format="mp3"
+        ) as response:
+            response.stream_to_file(speech_path)
+        
+        with open(speech_path, 'rb') as f:
+            audio_bytes = f.read()
+        
+        os.unlink(speech_path)
+        
+        response = make_response(audio_bytes)
+        response.headers['Content-Type'] = 'audio/mpeg'
+        response.headers['X-Response-Text-B64'] = base64.b64encode(error_text.encode('utf-8')).decode('ascii')
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error generating error response: {e}")
+        return jsonify({'error': error_text}), 500
+
 @app.route('/api/health', methods=['GET'])
 def health():
     """Health check endpoint"""
