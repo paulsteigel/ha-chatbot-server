@@ -4,7 +4,7 @@ import logging
 import tempfile
 import secrets
 from datetime import datetime, timedelta
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, make_response, jsonify, send_from_directory
 from flask_cors import CORS
 from openai import OpenAI
 from pathlib import Path
