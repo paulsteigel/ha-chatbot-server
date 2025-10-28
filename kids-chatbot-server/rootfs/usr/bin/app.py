@@ -8,6 +8,8 @@ from flask import Flask, request, make_response, jsonify, send_from_directory
 from flask_cors import CORS
 from openai import OpenAI
 from pathlib import Path
+import gzip
+import io
 
 # Set up logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -401,11 +403,14 @@ def voice():
             'error': str(e)
         }), 500
 
+import gzip
+import io
+
 @app.route('/api/voice-chat', methods=['POST'])
 def voice_chat():
     """
-    Complete voice chat flow for ESP32:
-    Audio IN → Transcribe → Chat → TTS → Audio OUT
+    Complete voice chat flow for ESP32 với GZIP compression:
+    Audio IN (GZIP) → Decompress → Transcribe → Chat → TTS → MP3 Stream OUT
     """
     if not client:
         return jsonify({'error': 'OpenAI API key not configured'}), 500
@@ -414,8 +419,11 @@ def voice_chat():
     speech_path = None
     
     try:
-        # Get session ID from header
+        # Get session ID and metadata from headers
         session_id = request.headers.get('X-User-ID', 'anonymous')
+        sample_rate = int(request.headers.get('X-Sample-Rate', '16000'))
+        channels = int(request.headers.get('X-Channels', '1'))
+        is_compressed = request.headers.get('X-Compressed', 'false').lower() == 'true'
         
         # Get raw audio data from ESP32
         audio_data = request.data
@@ -424,18 +432,32 @@ def voice_chat():
             return jsonify({'error': 'No audio data received'}), 400
         
         logger.info(f"🎤 [ESP32] Received {len(audio_data)} bytes from {session_id}")
+        logger.info(f"   Sample Rate: {sample_rate}Hz, Channels: {channels}, Compressed: {is_compressed}")
         
-        # Check if it's WAV format
-        if audio_data[:4] != b'RIFF':
-            logger.error("❌ Not a valid WAV file")
-            return jsonify({'error': 'Invalid WAV format'}), 400
+        # ✅ STEP 0: Decompress if needed
+        if is_compressed:
+            try:
+                logger.info("📦 Decompressing GZIP data...")
+                audio_data = gzip.decompress(audio_data)
+                logger.info(f"✅ Decompressed to {len(audio_data)} bytes")
+            except Exception as e:
+                logger.error(f"❌ Decompression failed: {str(e)}")
+                return jsonify({'error': 'Invalid GZIP data'}), 400
         
-        # Save audio to temp file for Whisper
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_audio:
-            temp_audio.write(audio_data)
+        # Convert raw PCM to WAV format for Whisper
+        import wave
+        import struct
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav', mode='wb') as temp_audio:
+            with wave.open(temp_audio, 'wb') as wav_file:
+                wav_file.setnchannels(channels)
+                wav_file.setsampwidth(2)  # 16-bit
+                wav_file.setframerate(sample_rate)
+                wav_file.writeframes(audio_data)
+            
             audio_path = temp_audio.name
         
-        logger.info(f"💾 Saved to: {audio_path}")
+        logger.info(f"💾 Converted to WAV: {audio_path}")
         
         # STEP 1: Transcribe audio to text
         logger.info("📝 Step 1: Transcribing...")
@@ -444,7 +466,7 @@ def voice_chat():
                 transcript = client.audio.transcriptions.create(
                     model="whisper-1",
                     file=audio_file,
-                    language="vi"  # Force Vietnamese
+                    language="vi"  # Vietnamese
                 )
             
             user_text = transcript.text
@@ -489,59 +511,44 @@ def voice_chat():
             logger.error(f"❌ Chat failed: {str(e)}")
             return jsonify({'error': f'Chat failed: {str(e)}'}), 500
         
-        # STEP 3: Convert to speech
+        # STEP 3: Convert to speech (MP3)
         logger.info("🔊 Step 3: Converting to speech...")
         try:
             speech_response = client.audio.speech.create(
                 model="tts-1",
                 voice=OPENAI_VOICE,
-                input=bot_text
+                input=bot_text,
+                response_format="mp3"
             )
             
-            # Save speech to temp file
+            # Save to temp file
             speech_path = Path(tempfile.gettempdir()) / f"esp32_speech_{session_id}.mp3"
+            speech_response.stream_to_file(speech_path)
             
-            # Use with_streaming_response to avoid deprecation warning
-            with client.audio.speech.with_streaming_response.create(
-                model="tts-1",
-                voice=OPENAI_VOICE,
-                input=bot_text
-            ) as response:
-                response.stream_to_file(speech_path)
-            
-            # Read audio file
+            # Read MP3 file
             with open(speech_path, 'rb') as audio_file:
                 audio_bytes = audio_file.read()
             
-            logger.info(f"✅ Generated {len(audio_bytes)} bytes of audio")
+            logger.info(f"✅ Generated {len(audio_bytes)} bytes MP3")
             
         except Exception as e:
             logger.error(f"❌ TTS failed: {str(e)}")
             return jsonify({'error': f'TTS failed: {str(e)}'}), 500
         
-        # Return audio with metadata
-        # IMPORTANT: Use custom headers that nginx can pass through
+        # Return MP3 audio with metadata in headers
         import base64
         
-        # Encode to base64
         transcription_b64 = base64.b64encode(user_text.encode('utf-8')).decode('ascii')
         response_text_b64 = base64.b64encode(bot_text.encode('utf-8')).decode('ascii')
         
         response = make_response(audio_bytes)
         response.headers['Content-Type'] = 'audio/mpeg'
         response.headers['Content-Length'] = str(len(audio_bytes))
-        
-        # Use standard headers that nginx won't strip
-        response.headers['X-Transcription-B64'] = transcription_b64
-        response.headers['X-Response-Text-B64'] = response_text_b64
+        response.headers['X-Transcription'] = transcription_b64
+        response.headers['X-Response-Text'] = response_text_b64
         response.headers['X-Session-ID'] = session_id
         
-        # Also add as cookies for backup (nginx passes these)
-        response.set_cookie('transcription', transcription_b64, max_age=60)
-        response.set_cookie('response_text', response_text_b64, max_age=60)
-        
-        logger.info(f"✅ Returning {len(audio_bytes)} bytes")
-        logger.info(f"   Headers: T={transcription_b64[:20]}..., R={response_text_b64[:20]}...")
+        logger.info(f"✅ Returning {len(audio_bytes)} bytes MP3")
         
         return response
         
@@ -552,7 +559,7 @@ def voice_chat():
         return jsonify({'error': str(e)}), 500
         
     finally:
-        # Cleanup temp files
+        # Cleanup
         try:
             if audio_path and os.path.exists(audio_path):
                 os.unlink(audio_path)
