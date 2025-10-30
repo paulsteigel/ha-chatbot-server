@@ -255,7 +255,7 @@ def get_chat_response(user_message, session_id='default'):
         raise
 
 
-def text_to_speech(text):
+def old_text_to_speech(text):
     """
     Convert text to speech using OpenAI TTS
     
@@ -286,6 +286,101 @@ def text_to_speech(text):
     except Exception as e:
         logger.error(f"❌ TTS error: {str(e)}")
         raise
+        
+def text_to_speech(text):
+    """
+    Convert text to speech using OpenAI TTS - returns PCM WAV for ESP32
+    
+    Args:
+        text: Text to convert
+    
+    Returns:
+        bytes: Audio data (WAV format, 16-bit PCM, 16kHz mono)
+    """
+    try:
+        logger.info(f"🔊 Converting to speech: {text[:50]}...")
+        
+        # Call OpenAI TTS API - request PCM format
+        response = client.audio.speech.create(
+            model="tts-1",
+            voice=OPENAI_VOICE,
+            input=text,
+            response_format="pcm"  # ✅ Raw PCM instead of MP3!
+        )
+        
+        # OpenAI returns 24kHz 16-bit mono PCM
+        pcm_data = response.content
+        
+        logger.info(f"✓ Received {len(pcm_data)} bytes of PCM audio")
+        
+        # Convert 24kHz to 16kHz for ESP32 (downsample by taking every 3rd sample, skipping 2)
+        # 24000 / 16000 = 1.5, so we need to resample
+        pcm_16bit = struct.unpack(f'<{len(pcm_data)//2}h', pcm_data)
+        
+        # Simple downsampling: keep every 1.5th sample
+        resampled = []
+        position = 0.0
+        step = 24000 / 16000  # 1.5
+        
+        while int(position) < len(pcm_16bit):
+            resampled.append(pcm_16bit[int(position)])
+            position += step
+        
+        # Convert back to bytes
+        resampled_pcm = struct.pack(f'<{len(resampled)}h', *resampled)
+        
+        logger.info(f"✓ Resampled to {len(resampled_pcm)} bytes at 16kHz")
+        
+        # Create WAV header for 16kHz, 16-bit, mono
+        wav_header = create_wav_header(len(resampled_pcm), 16000, 1, 16)
+        
+        # Combine header + PCM data
+        wav_file = wav_header + resampled_pcm
+        
+        logger.info(f"✓ Generated {len(wav_file)} bytes of WAV audio")
+        
+        return wav_file
+        
+    except Exception as e:
+        logger.error(f"❌ TTS error: {str(e)}")
+        raise
+
+
+def create_wav_header(data_size, sample_rate=16000, channels=1, bits_per_sample=16):
+    """
+    Create a WAV file header
+    
+    Args:
+        data_size: Size of PCM data in bytes
+        sample_rate: Sample rate (Hz)
+        channels: Number of channels (1=mono, 2=stereo)
+        bits_per_sample: Bits per sample (8, 16, 24, 32)
+    
+    Returns:
+        bytes: WAV header (44 bytes)
+    """
+    byte_rate = sample_rate * channels * bits_per_sample // 8
+    block_align = channels * bits_per_sample // 8
+    
+    header = struct.pack(
+        '<4sI4s4sIHHIIHH4sI',
+        b'RIFF',
+        data_size + 36,  # File size - 8
+        b'WAVE',
+        b'fmt ',
+        16,  # fmt chunk size
+        1,   # PCM format
+        channels,
+        sample_rate,
+        byte_rate,
+        block_align,
+        bits_per_sample,
+        b'data',
+        data_size
+    )
+    
+    return header
+
 
 @app.route('/')
 def index():
@@ -593,12 +688,22 @@ def voice_chat():
         audio_response = text_to_speech(response_text)
         logger.info(f"🔊 Generated {len(audio_response)} bytes")
         
+        #return Response(
+        #    audio_response,
+        #    mimetype='audio/mpeg',
+        #    headers={'Content-Type': 'audio/mpeg'}
+        #)
         return Response(
             audio_response,
-            mimetype='audio/mpeg',
-            headers={'Content-Type': 'audio/mpeg'}
+            mimetype='audio/wav',
+            headers={
+                'Content-Type': 'audio/wav',
+                'X-Sample-Rate': '16000',
+                'X-Channels': '1',
+                'X-Bits-Per-Sample': '16'
+            }
         )
-        
+
     except Exception as e:
         logger.error(f"❌ Error: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 500
