@@ -417,99 +417,71 @@ def voice():
 
 @app.route('/api/voice-chat', methods=['POST'])
 def voice_chat():
-    """Handle voice chat with audio file saving for debugging"""
+    """Handle voice chat with detailed error logging"""
     try:
         start_time = time.time()
         
         # Get session ID
         session_id = request.form.get('session_id', 'default')
+        logger.info(f"📥 Request from session: {session_id}")
         
         # Get audio file
         if 'audio' not in request.files:
+            logger.error("❌ No audio file in request!")
+            logger.error(f"Request files: {request.files}")
+            logger.error(f"Request form: {request.form}")
             return jsonify({'error': 'No audio file provided'}), 400
         
         audio_file = request.files['audio']
+        logger.info(f"📁 Audio filename: {audio_file.filename}")
         
         # Read audio data
         audio_data = audio_file.read()
-        logger.info(f"📥 Received audio: {len(audio_data)} bytes from session {session_id}")
+        logger.info(f"📥 Received {len(audio_data)} bytes")
         
-        # 🆕 SAVE THE UPLOADED FILE FOR DEBUGGING
+        # Save for debugging
         debug_dir = "debug_audio"
         os.makedirs(debug_dir, exist_ok=True)
         
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        debug_filename = f"{debug_dir}/uploaded_{session_id}_{timestamp}.wav"
+        debug_filename = f"{debug_dir}/upload_{session_id}_{timestamp}.wav"
         
         with open(debug_filename, 'wb') as f:
             f.write(audio_data)
-        logger.info(f"💾 Saved uploaded audio to: {debug_filename}")
+        logger.info(f"💾 Saved to: {debug_filename}")
         
-        # Validate audio size
-        if len(audio_data) < 100:
-            logger.error(f"Audio too small: {len(audio_data)} bytes")
-            return jsonify({'error': 'Audio file too small'}), 400
+        # Check if it's valid WAV
+        if len(audio_data) < 44:
+            logger.error(f"❌ File too small: {len(audio_data)} bytes")
+            return jsonify({'error': 'Invalid audio file'}), 400
         
-        if len(audio_data) > 10000000:  # 10MB limit
-            logger.error(f"Audio too large: {len(audio_data)} bytes")
-            return jsonify({'error': 'Audio file too large'}), 400
+        # Check WAV header
+        if audio_data[:4] != b'RIFF':
+            logger.error(f"❌ Not a WAV file! Header: {audio_data[:4]}")
+            return jsonify({'error': 'Not a WAV file'}), 400
         
-        # Convert audio to text
-        logger.info("🎤 Transcribing audio...")
-        transcription_start = time.time()
+        logger.info("✓ Valid WAV file received")
         
+        # Continue with transcription...
         text = transcribe_audio(audio_data)
-        
-        transcription_time = time.time() - transcription_start
-        logger.info(f"📝 Transcription took {transcription_time:.2f}s")
         logger.info(f"📝 Transcribed: {text}")
         
-        if not text or text.strip() == '':
-            logger.warning("Empty transcription")
-            return jsonify({'error': 'Could not transcribe audio'}), 400
-        
-        # Get AI response
-        logger.info("🤖 Getting AI response...")
-        ai_start = time.time()
-        
         response_text = get_chat_response(text, session_id)
-        
-        ai_time = time.time() - ai_start
-        logger.info(f"🤖 AI response took {ai_time:.2f}s")
         logger.info(f"💬 Response: {response_text}")
         
-        # Convert response to speech
-        logger.info("🔊 Converting to speech...")
-        tts_start = time.time()
-        
         audio_response = text_to_speech(response_text)
+        logger.info(f"🔊 Generated {len(audio_response)} bytes")
         
-        tts_time = time.time() - tts_start
-        logger.info(f"🔊 TTS took {tts_time:.2f}s")
-        logger.info(f"🔊 Generated {len(audio_response)} bytes of audio")
-        
-        # 🆕 SAVE THE RESPONSE AUDIO TOO
-        response_filename = f"{debug_dir}/response_{session_id}_{timestamp}.mp3"
-        with open(response_filename, 'wb') as f:
-            f.write(audio_response)
-        logger.info(f"💾 Saved response audio to: {response_filename}")
-        
-        total_time = time.time() - start_time
-        logger.info(f"✅ Total request time: {total_time:.2f}s")
-        
-        # Return audio response
         return Response(
             audio_response,
             mimetype='audio/mpeg',
-            headers={
-                'Content-Type': 'audio/mpeg',
-                'Content-Length': str(len(audio_response))
-            }
+            headers={'Content-Type': 'audio/mpeg'}
         )
         
     except Exception as e:
-        logger.error(f"❌ Error in voice chat: {str(e)}", exc_info=True)
+        logger.error(f"❌ Error: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 500
+
 
 @app.route('/api/health', methods=['GET'])
 def health():
