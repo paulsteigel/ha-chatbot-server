@@ -1,5 +1,5 @@
 name: Kids ChatBot Server
-version: "1.0.29"  # ⬆️ Tăng version
+version: "1.0.30"  # ⬆️ Tăng version
 slug: kids-chatbot-server
 description: OpenAI-powered voice chatbot with context memory for kids
 url: https://github.com/paulsteigel/ha-chatbot-server
