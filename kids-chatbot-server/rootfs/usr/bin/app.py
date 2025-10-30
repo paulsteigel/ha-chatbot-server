@@ -415,39 +415,99 @@ def voice():
 
 @app.route('/api/voice-chat', methods=['POST'])
 def voice_chat():
-    """Voice chat - Trả MP3 trực tiếp"""
-    
-    # ... (giữ nguyên phần transcribe và chat)
-    
-    # STEP 3: Generate speech
-    logger.info("🔊 Generating speech...")
-    
-    speech_response = client.audio.speech.create(
-        model="tts-1",
-        voice=OPENAI_VOICE,
-        input=bot_text,
-        response_format="mp3"
-    )
-    
-    # ✅ Trả MP3 trực tiếp
-    mp3_data = speech_response.content
-    
-    logger.info(f"✅ Generated {len(mp3_data)} bytes MP3")
-    
-    # Encode metadata vào headers
-    import base64
-    transcription_b64 = base64.b64encode(user_text.encode('utf-8')).decode('ascii')
-    response_text_b64 = base64.b64encode(bot_text.encode('utf-8')).decode('ascii')
-    
-    response = make_response(mp3_data)
-    response.headers['Content-Type'] = 'audio/mpeg'
-    response.headers['Content-Length'] = str(len(mp3_data))
-    response.headers['X-Transcription'] = transcription_b64
-    response.headers['X-Response-Text'] = response_text_b64
-    response.headers['X-Session-ID'] = session_id
-    
-    return response
-
+    """Handle voice chat with audio file saving for debugging"""
+    try:
+        start_time = time.time()
+        
+        # Get session ID
+        session_id = request.form.get('session_id', 'default')
+        
+        # Get audio file
+        if 'audio' not in request.files:
+            return jsonify({'error': 'No audio file provided'}), 400
+        
+        audio_file = request.files['audio']
+        
+        # Read audio data
+        audio_data = audio_file.read()
+        logger.info(f"📥 Received audio: {len(audio_data)} bytes from session {session_id}")
+        
+        # 🆕 SAVE THE UPLOADED FILE FOR DEBUGGING
+        debug_dir = "debug_audio"
+        os.makedirs(debug_dir, exist_ok=True)
+        
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        debug_filename = f"{debug_dir}/uploaded_{session_id}_{timestamp}.wav"
+        
+        with open(debug_filename, 'wb') as f:
+            f.write(audio_data)
+        logger.info(f"💾 Saved uploaded audio to: {debug_filename}")
+        
+        # Validate audio size
+        if len(audio_data) < 100:
+            logger.error(f"Audio too small: {len(audio_data)} bytes")
+            return jsonify({'error': 'Audio file too small'}), 400
+        
+        if len(audio_data) > 10000000:  # 10MB limit
+            logger.error(f"Audio too large: {len(audio_data)} bytes")
+            return jsonify({'error': 'Audio file too large'}), 400
+        
+        # Convert audio to text
+        logger.info("🎤 Transcribing audio...")
+        transcription_start = time.time()
+        
+        text = transcribe_audio(audio_data)
+        
+        transcription_time = time.time() - transcription_start
+        logger.info(f"📝 Transcription took {transcription_time:.2f}s")
+        logger.info(f"📝 Transcribed: {text}")
+        
+        if not text or text.strip() == '':
+            logger.warning("Empty transcription")
+            return jsonify({'error': 'Could not transcribe audio'}), 400
+        
+        # Get AI response
+        logger.info("🤖 Getting AI response...")
+        ai_start = time.time()
+        
+        response_text = get_chat_response(text, session_id)
+        
+        ai_time = time.time() - ai_start
+        logger.info(f"🤖 AI response took {ai_time:.2f}s")
+        logger.info(f"💬 Response: {response_text}")
+        
+        # Convert response to speech
+        logger.info("🔊 Converting to speech...")
+        tts_start = time.time()
+        
+        audio_response = text_to_speech(response_text)
+        
+        tts_time = time.time() - tts_start
+        logger.info(f"🔊 TTS took {tts_time:.2f}s")
+        logger.info(f"🔊 Generated {len(audio_response)} bytes of audio")
+        
+        # 🆕 SAVE THE RESPONSE AUDIO TOO
+        response_filename = f"{debug_dir}/response_{session_id}_{timestamp}.mp3"
+        with open(response_filename, 'wb') as f:
+            f.write(audio_response)
+        logger.info(f"💾 Saved response audio to: {response_filename}")
+        
+        total_time = time.time() - start_time
+        logger.info(f"✅ Total request time: {total_time:.2f}s")
+        
+        # Return audio response
+        return Response(
+            audio_response,
+            mimetype='audio/mpeg',
+            headers={
+                'Content-Type': 'audio/mpeg',
+                'Content-Length': str(len(audio_response))
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Error in voice chat: {str(e)}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/health', methods=['GET'])
 def health():
