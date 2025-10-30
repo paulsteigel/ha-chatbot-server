@@ -6,7 +6,7 @@ import time
 from datetime import datetime
 import secrets
 from datetime import datetime, timedelta
-from flask import Flask, request, make_response, jsonify, send_from_directory
+from flask import Flask, request, make_response, jsonify, send_from_directory, Response
 from flask_cors import CORS
 from openai import OpenAI
 from pathlib import Path
