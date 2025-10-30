@@ -287,64 +287,70 @@ def old_text_to_speech(text):
         logger.error(f"❌ TTS error: {str(e)}")
         raise
         
-def text_to_speech(text):
+def text_to_speech(text, format='mp3'):
     """
-    Convert text to speech using OpenAI TTS - returns PCM WAV for ESP32
+    Convert text to speech using OpenAI TTS
     
     Args:
         text: Text to convert
+        format: 'mp3' for web playback, 'wav' for ESP32
     
     Returns:
-        bytes: Audio data (WAV format, 16-bit PCM, 16kHz mono)
+        bytes: Audio data in requested format
     """
     try:
-        logger.info(f"🔊 Converting to speech: {text[:50]}...")
+        logger.info(f"🔊 Converting to speech ({format}): {text[:50]}...")
         
-        # Call OpenAI TTS API - request PCM format
-        response = client.audio.speech.create(
-            model="tts-1",
-            voice=OPENAI_VOICE,
-            input=text,
-            response_format="pcm"  # ✅ Raw PCM instead of MP3!
-        )
-        
-        # OpenAI returns 24kHz 16-bit mono PCM
-        pcm_data = response.content
-        
-        logger.info(f"✓ Received {len(pcm_data)} bytes of PCM audio")
-        
-        # Convert 24kHz to 16kHz for ESP32 (downsample by taking every 3rd sample, skipping 2)
-        # 24000 / 16000 = 1.5, so we need to resample
-        pcm_16bit = struct.unpack(f'<{len(pcm_data)//2}h', pcm_data)
-        
-        # Simple downsampling: keep every 1.5th sample
-        resampled = []
-        position = 0.0
-        step = 24000 / 16000  # 1.5
-        
-        while int(position) < len(pcm_16bit):
-            resampled.append(pcm_16bit[int(position)])
-            position += step
-        
-        # Convert back to bytes
-        resampled_pcm = struct.pack(f'<{len(resampled)}h', *resampled)
-        
-        logger.info(f"✓ Resampled to {len(resampled_pcm)} bytes at 16kHz")
-        
-        # Create WAV header for 16kHz, 16-bit, mono
-        wav_header = create_wav_header(len(resampled_pcm), 16000, 1, 16)
-        
-        # Combine header + PCM data
-        wav_file = wav_header + resampled_pcm
-        
-        logger.info(f"✓ Generated {len(wav_file)} bytes of WAV audio")
-        
-        return wav_file
+        if format == 'wav':
+            # PCM format for ESP32
+            response = client.audio.speech.create(
+                model="tts-1",
+                voice=OPENAI_VOICE,
+                input=text,
+                response_format="pcm"
+            )
+            
+            pcm_data = response.content
+            logger.info(f"✓ Received {len(pcm_data)} bytes of PCM audio")
+            
+            # Downsample from 24kHz to 16kHz
+            pcm_16bit = struct.unpack(f'<{len(pcm_data)//2}h', pcm_data)
+            
+            resampled = []
+            position = 0.0
+            step = 24000 / 16000  # 1.5
+            
+            while int(position) < len(pcm_16bit):
+                resampled.append(pcm_16bit[int(position)])
+                position += step
+            
+            resampled_pcm = struct.pack(f'<{len(resampled)}h', *resampled)
+            logger.info(f"✓ Resampled to {len(resampled_pcm)} bytes at 16kHz")
+            
+            # Create WAV header
+            wav_header = create_wav_header(len(resampled_pcm), 16000, 1, 16)
+            wav_file = wav_header + resampled_pcm
+            
+            logger.info(f"✓ Generated {len(wav_file)} bytes of WAV audio")
+            return wav_file
+            
+        else:
+            # MP3 format for web interface
+            response = client.audio.speech.create(
+                model="tts-1",
+                voice=OPENAI_VOICE,
+                input=text,
+                response_format="mp3"
+            )
+            
+            audio_bytes = response.content
+            logger.info(f"✓ Generated {len(audio_bytes)} bytes of MP3 audio")
+            
+            return audio_bytes
         
     except Exception as e:
         logger.error(f"❌ TTS error: {str(e)}")
         raise
-
 
 def create_wav_header(data_size, sample_rate=16000, channels=1, bits_per_sample=16):
     """
