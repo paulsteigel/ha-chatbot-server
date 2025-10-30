@@ -166,6 +166,127 @@ def detect_language(text):
     else:
         return 'auto'
 
+def transcribe_audio(audio_data):
+    """
+    Transcribe audio using OpenAI Whisper API
+    
+    Args:
+        audio_data: Raw audio bytes (WAV format)
+    
+    Returns:
+        str: Transcribed text
+    """
+    try:
+        logger.info("🎤 Transcribing audio with Whisper...")
+        
+        # Create a file-like object from bytes
+        audio_file = io.BytesIO(audio_data)
+        audio_file.name = "audio.wav"
+        
+        # Call Whisper API
+        transcript = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file,
+            language="en"  # Change to None for auto-detect, or "vi" for Vietnamese
+        )
+        
+        text = transcript.text.strip()
+        logger.info(f"✓ Transcription: {text}")
+        
+        return text
+        
+    except Exception as e:
+        logger.error(f"❌ Transcription error: {str(e)}")
+        raise
+
+
+def get_chat_response(user_message, session_id='default'):
+    """
+    Get AI response using OpenAI with conversation context
+    
+    Args:
+        user_message: User's transcribed text
+        session_id: Session identifier for conversation history
+    
+    Returns:
+        str: AI response text
+    """
+    try:
+        logger.info(f"🤖 Getting AI response for: {user_message}")
+        
+        # Detect language
+        detected_lang = detect_language(user_message)
+        
+        # Content filtering
+        if not is_safe_content(user_message):
+            return get_response_template('inappropriate', detected_lang)
+        
+        # Get or create session with context
+        if CONTEXT_ENABLED:
+            session_id = ConversationManager.get_or_create_session(session_id)
+            ConversationManager.add_message(session_id, "user", user_message)
+            messages = ConversationManager.get_messages(session_id)
+        else:
+            messages = [
+                {"role": "system", "content": get_response_template('system', 'auto')},
+                {"role": "user", "content": user_message}
+            ]
+        
+        # Call OpenAI API
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=messages,
+            max_tokens=MAX_TOKENS,
+            temperature=TEMPERATURE
+        )
+        
+        assistant_message = response.choices[0].message.content
+        
+        # Add to context
+        if CONTEXT_ENABLED:
+            ConversationManager.add_message(session_id, "assistant", assistant_message)
+        
+        logger.info(f"✓ AI Response: {assistant_message}")
+        
+        return assistant_message
+        
+    except Exception as e:
+        logger.error(f"❌ AI error: {str(e)}")
+        raise
+
+
+def text_to_speech(text):
+    """
+    Convert text to speech using OpenAI TTS
+    
+    Args:
+        text: Text to convert
+    
+    Returns:
+        bytes: Audio data (MP3 format)
+    """
+    try:
+        logger.info(f"🔊 Converting to speech: {text[:50]}...")
+        
+        # Call OpenAI TTS API
+        response = client.audio.speech.create(
+            model="tts-1",
+            voice=OPENAI_VOICE,
+            input=text,
+            speed=1.0
+        )
+        
+        # Get audio bytes
+        audio_bytes = response.content
+        
+        logger.info(f"✓ Generated {len(audio_bytes)} bytes of audio")
+        
+        return audio_bytes
+        
+    except Exception as e:
+        logger.error(f"❌ TTS error: {str(e)}")
+        raise
+
 @app.route('/')
 def index():
     """Serve the test interface"""
