@@ -389,10 +389,16 @@ def voice():
         voice = OPENAI_VOICE
         
         # Generate speech
-        response = client.audio.speech.create(
+        #response = client.audio.speech.create(
+        #    model="tts-1",
+        #    voice=voice,
+        #    input=text
+        #)
+        speech_response = client.audio.speech.create(
             model="tts-1",
-            voice=voice,
-            input=text
+            voice=OPENAI_VOICE,
+            input=bot_text,
+            response_format="pcm"  # <-- Change from "mp3" to "pcm"
         )
         
         # Save to temporary file
