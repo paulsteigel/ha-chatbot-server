@@ -520,8 +520,8 @@ def voice():
         speech_response = client.audio.speech.create(
             model="tts-1",
             voice=OPENAI_VOICE,
-            input=bot_text,
-            response_format="pcm"  # <-- Change from "mp3" to "pcm"
+            input=text,
+            response_format="mp3"
         )
         
         # Save to temporary file
@@ -616,6 +616,115 @@ def health():
         'context_enabled': CONTEXT_ENABLED,
         'active_sessions': len(conversations)
     })
+
+@app.route('/debug/audio/<filename>')
+def serve_debug_audio(filename):
+    """
+    Serve debug audio files for quality checking
+    
+    Usage: https://school.sfdp.net/debug/audio/upload_default_20251030_220950.wav
+    """
+    try:
+        debug_dir = os.path.abspath("debug_audio")
+        
+        # Security check - prevent directory traversal
+        if '..' in filename or '/' in filename:
+            return jsonify({'error': 'Invalid filename'}), 400
+        
+        file_path = os.path.join(debug_dir, filename)
+        
+        if not os.path.exists(file_path):
+            return jsonify({'error': 'File not found'}), 404
+        
+        return send_from_directory(debug_dir, filename)
+        
+    except Exception as e:
+        logger.error(f"Error serving debug audio: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/debug/audio')
+def list_debug_audio():
+    """
+    List all debug audio files with playable links
+    
+    Usage: https://school.sfdp.net/debug/audio
+    """
+    try:
+        debug_dir = "debug_audio"
+        
+        if not os.path.exists(debug_dir):
+            return jsonify({
+                'message': 'No debug files yet',
+                'files': []
+            })
+        
+        files = []
+        for filename in sorted(os.listdir(debug_dir), reverse=True):
+            if filename.endswith('.wav') or filename.endswith('.mp3'):
+                file_path = os.path.join(debug_dir, filename)
+                stat = os.stat(file_path)
+                
+                files.append({
+                    'filename': filename,
+                    'size': stat.st_size,
+                    'created': datetime.fromtimestamp(stat.st_ctime).isoformat(),
+                    'url': f"{SERVER_URL}/debug/audio/{filename}"
+                })
+        
+        # Generate HTML player page
+        html = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Debug Audio Files</title>
+            <style>
+                body { font-family: Arial; margin: 20px; background: #f0f0f0; }
+                .file { 
+                    background: white; 
+                    padding: 15px; 
+                    margin: 10px 0; 
+                    border-radius: 5px;
+                    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                }
+                .file h3 { margin: 0 0 10px 0; color: #333; }
+                .file .info { color: #666; font-size: 14px; margin: 5px 0; }
+                audio { width: 100%; margin: 10px 0; }
+                .no-files { text-align: center; color: #999; padding: 50px; }
+            </style>
+        </head>
+        <body>
+            <h1>🎧 Debug Audio Files</h1>
+            <p>Total files: """ + str(len(files)) + """</p>
+        """
+        
+        if files:
+            for file in files:
+                html += f"""
+                <div class="file">
+                    <h3>{file['filename']}</h3>
+                    <div class="info">Size: {file['size']:,} bytes</div>
+                    <div class="info">Created: {file['created']}</div>
+                    <audio controls preload="metadata">
+                        <source src="{file['url']}" type="audio/wav">
+                        Your browser does not support audio playback.
+                    </audio>
+                    <a href="{file['url']}" download>⬇️ Download</a>
+                </div>
+                """
+        else:
+            html += '<div class="no-files">No audio files yet. Make a recording first!</div>'
+        
+        html += """
+        </body>
+        </html>
+        """
+        
+        return html
+        
+    except Exception as e:
+        logger.error(f"Error listing debug audio: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=PORT, debug=(LOG_LEVEL == 'DEBUG'))
