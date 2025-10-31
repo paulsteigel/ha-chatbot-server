@@ -16,6 +16,7 @@ import wave
 import struct
 
 SERVER_URL = os.getenv('SERVER_URL', 'https://school.sfdp.net')
+CUSTOM_PROMPT_ADDITIONS = os.getenv("CUSTOM_PROMPT_ADDITIONS", "")
 
 # Set up logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
