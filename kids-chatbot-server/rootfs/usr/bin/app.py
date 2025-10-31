@@ -14,9 +14,11 @@ import gzip
 import io
 import wave
 import struct
+import json
+from utils.content_filter import is_safe_content
+from utils.response_templates import get_response_template # Đảm bảo có import này
 
 SERVER_URL = os.getenv('SERVER_URL', 'https://school.sfdp.net')
-CUSTOM_PROMPT_ADDITIONS = os.getenv("CUSTOM_PROMPT_ADDITIONS", "")
 
 # Set up logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -47,6 +49,10 @@ CONTEXT_ENABLED = os.getenv("CONTEXT_ENABLED", "true").lower() == "true"
 CONTEXT_MAX_MESSAGES = int(os.getenv("CONTEXT_MAX_MESSAGES", "20"))
 CONTEXT_TIMEOUT_MINUTES = int(os.getenv("CONTEXT_TIMEOUT_MINUTES", "30"))
 
+# ✅ NEW: Custom command
+BOT_LANGUAGE = os.getenv("BOT_LANGUAGE", "auto").lower()
+CUSTOM_PROMPT_ADDITIONS = os.getenv("CUSTOM_PROMPT_ADDITIONS", "")
+
 logger.info(f"Starting Yên Hoà ChatBot Server")
 logger.info(f"Model: {OPENAI_MODEL}")
 logger.info(f"Voice: {OPENAI_VOICE}")
@@ -54,6 +60,9 @@ logger.info(f"Language: {OPENAI_LANGUAGE}")
 logger.info(f"Context Enabled: {CONTEXT_ENABLED}")
 logger.info(f"Max Context Messages: {CONTEXT_MAX_MESSAGES}")
 logger.info(f"Port: {PORT}")
+
+logger.info(f"Default Language: {BOT_LANGUAGE}")
+logger.info(f"Voice: {OPENAI_VOICE}")
 
 # Validate API key
 if not OPENAI_API_KEY:
@@ -84,11 +93,18 @@ class ConversationManager:
         
         # Tạo session mới
         new_session_id = session_id or secrets.token_hex(16)
+        
+        # Lấy template gốc
+        system_prompt_template = get_response_template('system', BOT_LANGUAGE)
+        
+        # Chèn chỉ thị tùy chỉnh vào
+        final_system_prompt = system_prompt_template.replace("{{CUSTOM_INSTRUCTIONS}}", CUSTOM_PROMPT_ADDITIONS)
+        
         conversations[new_session_id] = {
             'messages': [
                 {
                     "role": "system",
-                    "content": get_response_template('system', 'auto')
+                    "content": final_system_prompt # Sử dụng prompt cuối cùng
                 }
             ],
             'created_at': datetime.now(),
@@ -183,12 +199,13 @@ def transcribe_audio(audio_data):
         # Create a file-like object from bytes
         audio_file = io.BytesIO(audio_data)
         audio_file.name = "audio.wav"
+        lang_param = BOT_LANGUAGE if BOT_LANGUAGE != 'auto' else None
         
         # Call Whisper API
         transcript = client.audio.transcriptions.create(
             model="whisper-1",
             file=audio_file,
-            language="en"  # Change to None for auto-detect, or "vi" for Vietnamese
+            language=lang_param # Sử dụng biến mớ
         )
         
         text = transcript.text.strip()
@@ -228,11 +245,12 @@ def get_chat_response(user_message, session_id='default'):
             ConversationManager.add_message(session_id, "user", user_message)
             messages = ConversationManager.get_messages(session_id)
         else:
+            system_prompt_template = get_response_template('system', BOT_LANGUAGE)
+            final_system_prompt = system_prompt_template.replace("{{CUSTOM_INSTRUCTIONS}}", CUSTOM_PROMPT_ADDITIONS)
             messages = [
-                {"role": "system", "content": get_response_template('system', 'auto')},
+                {"role": "system", "content": final_system_prompt},
                 {"role": "user", "content": user_message}
-            ]
-        
+            ]        
         # Call OpenAI API
         response = client.chat.completions.create(
             model=OPENAI_MODEL,
@@ -640,81 +658,73 @@ def voice():
 
 @app.route('/api/voice-chat', methods=['POST'])
 def voice_chat():
-    """Handle voice chat with detailed error logging"""
+    """Handle voice chat with command recognition"""
     try:
         start_time = time.time()
+        session_id = request.headers.get('X-Session-ID')
         
-        # Get session ID
-        session_id = request.form.get('session_id', 'default')
-        logger.info(f"📥 Request from session: {session_id}")
-        
-        # Get audio file
         if 'audio' not in request.files:
-            logger.error("❌ No audio file in request!")
-            logger.error(f"Request files: {request.files}")
-            logger.error(f"Request form: {request.form}")
             return jsonify({'error': 'No audio file provided'}), 400
         
-        audio_file = request.files['audio']
-        logger.info(f"📁 Audio filename: {audio_file.filename}")
+        audio_data = request.files['audio'].read()
+        logger.info(f"📥 Received {len(audio_data)} bytes of audio.")
+
+        # 1. Transcribe audio
+        transcribed_text = transcribe_audio(audio_data)
+        logger.info(f"📝 Transcribed: {transcribed_text}")
+
+        # 2. Get raw response from AI
+        raw_ai_response = get_chat_response(transcribed_text, session_id)
+        logger.info(f"🤖 Raw AI Response: {raw_ai_response}")
+
+        # 3. Prepare response headers and parse for commands
+        response_headers = {
+            'Content-Type': 'audio/wav',
+            'X-Transcription': transcribed_text.encode('utf-8').decode('latin-1'),
+            'X-Response-Text': raw_ai_response.encode('utf-8').decode('latin-1'),
+            'X-Session-ID': session_id
+        }
         
-        # Read audio data
-        audio_data = audio_file.read()
-        logger.info(f"📥 Received {len(audio_data)} bytes")
+        text_for_tts = raw_ai_response
+
+        # Check if the response is a command
+        if raw_ai_response.strip().startswith('{'):
+            try:
+                command_data = json.loads(raw_ai_response)
+                command = command_data.get("command")
+                value = command_data.get("value")
+
+                if command and value:
+                    logger.info(f"✅ Parsed command: {command}, value: {value}")
+                    response_headers['X-Device-Command'] = command
+                    response_headers['X-Device-Value'] = str(value)
+                    
+                    # Create confirmation message for TTS
+                    lang = BOT_LANGUAGE
+                    if command == "set_volume":
+                        text_for_tts = "Đã điều chỉnh âm lượng" if lang == 'vi' else "Volume adjusted"
+                    elif command == "set_mic_gain":
+                        text_for_tts = "Đã chỉnh độ nhạy mic" if lang == 'vi' else "Mic sensitivity adjusted"
+                    elif command == "stop_conversation":
+                        text_for_tts = "Tạm biệt" if lang == 'vi' else "Goodbye"
+            except json.JSONDecodeError:
+                logger.warning("Response looked like JSON but was not valid.")
+                pass # Treat as a normal response
+
+        # 4. Generate audio for the final text
+        audio_response = text_to_speech(text_for_tts, format='wav')
+        logger.info(f"🔊 Generated {len(audio_response)} bytes for TTS: '{text_for_tts}'")
         
-        # Save for debugging
-        debug_dir = "debug_audio"
-        os.makedirs(debug_dir, exist_ok=True)
-        
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        debug_filename = f"{debug_dir}/upload_{session_id}_{timestamp}.wav"
-        
-        with open(debug_filename, 'wb') as f:
-            f.write(audio_data)
-        logger.info(f"💾 Saved to: {debug_filename}")
-        
-        # Check if it's valid WAV
-        if len(audio_data) < 44:
-            logger.error(f"❌ File too small: {len(audio_data)} bytes")
-            return jsonify({'error': 'Invalid audio file'}), 400
-        
-        # Check WAV header
-        if audio_data[:4] != b'RIFF':
-            logger.error(f"❌ Not a WAV file! Header: {audio_data[:4]}")
-            return jsonify({'error': 'Not a WAV file'}), 400
-        
-        logger.info("✓ Valid WAV file received")
-        
-        # Continue with transcription...
-        text = transcribe_audio(audio_data)
-        logger.info(f"📝 Transcribed: {text}")
-        
-        response_text = get_chat_response(text, session_id)
-        logger.info(f"💬 Response: {response_text}")
-        
-        audio_response = text_to_speech(response_text, format='wav')
-        logger.info(f"🔊 Generated {len(audio_response)} bytes")
-        
-        #return Response(
-        #    audio_response,
-        #    mimetype='audio/mpeg',
-        #    headers={'Content-Type': 'audio/mpeg'}
-        #)
+        # 5. Send response with audio and headers
         return Response(
             audio_response,
             mimetype='audio/wav',
-            headers={
-                'Content-Type': 'audio/wav',
-                'X-Sample-Rate': '16000',
-                'X-Channels': '1',
-                'X-Bits-Per-Sample': '16'
-            }
+            headers=response_headers
         )
 
     except Exception as e:
-        logger.error(f"❌ Error: {str(e)}", exc_info=True)
+        logger.error(f"❌ Error in voice_chat: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 500
-
 
 @app.route('/api/health', methods=['GET'])
 def health():
