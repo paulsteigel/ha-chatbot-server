@@ -691,7 +691,7 @@ def voice_chat():
         response_text = get_chat_response(text, session_id)
         logger.info(f"💬 Response: {response_text}")
         
-        audio_response = text_to_speech(response_text)
+        audio_response = text_to_speech(response_text, format='wav')
         logger.info(f"🔊 Generated {len(audio_response)} bytes")
         
         #return Response(
