@@ -1,5 +1,5 @@
 name: Kids ChatBot Server
-version: "1.0.37"  # ⬆️ Tăng version
+version: "1.0.38"  # Tôi đã tăng version, bạn có thể thay đổi nếu muốn
 slug: kids-chatbot-server
 description: OpenAI-powered voice chatbot with context memory for kids
 url: https://github.com/paulsteigel/ha-chatbot-server
@@ -22,21 +22,21 @@ options:
   openai_api_key: ""
   openai_model: gpt-4o-mini
   openai_voice: alloy
-  openai_language: auto
+  bot_language: "vi"              # <<< THAY ĐỔI Ở ĐÂY
   port: 5000
   max_tokens: 500
   temperature: 0.7
-  context_enabled: true              # ✅ NEW
-  context_max_messages: 20           # ✅ NEW
-  context_timeout_minutes: 30        # ✅ NEW
+  context_enabled: true
+  context_max_messages: 20
+  context_timeout_minutes: 30
 schema:
   openai_api_key: str
   openai_model: list(gpt-4o-mini|gpt-4o|gpt-4-turbo|gpt-3.5-turbo)?
   openai_voice: list(alloy|echo|fable|onyx|nova|shimmer)?
-  openai_language: list(auto|vi|en)?
+  bot_language: list(vi|en|auto)? # <<< THAY ĐỔI Ở ĐÂY
   port: port
   max_tokens: int(100,2000)?
   temperature: float(0.0,2.0)?
-  context_enabled: bool?             # ✅ NEW
-  context_max_messages: int(5,50)?   # ✅ NEW
-  context_timeout_minutes: int(5,120)? # ✅ NEW
+  context_enabled: bool?
+  context_max_messages: int(5,50)?
+  context_timeout_minutes: int(5,120)?
