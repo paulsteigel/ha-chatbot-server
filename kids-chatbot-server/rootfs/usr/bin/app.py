@@ -39,30 +39,26 @@ CORS(app)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_VOICE = os.getenv("OPENAI_VOICE", "alloy")
-OPENAI_LANGUAGE = os.getenv("OPENAI_LANGUAGE", "auto")
 PORT = int(os.getenv("PORT", "5000"))
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", "500"))
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
 
-# ✅ NEW: Context management settings
+# Context management settings
 CONTEXT_ENABLED = os.getenv("CONTEXT_ENABLED", "true").lower() == "true"
 CONTEXT_MAX_MESSAGES = int(os.getenv("CONTEXT_MAX_MESSAGES", "20"))
 CONTEXT_TIMEOUT_MINUTES = int(os.getenv("CONTEXT_TIMEOUT_MINUTES", "30"))
 
-# ✅ NEW: Custom command
-BOT_LANGUAGE = os.getenv("BOT_LANGUAGE", "auto").lower()
+# Custom prompt and language settings
+BOT_LANGUAGE = os.getenv("BOT_LANGUAGE", "vi").lower() # Chỉ dùng biến này cho ngôn ngữ
 CUSTOM_PROMPT_ADDITIONS = os.getenv("CUSTOM_PROMPT_ADDITIONS", "")
 
-logger.info(f"Starting Yên Hoà ChatBot Server")
+logger.info(f"--- Yên Hoà ChatBot Server Starting ---")
 logger.info(f"Model: {OPENAI_MODEL}")
 logger.info(f"Voice: {OPENAI_VOICE}")
-logger.info(f"Language: {OPENAI_LANGUAGE}")
+logger.info(f"Language: {BOT_LANGUAGE}")
 logger.info(f"Context Enabled: {CONTEXT_ENABLED}")
-logger.info(f"Max Context Messages: {CONTEXT_MAX_MESSAGES}")
 logger.info(f"Port: {PORT}")
-
-logger.info(f"Default Language: {BOT_LANGUAGE}")
-logger.info(f"Voice: {OPENAI_VOICE}")
+logger.info(f"------------------------------------")
 
 # Validate API key
 if not OPENAI_API_KEY:
