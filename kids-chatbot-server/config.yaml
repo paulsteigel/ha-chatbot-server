@@ -1,5 +1,5 @@
 name: Kids ChatBot Server
-version: "1.0.38"
+version: "1.0.39"
 slug: kids-chatbot-server
 description: OpenAI-powered voice chatbot with context memory for kids
 url: https://github.com/paulsteigel/ha-chatbot-server
@@ -42,3 +42,29 @@ schema:
   context_max_messages: int(5,50)
   context_timeout_minutes: int(5,120)
   custom_prompt_additions: str
+
+voice_vietnamese:
+  name: "Voice for Vietnamese"
+  description: "Choose voice for Vietnamese responses (alloy=neutral male, nova=female)"
+  type: list
+  default: alloy
+  options:
+    - alloy
+    - echo
+    - fable
+    - onyx
+    - nova
+    - shimmer
+
+voice_english:
+  name: "Voice for English"
+  description: "Choose voice for English responses (nova=female, alloy=neutral male)"
+  type: list
+  default: nova
+  options:
+    - alloy
+    - echo
+    - fable
+    - onyx
+    - nova
+    - shimmer
