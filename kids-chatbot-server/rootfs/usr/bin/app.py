@@ -79,30 +79,35 @@ conversations = {}
 
 
 class ConversationManager:
-    """Quản lý context và preferences cho mỗi session"""
+    """Quản lý context, language và voice preferences cho mỗi session"""
     
     @staticmethod
-    def get_or_create_session(session_id=None, preferred_lang=None):
+    def get_or_create_session(session_id=None, preferred_lang=None, preferred_voice=None):
         """Lấy hoặc tạo session ID mới"""
         if session_id and session_id in conversations:
             conversations[session_id]['last_activity'] = datetime.now()
-            # Cập nhật ngôn ngữ nếu có yêu cầu thay đổi
+            # Cập nhật preferences nếu có yêu cầu thay đổi
             if preferred_lang:
                 conversations[session_id]['language'] = preferred_lang
+            if preferred_voice:
+                conversations[session_id]['voice'] = preferred_voice
             return session_id
         
         new_session_id = session_id or secrets.token_hex(16)
         lang = preferred_lang or BOT_LANGUAGE
+        voice = preferred_voice or VOICE_MAP.get(lang, OPENAI_VOICE)
+        
         system_prompt_template = get_response_template('system', lang)
         final_system_prompt = system_prompt_template.replace("{{CUSTOM_INSTRUCTIONS}}", CUSTOM_PROMPT_ADDITIONS)
         
         conversations[new_session_id] = {
             'messages': [{"role": "system", "content": final_system_prompt}],
-            'language': lang,  # Lưu ngôn ngữ hiện tại
+            'language': lang,
+            'voice': voice,  # ⬅️ Lưu voice preference
             'created_at': datetime.now(),
             'last_activity': datetime.now()
         }
-        logger.info(f"✅ Created new session: {new_session_id} (language: {lang})")
+        logger.info(f"✅ Created new session: {new_session_id} (language: {lang}, voice: {voice})")
         return new_session_id
     
     @staticmethod
@@ -134,6 +139,13 @@ class ConversationManager:
         return BOT_LANGUAGE
     
     @staticmethod
+    def get_voice(session_id):
+        """Lấy voice hiện tại của session"""
+        if session_id in conversations:
+            return conversations[session_id].get('voice', OPENAI_VOICE)
+        return OPENAI_VOICE
+    
+    @staticmethod
     def set_language(session_id, language):
         """Thay đổi ngôn ngữ của session và cập nhật system prompt"""
         if session_id in conversations:
@@ -142,7 +154,22 @@ class ConversationManager:
             new_system_prompt = get_response_template('system', language)
             new_system_prompt = new_system_prompt.replace("{{CUSTOM_INSTRUCTIONS}}", CUSTOM_PROMPT_ADDITIONS)
             conversations[session_id]['messages'][0] = {"role": "system", "content": new_system_prompt}
+            
+            # Tự động cập nhật voice theo ngôn ngữ MỚI (trừ khi đã có preference riêng)
+            if 'voice_override' not in conversations[session_id]:
+                conversations[session_id]['voice'] = VOICE_MAP.get(language, OPENAI_VOICE)
+            
             logger.info(f"🌐 Session {session_id} switched to language: {language}")
+            return True
+        return False
+    
+    @staticmethod
+    def set_voice(session_id, voice):
+        """Thay đổi giọng nói của session"""
+        if session_id in conversations:
+            conversations[session_id]['voice'] = voice
+            conversations[session_id]['voice_override'] = True  # Đánh dấu là user đã chọn voice
+            logger.info(f"🎤 Session {session_id} switched to voice: {voice}")
             return True
         return False
     
@@ -169,6 +196,19 @@ class ConversationManager:
             logger.info(f"⏰ Auto-deleted expired session: {sid}")
         return len(expired_sessions)
 
+def detect_language(text):
+    """Simple language detection based on character set"""
+    vietnamese_chars = 'àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ'
+    text_lower = text.lower()
+    has_vietnamese = any(char in vietnamese_chars for char in text_lower)
+    has_english = any(char.isalpha() and char.isascii() for char in text_lower)
+    
+    if has_vietnamese and not has_english:
+        return 'vi'
+    elif has_english and not has_vietnamese:
+        return 'en'
+    else:
+        return 'auto'
 
 def detect_language(text):
     """Simple language detection based on character set"""
@@ -183,6 +223,7 @@ def detect_language(text):
         return 'en'
     else:
         return 'auto'
+
 
 def detect_language_switch_intent(user_message):
     """
@@ -218,6 +259,72 @@ def detect_language_switch_intent(user_message):
     return (None, False)
 
 
+def detect_voice_change_intent(user_message):
+    """
+    Phát hiện ý định thay đổi giọng nói
+    Returns: (voice_name, is_voice_change_request)
+    
+    Supported voices: alloy, echo, fable, onyx, nova, shimmer
+    - alloy: Giọng trung tính (neutral)
+    - echo: Giọng nam (male)
+    - fable: Giọng nam British
+    - onyx: Giọng nam sâu (deep male)
+    - nova: Giọng nữ (female)
+    - shimmer: Giọng nữ mềm mại (soft female)
+    """
+    message_lower = user_message.lower().strip()
+    
+    # Mapping từ mô tả sang tên voice
+    voice_mappings = {
+        # Giọng nữ
+        'nova': [
+            'giọng nữ', 'giọng gái', 'giọng con gái',
+            'female voice', 'woman voice', 'girl voice', 
+            'dùng giọng nữ', 'chuyển giọng nữ', 'đổi giọng nữ',
+            'use female voice', 'switch to female', 'change to female voice',
+            'giọng nova', 'voice nova', 'use nova'
+        ],
+        
+        'shimmer': [
+            'giọng nữ mềm', 'giọng nữ nhẹ nhàng',
+            'soft female voice', 'gentle female voice',
+            'giọng shimmer', 'voice shimmer', 'use shimmer'
+        ],
+        
+        # Giọng nam
+        'onyx': [
+            'giọng nam', 'giọng trai', 'giọng con trai',
+            'male voice', 'man voice', 'boy voice',
+            'dùng giọng nam', 'chuyển giọng nam', 'đổi giọng nam',
+            'use male voice', 'switch to male', 'change to male voice',
+            'giọng onyx', 'voice onyx', 'use onyx'
+        ],
+        
+        'echo': [
+            'giọng nam echo', 'giọng echo',
+            'voice echo', 'use echo'
+        ],
+        
+        'fable': [
+            'giọng fable', 'voice fable', 'use fable'
+        ],
+        
+        # Giọng trung tính
+        'alloy': [
+            'giọng trung tính', 'giọng neutral',
+            'neutral voice', 'default voice',
+            'giọng alloy', 'voice alloy', 'use alloy'
+        ]
+    }
+    
+    # Kiểm tra từng voice
+    for voice, triggers in voice_mappings.items():
+        for trigger in triggers:
+            if trigger in message_lower:
+                return (voice, True)
+    
+    return (None, False)
+
 def transcribe_audio(audio_data):
     """Transcribe audio using OpenAI Whisper API"""
     try:
@@ -239,40 +346,9 @@ def transcribe_audio(audio_data):
     except Exception as e:
         logger.error(f"❌ Transcription error: {str(e)}")
         raise
-
-
-def detect_language_switch_intent(user_message):
-    """
-    Phát hiện ý định chuyển ngôn ngữ
-    Returns: ('vi'|'en'|None, bool)
-    """
-    message_lower = user_message.lower().strip()
-    
-    # Yêu cầu chuyển sang tiếng Anh
-    en_triggers = [
-        'speak english', 'talk in english', 'use english', 'switch to english',
-        'hãy nói tiếng anh', 'nói tiếng anh', 'chuyển sang tiếng anh', 'dùng tiếng anh'
-    ]
-    
-    # Yêu cầu chuyển sang tiếng Việt
-    vi_triggers = [
-        'speak vietnamese', 'talk in vietnamese', 'use vietnamese', 'switch to vietnamese',
-        'hãy nói tiếng việt', 'nói tiếng việt', 'chuyển sang tiếng việt', 'dùng tiếng việt'
-    ]
-    
-    for trigger in en_triggers:
-        if trigger in message_lower:
-            return ('en', True)
-    
-    for trigger in vi_triggers:
-        if trigger in message_lower:
-            return ('vi', True)
-    
-    return (None, False)
-
-
+        
 def get_chat_response(user_message, session_id='default'):
-    """Get AI response with intelligent language handling and session management"""
+    """Get AI response with intelligent language and voice handling"""
     try:
         logger.info(f"🤖 Getting AI response for: {user_message}")
         
@@ -282,6 +358,9 @@ def get_chat_response(user_message, session_id='default'):
         if not is_safe_content(user_message):
             return get_response_template('inappropriate', detected_lang)
         
+        # Kiểm tra ý định thay đổi giọng nói
+        (target_voice, is_voice_change) = detect_voice_change_intent(user_message)
+        
         # Kiểm tra ý định chuyển ngôn ngữ
         (target_lang, is_lang_switch) = detect_language_switch_intent(user_message)
         
@@ -289,8 +368,32 @@ def get_chat_response(user_message, session_id='default'):
             # Tạo hoặc lấy session
             session_id = ConversationManager.get_or_create_session(session_id)
             current_lang = ConversationManager.get_language(session_id)
+            current_voice = ConversationManager.get_voice(session_id)
             
-            # Nếu người dùng YÊU CẦU chuyển ngôn ngữ
+            # XỬ LÝ THAY ĐỔI GIỌNG NÓI
+            if is_voice_change and target_voice:
+                ConversationManager.set_voice(session_id, target_voice)
+                voice_descriptions = {
+                    'nova': 'giọng nữ Nova' if current_lang == 'vi' else 'female voice Nova',
+                    'onyx': 'giọng nam Onyx' if current_lang == 'vi' else 'male voice Onyx',
+                    'alloy': 'giọng Alloy' if current_lang == 'vi' else 'voice Alloy',
+                    'echo': 'giọng Echo' if current_lang == 'vi' else 'voice Echo',
+                    'fable': 'giọng Fable' if current_lang == 'vi' else 'voice Fable',
+                    'shimmer': 'giọng Shimmer' if current_lang == 'vi' else 'voice Shimmer'
+                }
+                voice_desc = voice_descriptions.get(target_voice, target_voice)
+                
+                confirmation = (
+                    f"Được rồi! Mình sẽ dùng {voice_desc} từ bây giờ nhé." 
+                    if current_lang == 'vi' 
+                    else f"Sure! I'll use {voice_desc} from now on."
+                )
+                ConversationManager.add_message(session_id, "user", user_message)
+                ConversationManager.add_message(session_id, "assistant", confirmation)
+                logger.info(f"🎤 Voice changed to {target_voice} for session {session_id}")
+                return confirmation
+            
+            # XỬ LÝ THAY ĐỔI NGÔN NGỮ
             if is_lang_switch and target_lang:
                 ConversationManager.set_language(session_id, target_lang)
                 lang_name = "English" if target_lang == 'en' else "Tiếng Việt"
@@ -307,17 +410,17 @@ def get_chat_response(user_message, session_id='default'):
             # Tự động nhận diện ngôn ngữ input
             detected_input_lang = detect_language(user_message)
             
-            # Chỉ cập nhật language nếu input RÕ RÀNG là ngôn ngữ khác (không phải 'auto')
+            # Chỉ cập nhật language nếu input RÕ RÀNG là ngôn ngữ khác
             if detected_input_lang != 'auto' and detected_input_lang != current_lang:
                 logger.info(f"🌐 Auto-switching language from {current_lang} to {detected_input_lang}")
                 ConversationManager.set_language(session_id, detected_input_lang)
             
-            # Thêm tin nhắn của user vào context
+            # Thêm tin nhắn vào context
             ConversationManager.add_message(session_id, "user", user_message)
             messages = ConversationManager.get_messages(session_id)
             
         else:
-            # Không có context - xử lý đơn giản
+            # Không có context
             session_id = ConversationManager.get_or_create_session()
             system_prompt_template = get_response_template('system', detected_lang if detected_lang != 'auto' else BOT_LANGUAGE)
             final_system_prompt = system_prompt_template.replace("{{CUSTOM_INSTRUCTIONS}}", CUSTOM_PROMPT_ADDITIONS)
@@ -349,7 +452,7 @@ def get_chat_response(user_message, session_id='default'):
         logger.error(f"❌ AI error: {str(e)}")
         raise
 
-def text_to_speech(text, format='mp3', language='auto'):
+def text_to_speech(text, format='mp3', language='auto', session_id=None):
     """
     Convert text to speech with automatic voice selection
     
@@ -357,21 +460,27 @@ def text_to_speech(text, format='mp3', language='auto'):
         text: Text to convert
         format: 'mp3' for web, 'wav' for ESP32
         language: 'vi', 'en', or 'auto' to auto-detect
+        session_id: Session ID to get user's voice preference
     """
     try:
-        # Tự động chọn voice dựa trên ngôn ngữ
-        if language == 'auto':
-            detected_lang = detect_language(text)
-            voice = VOICE_MAP.get(detected_lang, OPENAI_VOICE)
+        # Ưu tiên voice từ session (nếu user đã chọn)
+        if session_id and CONTEXT_ENABLED:
+            voice = ConversationManager.get_voice(session_id)
+            logger.info(f"🎤 Using session voice preference: {voice}")
         else:
-            voice = VOICE_MAP.get(language, OPENAI_VOICE)
+            # Tự động chọn voice dựa trên ngôn ngữ
+            if language == 'auto':
+                detected_lang = detect_language(text)
+                voice = VOICE_MAP.get(detected_lang, OPENAI_VOICE)
+            else:
+                voice = VOICE_MAP.get(language, OPENAI_VOICE)
         
         logger.info(f"🔊 Converting to speech ({format}, voice={voice}, lang={language}): {text[:50]}...")
         
         if format == 'wav':
             response = client.audio.speech.create(
                 model="tts-1",
-                voice=voice,  # Dynamic voice selection
+                voice=voice,
                 input=text,
                 response_format="pcm"
             )
@@ -379,7 +488,7 @@ def text_to_speech(text, format='mp3', language='auto'):
             pcm_data = response.content
             logger.info(f"✓ Received {len(pcm_data)} bytes of PCM audio")
             
-            # Downsample from 24kHz to 16kHz for ESP32
+            # Downsample from 24kHz to 16kHz
             pcm_16bit = struct.unpack(f'<{len(pcm_data)//2}h', pcm_data)
             resampled = []
             position = 0.0
@@ -401,7 +510,7 @@ def text_to_speech(text, format='mp3', language='auto'):
         else:  # MP3 format
             response = client.audio.speech.create(
                 model="tts-1",
-                voice=voice,  # Dynamic voice selection
+                voice=voice,
                 input=text,
                 response_format="mp3"
             )
@@ -713,9 +822,9 @@ def voice_chat():
             except json.JSONDecodeError:
                 logger.warning("Response looked like JSON but was not valid.")
 
-        # Generate audio với voice phù hợp với ngôn ngữ
-        audio_response = text_to_speech(text_for_tts, format='wav', language=current_lang)
-        logger.info(f"🔊 Generated TTS: '{text_for_tts}' (lang={current_lang})")
+        # Generate audio với voice từ session preference
+        audio_response = text_to_speech(text_for_tts, format='wav', language=current_lang, session_id=session_id)
+        logger.info(f"🔊 Generated TTS: '{text_for_tts}' (lang={current_lang}, session={session_id})")
         
         return Response(
             audio_response,
