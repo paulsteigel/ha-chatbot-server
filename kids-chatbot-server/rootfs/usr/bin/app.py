@@ -527,7 +527,7 @@ def get_chat_response(user_message, session_id='default', return_greeting=False)
         
         logger.info(f"📝 Sending {len(messages)} messages to OpenAI (session: {session_id})")
         
-        response = client.audio.completions.create(
+        response = client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=messages,
             max_tokens=MAX_TOKENS,
