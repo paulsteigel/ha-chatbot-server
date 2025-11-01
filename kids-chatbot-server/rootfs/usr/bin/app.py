@@ -22,7 +22,14 @@ try:
 except ImportError:
     logger.warning("⚠️ Database helper not available, using in-memory only")
     db = None
-    
+
+# ============================================
+# GLOBAL VARIABLES
+# ============================================
+client = None
+db_helper = None
+current_voice_mode = 'female'  # default: female voice
+is_command_mode = False
 SERVER_URL = os.getenv('SERVER_URL', 'https://school.sfdp.net')
 
 # Set up logging
