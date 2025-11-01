@@ -16,7 +16,13 @@ import json
 # Import utilities
 from utils.content_filter import is_safe_content
 from utils.response_templates import get_response_template
-
+try:
+    from utils.db_helper import DatabaseHelper
+    db = DatabaseHelper
+except ImportError:
+    logger.warning("⚠️ Database helper not available, using in-memory only")
+    db = None
+    
 SERVER_URL = os.getenv('SERVER_URL', 'https://school.sfdp.net')
 
 # Set up logging
@@ -77,6 +83,25 @@ else:
     logger.info("OpenAI API key is configured")
     client = OpenAI(api_key=OPENAI_API_KEY)
 
+# Initialize database connection
+if CONTEXT_PERSIST and db:
+    DB_CONFIG = {
+        'host': os.getenv('DB_HOST', '192.168.100.251'),
+        'user': os.getenv('DB_USER', 'paulsteigel'),
+        'password': os.getenv('DB_PASSWORD', 'D1ndh1sk'),
+        'database': os.getenv('DB_NAME', 'homeassistant'),
+        'charset': 'utf8mb4',
+        'use_unicode': True
+    }
+    
+    try:
+        db.initialize(DB_CONFIG)
+        logger.info("✅ Database connection established")
+    except Exception as e:
+        logger.error(f"❌ Database initialization failed: {e}")
+        logger.warning("⚠️ Falling back to in-memory storage")
+        db = None
+        
 # Create storage directory if persist is enabled
 if CONTEXT_PERSIST:
     Path(CONTEXT_STORAGE_DIR).mkdir(parents=True, exist_ok=True)
@@ -87,7 +112,7 @@ conversations = {}
 
 
 class ConversationManager:
-    """Quản lý context, language, voice preferences và persistence cho mỗi session"""
+    """Quản lý context, language, voice preferences với MySQL persistence"""
     
     @staticmethod
     def get_or_create_session(session_id=None, preferred_lang=None, preferred_voice=None):
@@ -98,15 +123,23 @@ class ConversationManager:
                 conversations[session_id]['language'] = preferred_lang
             if preferred_voice:
                 conversations[session_id]['voice'] = preferred_voice
+            
+            # Lưu vào DB
+            if CONTEXT_PERSIST and db:
+                db.save_session(session_id, conversations[session_id])
+            
             return session_id
         
-        # Nếu session_id tồn tại trên disk, load nó
-        if session_id and CONTEXT_PERSIST:
-            loaded = ConversationManager.load_from_disk(session_id)
-            if loaded:
-                logger.info(f"📂 Loaded session from disk: {session_id}")
+        # Load từ database nếu tồn tại
+        if session_id and CONTEXT_PERSIST and db:
+            loaded_data = db.load_session(session_id)
+            if loaded_data:
+                conversations[session_id] = loaded_data
+                conversations[session_id]['last_activity'] = datetime.now()
+                logger.info(f"📂 Loaded session from database: {session_id}")
                 return session_id
         
+        # Tạo session mới
         new_session_id = session_id or secrets.token_hex(16)
         lang = preferred_lang or BOT_LANGUAGE
         voice = preferred_voice or VOICE_MAP.get(lang, OPENAI_VOICE)
@@ -114,7 +147,6 @@ class ConversationManager:
         system_prompt_template = get_response_template('system', lang)
         final_system_prompt = system_prompt_template.replace("{{CUSTOM_INSTRUCTIONS}}", CUSTOM_PROMPT_ADDITIONS)
         
-        # ⬇️ THÊM GREETING MESSAGE
         greeting_message = get_response_template('greeting', lang)
         
         conversations[new_session_id] = {
@@ -125,20 +157,21 @@ class ConversationManager:
             'last_activity': datetime.now(),
             'metadata': {
                 'title': f"Conversation {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-                'initial_greeting': greeting_message  # ⬅️ Lưu greeting để dùng sau
+                'initial_greeting': greeting_message
             }
         }
         
         logger.info(f"✅ Created new session: {new_session_id} (language: {lang}, voice: {voice})")
         
-        # Lưu ngay vào disk nếu persist enabled
-        if CONTEXT_PERSIST:
-            ConversationManager.save_to_disk(new_session_id)
+        # Lưu vào database
+        if CONTEXT_PERSIST and db:
+            db.save_session(new_session_id, conversations[new_session_id])
+            db.save_message(new_session_id, 'system', final_system_prompt)
         
         return new_session_id
     
     @staticmethod
-    def add_message(session_id, role, content):
+    def add_message(session_id, role, content, tokens_used=0):
         """Thêm tin nhắn vào lịch sử"""
         if session_id not in conversations:
             ConversationManager.get_or_create_session(session_id)
@@ -146,14 +179,15 @@ class ConversationManager:
         conversations[session_id]['messages'].append({"role": role, "content": content})
         conversations[session_id]['last_activity'] = datetime.now()
         
+        # Lưu vào database
+        if CONTEXT_PERSIST and db:
+            db.save_message(session_id, role, content, tokens_used)
+            db.save_session(session_id, conversations[session_id])
+        
         messages = conversations[session_id]['messages']
         if len(messages) > CONTEXT_MAX_MESSAGES + 1:
             conversations[session_id]['messages'] = [messages[0]] + messages[-(CONTEXT_MAX_MESSAGES):]
             logger.info(f"🔄 Trimmed context for session {session_id}")
-        
-        # Auto-save sau mỗi tin nhắn
-        if CONTEXT_PERSIST:
-            ConversationManager.save_to_disk(session_id)
     
     @staticmethod
     def get_messages(session_id):
@@ -197,8 +231,8 @@ class ConversationManager:
             
             logger.info(f"🌐 Session {session_id} switched to language: {language}")
             
-            if CONTEXT_PERSIST:
-                ConversationManager.save_to_disk(session_id)
+            if CONTEXT_PERSIST and db:
+                db.save_session(session_id, conversations[session_id])
             
             return True
         return False
@@ -211,8 +245,8 @@ class ConversationManager:
             conversations[session_id]['voice_override'] = True
             logger.info(f"🎤 Session {session_id} switched to voice: {voice}")
             
-            if CONTEXT_PERSIST:
-                ConversationManager.save_to_disk(session_id)
+            if CONTEXT_PERSIST and db:
+                db.save_session(session_id, conversations[session_id])
             
             return True
         return False
@@ -224,12 +258,8 @@ class ConversationManager:
             del conversations[session_id]
             logger.info(f"🗑️ Cleared session: {session_id}")
             
-            # Xóa file trên disk
-            if CONTEXT_PERSIST:
-                session_file = Path(CONTEXT_STORAGE_DIR) / f"{session_id}.json"
-                if session_file.exists():
-                    session_file.unlink()
-                    logger.info(f"🗑️ Deleted session file: {session_file}")
+            if CONTEXT_PERSIST and db:
+                db.delete_session(session_id)
             
             return True
         return False
@@ -239,6 +269,8 @@ class ConversationManager:
         """Xóa các session không hoạt động"""
         now = datetime.now()
         timeout = timedelta(minutes=CONTEXT_TIMEOUT_MINUTES)
+        
+        # Cleanup in-memory
         expired_sessions = [
             sid for sid, data in conversations.items()
             if now - data['last_activity'] > timeout
@@ -246,57 +278,13 @@ class ConversationManager:
         for sid in expired_sessions:
             del conversations[sid]
             logger.info(f"⏰ Auto-deleted expired session: {sid}")
+        
+        # Cleanup database
+        if CONTEXT_PERSIST and db:
+            db.cleanup_old_sessions(CONTEXT_TIMEOUT_MINUTES)
+        
         return len(expired_sessions)
-    
-    @staticmethod
-    def save_to_disk(session_id):
-        """Lưu session xuống disk (JSON)"""
-        if not CONTEXT_PERSIST or session_id not in conversations:
-            return False
-        
-        try:
-            session_data = conversations[session_id].copy()
-            
-            # Convert datetime objects to ISO format
-            session_data['created_at'] = session_data['created_at'].isoformat()
-            session_data['last_activity'] = session_data['last_activity'].isoformat()
-            
-            session_file = Path(CONTEXT_STORAGE_DIR) / f"{session_id}.json"
-            with open(session_file, 'w', encoding='utf-8') as f:
-                json.dump(session_data, f, ensure_ascii=False, indent=2)
-            
-            return True
-        
-        except Exception as e:
-            logger.error(f"❌ Failed to save session {session_id}: {e}")
-            return False
-    
-    @staticmethod
-    def load_from_disk(session_id):
-        """Load session từ disk"""
-        if not CONTEXT_PERSIST:
-            return False
-        
-        try:
-            session_file = Path(CONTEXT_STORAGE_DIR) / f"{session_id}.json"
-            
-            if not session_file.exists():
-                return False
-            
-            with open(session_file, 'r', encoding='utf-8') as f:
-                session_data = json.load(f)
-            
-            # Convert ISO format back to datetime
-            session_data['created_at'] = datetime.fromisoformat(session_data['created_at'])
-            session_data['last_activity'] = datetime.fromisoformat(session_data['last_activity'])
-            
-            conversations[session_id] = session_data
-            logger.info(f"📂 Loaded session from disk: {session_id}")
-            return True
-        
-        except Exception as e:
-            logger.error(f"❌ Failed to load session {session_id}: {e}")
-            return False
+
 
 
 # ============================================
