@@ -49,6 +49,15 @@ CONTEXT_TIMEOUT_MINUTES = int(os.getenv("CONTEXT_TIMEOUT_MINUTES", "30"))
 BOT_LANGUAGE = os.getenv("BOT_LANGUAGE", "vi").lower()
 CUSTOM_PROMPT_ADDITIONS = os.getenv("CUSTOM_PROMPT_ADDITIONS", "")
 
+# Voice selection based on language
+VOICE_MAP = {
+    'vi': os.getenv("VOICE_VIETNAMESE", "alloy"),  # Nam cho tiếng Việt
+    'en': os.getenv("VOICE_ENGLISH", "nova"),      # Nữ cho tiếng Anh
+    'auto': OPENAI_VOICE
+}
+
+logger.info(f"Voice Map: VI={VOICE_MAP['vi']}, EN={VOICE_MAP['en']}")
+
 logger.info(f"--- Yên Hoà ChatBot Server Starting ---")
 logger.info(f"Model: {OPENAI_MODEL}")
 logger.info(f"Voice: {OPENAI_VOICE}")
@@ -70,25 +79,30 @@ conversations = {}
 
 
 class ConversationManager:
-    """Quản lý context cho mỗi session"""
+    """Quản lý context và preferences cho mỗi session"""
     
     @staticmethod
-    def get_or_create_session(session_id=None):
+    def get_or_create_session(session_id=None, preferred_lang=None):
         """Lấy hoặc tạo session ID mới"""
         if session_id and session_id in conversations:
             conversations[session_id]['last_activity'] = datetime.now()
+            # Cập nhật ngôn ngữ nếu có yêu cầu thay đổi
+            if preferred_lang:
+                conversations[session_id]['language'] = preferred_lang
             return session_id
         
         new_session_id = session_id or secrets.token_hex(16)
-        system_prompt_template = get_response_template('system', BOT_LANGUAGE)
+        lang = preferred_lang or BOT_LANGUAGE
+        system_prompt_template = get_response_template('system', lang)
         final_system_prompt = system_prompt_template.replace("{{CUSTOM_INSTRUCTIONS}}", CUSTOM_PROMPT_ADDITIONS)
         
         conversations[new_session_id] = {
             'messages': [{"role": "system", "content": final_system_prompt}],
+            'language': lang,  # Lưu ngôn ngữ hiện tại
             'created_at': datetime.now(),
             'last_activity': datetime.now()
         }
-        logger.info(f"✅ Created new session: {new_session_id}")
+        logger.info(f"✅ Created new session: {new_session_id} (language: {lang})")
         return new_session_id
     
     @staticmethod
@@ -111,6 +125,26 @@ class ConversationManager:
         if session_id not in conversations:
             ConversationManager.get_or_create_session(session_id)
         return conversations[session_id]['messages']
+    
+    @staticmethod
+    def get_language(session_id):
+        """Lấy ngôn ngữ hiện tại của session"""
+        if session_id in conversations:
+            return conversations[session_id].get('language', BOT_LANGUAGE)
+        return BOT_LANGUAGE
+    
+    @staticmethod
+    def set_language(session_id, language):
+        """Thay đổi ngôn ngữ của session và cập nhật system prompt"""
+        if session_id in conversations:
+            conversations[session_id]['language'] = language
+            # Cập nhật system prompt với ngôn ngữ mới
+            new_system_prompt = get_response_template('system', language)
+            new_system_prompt = new_system_prompt.replace("{{CUSTOM_INSTRUCTIONS}}", CUSTOM_PROMPT_ADDITIONS)
+            conversations[session_id]['messages'][0] = {"role": "system", "content": new_system_prompt}
+            logger.info(f"🌐 Session {session_id} switched to language: {language}")
+            return True
+        return False
     
     @staticmethod
     def clear_session(session_id):
@@ -150,6 +184,39 @@ def detect_language(text):
     else:
         return 'auto'
 
+def detect_language_switch_intent(user_message):
+    """
+    Phát hiện ý định chuyển ngôn ngữ
+    Returns: (target_language, is_switch_request)
+    """
+    message_lower = user_message.lower().strip()
+    
+    # Yêu cầu chuyển sang tiếng Anh
+    en_triggers = [
+        'speak english', 'talk in english', 'use english', 'switch to english',
+        'answer in english', 'reply in english', 'say it in english',
+        'hãy nói tiếng anh', 'nói tiếng anh', 'chuyển sang tiếng anh', 
+        'dùng tiếng anh', 'trả lời bằng tiếng anh'
+    ]
+    
+    # Yêu cầu chuyển sang tiếng Việt
+    vi_triggers = [
+        'speak vietnamese', 'talk in vietnamese', 'use vietnamese', 
+        'switch to vietnamese', 'answer in vietnamese', 'reply in vietnamese',
+        'hãy nói tiếng việt', 'nói tiếng việt', 'chuyển sang tiếng việt', 
+        'dùng tiếng việt', 'trả lời bằng tiếng việt'
+    ]
+    
+    for trigger in en_triggers:
+        if trigger in message_lower:
+            return ('en', True)
+    
+    for trigger in vi_triggers:
+        if trigger in message_lower:
+            return ('vi', True)
+    
+    return (None, False)
+
 
 def transcribe_audio(audio_data):
     """Transcribe audio using OpenAI Whisper API"""
@@ -174,27 +241,93 @@ def transcribe_audio(audio_data):
         raise
 
 
+def detect_language_switch_intent(user_message):
+    """
+    Phát hiện ý định chuyển ngôn ngữ
+    Returns: ('vi'|'en'|None, bool)
+    """
+    message_lower = user_message.lower().strip()
+    
+    # Yêu cầu chuyển sang tiếng Anh
+    en_triggers = [
+        'speak english', 'talk in english', 'use english', 'switch to english',
+        'hãy nói tiếng anh', 'nói tiếng anh', 'chuyển sang tiếng anh', 'dùng tiếng anh'
+    ]
+    
+    # Yêu cầu chuyển sang tiếng Việt
+    vi_triggers = [
+        'speak vietnamese', 'talk in vietnamese', 'use vietnamese', 'switch to vietnamese',
+        'hãy nói tiếng việt', 'nói tiếng việt', 'chuyển sang tiếng việt', 'dùng tiếng việt'
+    ]
+    
+    for trigger in en_triggers:
+        if trigger in message_lower:
+            return ('en', True)
+    
+    for trigger in vi_triggers:
+        if trigger in message_lower:
+            return ('vi', True)
+    
+    return (None, False)
+
+
 def get_chat_response(user_message, session_id='default'):
-    """Get AI response using OpenAI with conversation context"""
+    """Get AI response with intelligent language handling and session management"""
     try:
         logger.info(f"🤖 Getting AI response for: {user_message}")
         
+        # Content filtering
         detected_lang = detect_language(user_message)
         
         if not is_safe_content(user_message):
             return get_response_template('inappropriate', detected_lang)
         
+        # Kiểm tra ý định chuyển ngôn ngữ
+        (target_lang, is_lang_switch) = detect_language_switch_intent(user_message)
+        
         if CONTEXT_ENABLED:
+            # Tạo hoặc lấy session
             session_id = ConversationManager.get_or_create_session(session_id)
+            current_lang = ConversationManager.get_language(session_id)
+            
+            # Nếu người dùng YÊU CẦU chuyển ngôn ngữ
+            if is_lang_switch and target_lang:
+                ConversationManager.set_language(session_id, target_lang)
+                lang_name = "English" if target_lang == 'en' else "Tiếng Việt"
+                confirmation = (
+                    f"Okay! I'll speak {lang_name} from now on." 
+                    if target_lang == 'en' 
+                    else f"Được rồi! Mình sẽ nói {lang_name} từ bây giờ nhé."
+                )
+                ConversationManager.add_message(session_id, "user", user_message)
+                ConversationManager.add_message(session_id, "assistant", confirmation)
+                logger.info(f"🌐 Language switched to {target_lang} for session {session_id}")
+                return confirmation
+            
+            # Tự động nhận diện ngôn ngữ input
+            detected_input_lang = detect_language(user_message)
+            
+            # Chỉ cập nhật language nếu input RÕ RÀNG là ngôn ngữ khác (không phải 'auto')
+            if detected_input_lang != 'auto' and detected_input_lang != current_lang:
+                logger.info(f"🌐 Auto-switching language from {current_lang} to {detected_input_lang}")
+                ConversationManager.set_language(session_id, detected_input_lang)
+            
+            # Thêm tin nhắn của user vào context
             ConversationManager.add_message(session_id, "user", user_message)
             messages = ConversationManager.get_messages(session_id)
+            
         else:
-            system_prompt_template = get_response_template('system', BOT_LANGUAGE)
+            # Không có context - xử lý đơn giản
+            session_id = ConversationManager.get_or_create_session()
+            system_prompt_template = get_response_template('system', detected_lang if detected_lang != 'auto' else BOT_LANGUAGE)
             final_system_prompt = system_prompt_template.replace("{{CUSTOM_INSTRUCTIONS}}", CUSTOM_PROMPT_ADDITIONS)
             messages = [
                 {"role": "system", "content": final_system_prompt},
                 {"role": "user", "content": user_message}
             ]
+        
+        # Gọi OpenAI API
+        logger.info(f"📝 Sending {len(messages)} messages to OpenAI (session: {session_id})")
         
         response = client.chat.completions.create(
             model=OPENAI_MODEL,
@@ -205,6 +338,7 @@ def get_chat_response(user_message, session_id='default'):
         
         assistant_message = response.choices[0].message.content
         
+        # Lưu phản hồi vào context
         if CONTEXT_ENABLED:
             ConversationManager.add_message(session_id, "assistant", assistant_message)
         
@@ -215,16 +349,29 @@ def get_chat_response(user_message, session_id='default'):
         logger.error(f"❌ AI error: {str(e)}")
         raise
 
-
-def text_to_speech(text, format='mp3'):
-    """Convert text to speech using OpenAI TTS"""
+def text_to_speech(text, format='mp3', language='auto'):
+    """
+    Convert text to speech with automatic voice selection
+    
+    Args:
+        text: Text to convert
+        format: 'mp3' for web, 'wav' for ESP32
+        language: 'vi', 'en', or 'auto' to auto-detect
+    """
     try:
-        logger.info(f"🔊 Converting to speech ({format}): {text[:50]}...")
+        # Tự động chọn voice dựa trên ngôn ngữ
+        if language == 'auto':
+            detected_lang = detect_language(text)
+            voice = VOICE_MAP.get(detected_lang, OPENAI_VOICE)
+        else:
+            voice = VOICE_MAP.get(language, OPENAI_VOICE)
+        
+        logger.info(f"🔊 Converting to speech ({format}, voice={voice}, lang={language}): {text[:50]}...")
         
         if format == 'wav':
             response = client.audio.speech.create(
                 model="tts-1",
-                voice=OPENAI_VOICE,
+                voice=voice,  # Dynamic voice selection
                 input=text,
                 response_format="pcm"
             )
@@ -248,25 +395,24 @@ def text_to_speech(text, format='mp3'):
             wav_header = create_wav_header(len(resampled_pcm), 16000, 1, 16)
             wav_file = wav_header + resampled_pcm
             
-            logger.info(f"✓ Generated {len(wav_file)} bytes of WAV audio")
+            logger.info(f"✓ Generated {len(wav_file)} bytes of WAV audio (voice: {voice})")
             return wav_file
             
-        else:
+        else:  # MP3 format
             response = client.audio.speech.create(
                 model="tts-1",
-                voice=OPENAI_VOICE,
+                voice=voice,  # Dynamic voice selection
                 input=text,
                 response_format="mp3"
             )
             
             audio_bytes = response.content
-            logger.info(f"✓ Generated {len(audio_bytes)} bytes of MP3 audio")
+            logger.info(f"✓ Generated {len(audio_bytes)} bytes of MP3 audio (voice: {voice})")
             return audio_bytes
         
     except Exception as e:
         logger.error(f"❌ TTS error: {str(e)}")
         raise
-
 
 def create_wav_header(data_size, sample_rate=16000, channels=1, bits_per_sample=16):
     """Create a WAV file header"""
@@ -470,26 +616,25 @@ def transcribe():
 
 @app.route('/api/voice', methods=['POST'])
 def voice():
-    """Handle voice requests with language detection"""
+    """Handle voice requests with automatic voice selection"""
     if not client:
         return jsonify({'error': 'OpenAI API key not configured'}), 500
     
     try:
         data = request.json
         text = data.get('text', '')
+        language = data.get('language', 'auto')  # Client có thể chỉ định ngôn ngữ
         
         if not text:
             return jsonify({'error': 'Text is required'}), 400
         
-        speech_response = client.audio.speech.create(
-            model="tts-1",
-            voice=OPENAI_VOICE,
-            input=text,
-            response_format="mp3"
-        )
+        # Generate speech với voice tự động chọn
+        audio_bytes = text_to_speech(text, format='mp3', language=language)
         
+        # Save to temp file
         output_path = Path("/tmp/speech.mp3")
-        speech_response.stream_to_file(output_path)  # ✅ SỬA: dùng speech_response thay vì response
+        with open(output_path, 'wb') as f:
+            f.write(audio_bytes)
         
         return send_from_directory('/tmp', 'speech.mp3', mimetype='audio/mpeg')
     
@@ -497,38 +642,47 @@ def voice():
         logger.error(f"Error in voice endpoint: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-
 @app.route('/api/voice-chat', methods=['POST'])
 def voice_chat():
-    """Handle voice chat with command recognition - MAIN ENDPOINT FOR ESP32"""
+    """Handle voice chat with intelligent language/voice switching - MAIN ENDPOINT FOR ESP32"""
     if not client:
         return jsonify({'error': 'OpenAI API key not configured'}), 500
     
     try:
-        session_id = request.headers.get('X-Session-ID', secrets.token_hex(16))
+        # Lấy hoặc tạo session_id
+        session_id = request.headers.get('X-Session-ID')
+        if not session_id:
+            session_id = secrets.token_hex(16)
+            logger.info(f"🆕 Created new session for ESP32: {session_id}")
         
         if 'audio' not in request.files:
             return jsonify({'error': 'No audio file provided'}), 400
         
         audio_data = request.files['audio'].read()
-        logger.info(f"📥 Received {len(audio_data)} bytes of audio.")
+        logger.info(f"📥 Received {len(audio_data)} bytes of audio (session: {session_id})")
 
+        # Transcribe audio
         transcribed_text = transcribe_audio(audio_data)
         logger.info(f"📝 Transcribed: {transcribed_text}")
 
+        # Get AI response (with automatic language handling)
         raw_ai_response = get_chat_response(transcribed_text, session_id)
         logger.info(f"🤖 Raw AI Response: {raw_ai_response}")
+
+        # Lấy ngôn ngữ hiện tại của session
+        current_lang = ConversationManager.get_language(session_id) if CONTEXT_ENABLED else detect_language(raw_ai_response)
 
         response_headers = {
             'Content-Type': 'audio/wav',
             'X-Transcription': transcribed_text.encode('utf-8').decode('latin-1'),
             'X-Response-Text': raw_ai_response.encode('utf-8').decode('latin-1'),
-            'X-Session-ID': session_id
+            'X-Session-ID': session_id,
+            'X-Language': current_lang  # Trả về ngôn ngữ hiện tại cho ESP32
         }
         
         text_for_tts = raw_ai_response
 
-        # Check if the response is a command
+        # Check if the response is a device command
         if raw_ai_response.strip().startswith('{'):
             try:
                 command_data = json.loads(raw_ai_response)
@@ -540,18 +694,28 @@ def voice_chat():
                     response_headers['X-Device-Command'] = command
                     response_headers['X-Device-Value'] = str(value)
                     
-                    lang = BOT_LANGUAGE
-                    if command == "set_volume":
-                        text_for_tts = "Đã điều chỉnh âm lượng" if lang == 'vi' else "Volume adjusted"
-                    elif command == "set_mic_gain":
-                        text_for_tts = "Đã chỉnh độ nhạy mic" if lang == 'vi' else "Mic sensitivity adjusted"
-                    elif command == "stop_conversation":
-                        text_for_tts = "Tạm biệt" if lang == 'vi' else "Goodbye"
+                    # Confirmation message based on current language
+                    confirmations = {
+                        'set_volume': {
+                            'vi': 'Đã điều chỉnh âm lượng',
+                            'en': 'Volume adjusted'
+                        },
+                        'set_mic_gain': {
+                            'vi': 'Đã chỉnh độ nhạy mic',
+                            'en': 'Mic sensitivity adjusted'
+                        },
+                        'stop_conversation': {
+                            'vi': 'Tạm biệt',
+                            'en': 'Goodbye'
+                        }
+                    }
+                    text_for_tts = confirmations.get(command, {}).get(current_lang, raw_ai_response)
             except json.JSONDecodeError:
                 logger.warning("Response looked like JSON but was not valid.")
 
-        audio_response = text_to_speech(text_for_tts, format='wav')
-        logger.info(f"🔊 Generated {len(audio_response)} bytes for TTS: '{text_for_tts}'")
+        # Generate audio với voice phù hợp với ngôn ngữ
+        audio_response = text_to_speech(text_for_tts, format='wav', language=current_lang)
+        logger.info(f"🔊 Generated TTS: '{text_for_tts}' (lang={current_lang})")
         
         return Response(
             audio_response,
@@ -562,7 +726,6 @@ def voice_chat():
     except Exception as e:
         logger.error(f"❌ Error in voice_chat: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 500
-
 
 @app.route('/api/health', methods=['GET'])
 def health():
