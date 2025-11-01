@@ -41,4 +41,4 @@ schema:
   context_enabled: bool
   context_max_messages: int(5,50)
   context_timeout_minutes: int(5,120)
-  custom_prompt_additions: text
+  custom_prompt_additions: str
