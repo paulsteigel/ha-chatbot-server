@@ -547,66 +547,52 @@ def get_chat_response(user_message, session_id='default', return_greeting=False)
         raise
 
 
-def text_to_speech(text, format='mp3', language='auto', session_id=None):
-    """Convert text to speech with automatic voice selection"""
+def text_to_speech(text: str, format: str = "mp3", language: str = "auto") -> bytes:
+    """
+    Convert text to speech using OpenAI TTS API
+    
+    Args:
+        text: Text to convert to speech
+        format: Audio format (mp3, opus, aac, flac, wav, pcm)
+        language: Language hint ('auto', 'vi', 'en')
+    
+    Returns:
+        Audio bytes
+    """
+    global current_voice_mode
+    
     try:
-        if session_id and CONTEXT_ENABLED:
-            voice = ConversationManager.get_voice(session_id)
-            logger.info(f"🎤 Using session voice preference: {voice}")
-        else:
-            if language == 'auto':
-                detected_lang = detect_language(text)
-                voice = VOICE_MAP.get(detected_lang, OPENAI_VOICE)
-            else:
-                voice = VOICE_MAP.get(language, OPENAI_VOICE)
+        # Detect language if auto
+        detected_lang = language
+        if language == "auto":
+            detected_lang = detect_language(text)
         
-        logger.info(f"🔊 Converting to speech ({format}, voice={voice}, lang={language}): {text[:50]}...")
+        # Select voice based on current mode and language
+        if detected_lang == "vi":
+            voice = "nova" if current_voice_mode == "female" else "onyx"
+        else:  # English
+            voice = "nova" if current_voice_mode == "female" else "echo"
         
-        if format == 'wav':
-            response = client.audio.speech.create(
-                model="tts-1",
-                voice=voice,
-                input=text,
-                response_format="pcm"
-            )
-            
-            pcm_data = response.content
-            logger.info(f"✓ Received {len(pcm_data)} bytes of PCM audio")
-            
-            pcm_16bit = struct.unpack(f'<{len(pcm_data)//2}h', pcm_data)
-            resampled = []
-            position = 0.0
-            step = 24000 / 16000
-            
-            while int(position) < len(pcm_16bit):
-                resampled.append(pcm_16bit[int(position)])
-                position += step
-            
-            resampled_pcm = struct.pack(f'<{len(resampled)}h', *resampled)
-            logger.info(f"✓ Resampled to {len(resampled_pcm)} bytes at 16kHz")
-            
-            wav_header = create_wav_header(len(resampled_pcm), 16000, 1, 16)
-            wav_file = wav_header + resampled_pcm
-            
-            logger.info(f"✓ Generated {len(wav_file)} bytes of WAV audio (voice: {voice})")
-            return wav_file
-            
-        else:
-            response = client.audio.speech.create(
-                model="tts-1",
-                voice=voice,
-                input=text,
-                response_format="mp3"
-            )
-            
-            audio_bytes = response.content
-            logger.info(f"✓ Generated {len(audio_bytes)} bytes of MP3 audio (voice: {voice})")
-            return audio_bytes
+        logger.info(f"🎤 TTS: lang={detected_lang}, voice={voice}, mode={current_voice_mode}")
+        logger.info(f"📝 Text: {text[:100]}...")
+        
+        # Generate speech
+        response = client.audio.speech.create(
+            model="tts-1",
+            voice=voice,
+            input=text,
+            response_format=format
+        )
+        
+        audio_bytes = response.content
+        
+        logger.info(f"✅ Generated {len(audio_bytes)} bytes of audio")
+        
+        return audio_bytes
         
     except Exception as e:
-        logger.error(f"❌ TTS error: {str(e)}")
+        logger.error(f"❌ TTS Error: {str(e)}", exc_info=True)
         raise
-
 
 def create_wav_header(data_size, sample_rate=16000, channels=1, bits_per_sample=16):
     """Create a WAV file header"""
@@ -631,6 +617,120 @@ def create_wav_header(data_size, sample_rate=16000, channels=1, bits_per_sample=
     )
     return header
 
+def handle_home_automation_command(user_message: str):
+    """
+    Parse and execute home automation commands
+    Supports:
+    - Volume control (tăng/giảm âm lượng)
+    - Mic gain control (tăng/giảm độ nhạy mic)
+    - Device control (bật/tắt thiết bị)
+    """
+    lower_msg = user_message.lower()
+    
+    # ============================================
+    # 1. VOLUME CONTROL
+    # ============================================
+    volume_increase = [
+        'tăng âm lượng', 'to tiếng lên', 'increase volume',
+        'louder', 'volume up', 'to hơn'
+    ]
+    volume_decrease = [
+        'giảm âm lượng', 'nhỏ tiếng lại', 'decrease volume',
+        'lower', 'volume down', 'nhỏ hơn'
+    ]
+    
+    if any(pattern in lower_msg for pattern in volume_increase):
+        # TODO: Gọi API Home Assistant để tăng volume
+        # Ví dụ: call_service('media_player', 'volume_up', entity_id='media_player.living_room')
+        logger.info("🔊 Volume UP")
+        return "Đã tăng âm lượng lên rồi nè! 🔊"
+    
+    if any(pattern in lower_msg for pattern in volume_decrease):
+        # TODO: Gọi API Home Assistant để giảm volume
+        logger.info("🔉 Volume DOWN")
+        return "Đã giảm âm lượng xuống rồi nè! 🔉"
+    
+    # ============================================
+    # 2. MIC GAIN CONTROL
+    # ============================================
+    mic_increase = [
+        'tăng độ nhạy mic', 'mic nhạy hơn', 'increase mic gain',
+        'mic gain up', 'tăng mic'
+    ]
+    mic_decrease = [
+        'giảm độ nhạy mic', 'mic kém nhạy', 'decrease mic gain',
+        'mic gain down', 'giảm mic'
+    ]
+    
+    if any(pattern in lower_msg for pattern in mic_increase):
+        # TODO: Điều chỉnh mic gain (cần tích hợp với ESP32)
+        logger.info("🎤 Mic gain UP")
+        return "Đã tăng độ nhạy mic lên rồi nè! 🎤"
+    
+    if any(pattern in lower_msg for pattern in mic_decrease):
+        # TODO: Điều chỉnh mic gain
+        logger.info("🎤 Mic gain DOWN")
+        return "Đã giảm độ nhạy mic xuống rồi nè! 🎤"
+    
+    # ============================================
+    # 3. DEVICE CONTROL (BẬT/TẮT THIẾT BỊ)
+    # ============================================
+    
+    # Device mapping
+    device_map = {
+        'light': ['đèn', 'light', 'lamp', 'ánh sáng'],
+        'fan': ['quạt', 'fan'],
+        'tv': ['tv', 'tivi', 'television'],
+        'air_conditioner': ['điều hòa', 'air conditioner', 'ac', 'máy lạnh'],
+        'door': ['cửa', 'door'],
+        'window': ['cửa sổ', 'window']
+    }
+    
+    # Action mapping
+    action = None
+    if any(word in lower_msg for word in ['bật', 'turn on', 'open', 'mở', 'on']):
+        action = 'turn_on'
+    elif any(word in lower_msg for word in ['tắt', 'turn off', 'close', 'đóng', 'off']):
+        action = 'turn_off'
+    
+    # Find device
+    device = None
+    device_keywords = None
+    for device_key, keywords in device_map.items():
+        if any(keyword in lower_msg for keyword in keywords):
+            device = device_key
+            device_keywords = keywords
+            break
+    
+    if not action or not device:
+        return "Em chưa hiểu lệnh. Bé có thể nói rõ hơn được không?\n\nVí dụ:\n- Bật đèn phòng khách\n- Tăng âm lượng\n- Tăng độ nhạy mic"
+    
+    # Execute device command
+    try:
+        device_name_vi = {
+            'light': 'đèn',
+            'fan': 'quạt',
+            'tv': 'TV',
+            'air_conditioner': 'điều hòa',
+            'door': 'cửa',
+            'window': 'cửa sổ'
+        }[device]
+        
+        action_name_vi = 'bật' if action == 'turn_on' else 'tắt'
+        
+        # TODO: Tích hợp Home Assistant API
+        # Example:
+        # ha_entity_id = f"{device}.living_room"
+        # call_home_assistant_service(action, ha_entity_id)
+        
+        logger.info(f"🏠 Device command: {action_name_vi.upper()} {device_name_vi}")
+        
+        return f"Đã {action_name_vi} {device_name_vi} rồi nè! ✅"
+    
+    except Exception as e:
+        logger.error(f"❌ Command execution error: {str(e)}")
+        return f"Có lỗi khi {action_name_vi} {device_name_vi}. Bé thử lại nhé!"
+
 
 # ============================================
 # API ENDPOINTS
@@ -644,47 +744,293 @@ def index():
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
-    """Handle chat requests WITH CONTEXT"""
+    """Handle chat requests with context management"""
+    global current_voice_mode, is_command_mode
+    
     if not client:
         return jsonify({'error': 'OpenAI API key not configured'}), 500
     
     try:
         data = request.json
-        user_message = data.get('message', '')
-        session_id = data.get('session_id') or request.headers.get('X-Session-ID')
+        user_message = data.get('message', '').strip()
+        session_id = data.get('session_id')
         
         if not user_message:
             return jsonify({'error': 'Message is required'}), 400
         
-        ConversationManager.cleanup_old_sessions()
+        logger.info(f"📩 Message: '{user_message[:50]}...' | Session: {session_id or 'NEW'}")
         
-        if CONTEXT_ENABLED:
-            session_id = ConversationManager.get_or_create_session(session_id)
+        lower_msg = user_message.lower()
+        
+        # ============================================
+        # 1. DETECT COMMAND MODE ACTIVATION/DEACTIVATION
+        # ============================================
+        activate_triggers = [
+            'chế độ điều khiển', 'command mode',
+            'bật chế độ điều khiển', 'enter command mode',
+            'sang chế độ điều khiển', 'switch to command mode'
+        ]
+        
+        deactivate_triggers = [
+            'stop command mode', 'dừng điều khiển',
+            'thoát chế độ điều khiển', 'exit command mode',
+            'kết thúc điều khiển', 'end command mode'
+        ]
+        
+        # Activate command mode
+        if any(trigger in lower_msg for trigger in activate_triggers):
+            is_command_mode = True
+            logger.info("🎮 COMMAND MODE: ACTIVATED")
+            return jsonify({
+                'response': 'Đã bật chế độ điều khiển. Em có thể nhận lệnh điều chỉnh âm lượng, mic và điều khiển thiết bị.',
+                'command_mode': True,
+                'voice_mode': current_voice_mode
+            })
+        
+        # Deactivate command mode
+        if any(trigger in lower_msg for trigger in deactivate_triggers):
+            is_command_mode = False
+            logger.info("🎮 COMMAND MODE: DEACTIVATED")
+            return jsonify({
+                'response': 'Đã tắt chế độ điều khiển. Em sẵn sàng chat lại!',
+                'command_mode': False,
+                'voice_mode': current_voice_mode
+            })
+        
+        # ============================================
+        # 2. HANDLE COMMAND MODE REQUESTS
+        # ============================================
+        if is_command_mode:
+            command_result = handle_home_automation_command(user_message)
+            return jsonify({
+                'response': command_result,
+                'command_mode': True,
+                'voice_mode': current_voice_mode
+            })
+        
+        # ============================================
+        # 3. DETECT VOICE CHANGE COMMANDS (OUTSIDE COMMAND MODE)
+        # ============================================
+        voice_change_detected = False
+        voice_change_response = ""
+        
+        # Vietnamese voice patterns
+        vi_female_patterns = [
+            'chuyển sang giọng nữ', 'dùng giọng nữ', 'giọng nữ đi',
+            'nói giọng nữ', 'đổi sang giọng nữ', 'sang giọng nữ'
+        ]
+        vi_male_patterns = [
+            'chuyển sang giọng nam', 'dùng giọng nam', 'giọng nam đi',
+            'nói giọng nam', 'đổi sang giọng nam', 'sang giọng nam'
+        ]
+        
+        # English voice patterns
+        en_female_patterns = [
+            'change to female voice', 'switch to female voice',
+            'use female voice', 'female voice please',
+            'change voice to female', 'switch voice to female'
+        ]
+        en_male_patterns = [
+            'change to male voice', 'switch to male voice',
+            'use male voice', 'male voice please',
+            'change voice to male', 'switch voice to male'
+        ]
+        
+        if any(pattern in lower_msg for pattern in vi_female_patterns):
+            current_voice_mode = 'female'
+            voice_change_detected = True
+            voice_change_response = "Dạ, em đã chuyển sang giọng nữ rồi ạ!"
+            logger.info("🎤 Voice → FEMALE (Vietnamese)")
+        
+        elif any(pattern in lower_msg for pattern in vi_male_patterns):
+            current_voice_mode = 'male'
+            voice_change_detected = True
+            voice_change_response = "Dạ, em đã chuyển sang giọng nam rồi ạ!"
+            logger.info("🎤 Voice → MALE (Vietnamese)")
+        
+        elif any(pattern in lower_msg for pattern in en_female_patterns):
+            current_voice_mode = 'female'
+            voice_change_detected = True
+            voice_change_response = "Sure! I've switched to female voice."
+            logger.info("🎤 Voice → FEMALE (English)")
+        
+        elif any(pattern in lower_msg for pattern in en_male_patterns):
+            current_voice_mode = 'male'
+            voice_change_detected = True
+            voice_change_response = "Sure! I've switched to male voice."
+            logger.info("🎤 Voice → MALE (English)")
+        
+        # Return immediately if voice change command
+        if voice_change_detected:
+            return jsonify({
+                'response': voice_change_response,
+                'session_id': session_id or str(uuid.uuid4()),
+                'voice_mode': current_voice_mode
+            })
+        
+        # ============================================
+        # 4. REGULAR CHAT FLOW
+        # ============================================
+        
+        # Get or create session
+        if session_id:
+            session_data = db_helper.get_session(session_id)
+            if not session_data:
+                logger.warning(f"Session {session_id} not found, creating new one")
+                session_id = None
         else:
-            session_id = ConversationManager.get_or_create_session()
+            session_data = None
         
-        detected_lang = detect_language(user_message)
-        logger.info(f"Detected language: {detected_lang} for message: {user_message[:50]}")
+        is_new_session = False
         
-        if not is_safe_content(user_message):
-            response_text = get_response_template('inappropriate', detected_lang)
-            if CONTEXT_ENABLED:
-                ConversationManager.add_message(session_id, "user", user_message)
-                ConversationManager.add_message(session_id, "assistant", response_text)
-            return jsonify({'response': response_text, 'session_id': session_id})
+        if not session_id:
+            session_id = str(uuid.uuid4())
+            user_id = data.get('user_id', f'web_{uuid.uuid4().hex[:8]}')
+            
+            db_helper.create_session(
+                session_id=session_id,
+                user_id=user_id,
+                context=[]
+            )
+            is_new_session = True
+            logger.info(f"✅ New session created: {session_id}")
         
-        assistant_message = get_chat_response(user_message, session_id)
+        # Load conversation history
+        if session_data:
+            context_messages = session_data.get('context', [])
+        else:
+            context_messages = []
+        
+        # ============================================
+        # 5. SYSTEM PROMPT (CHỈ CHO NEW SESSION)
+        # ============================================
+        system_prompt = {
+            "role": "system",
+            "content": """Bạn là một trợ lý học tập thông minh tên là Yên Hoà ChatBot, được thiết kế đặc biệt để hỗ trợ học sinh tiểu học.
+
+**TÍNH CÁCH VÀ PHONG CÁCH:**
+- Luôn vui vẻ, nhiệt tình và kiên nhẫn
+- Nói chuyện thân thiện như một người chị/anh lớn
+- Dùng ngôn ngữ đơn giản, dễ hiểu phù hợp với trẻ em
+- Khuyến khích em tự suy nghĩ trước khi đưa ra câu trả lời
+- Khen ngợi khi em làm đúng, động viên khi em chưa hiểu
+
+**NHIỆM VỤ CHÍNH:**
+1. Giải đáp thắc mắc về bài học (Toán, Tiếng Việt, Khoa học...)
+2. Hướng dẫn làm bài tập theo phương pháp gợi mở
+3. Kể chuyện giáo dục, giải trí
+4. Trò chuyện về cuộc sống, sở thích
+5. Khuyến khích thói quen học tập tốt
+
+**NGUYÊN TẮC QUAN TRỌNG:**
+- KHÔNG đưa ra đáp án trực tiếp cho bài tập, mà hướng dẫn cách làm
+- KHÔNG sử dụng thuật ngữ phức tạp
+- KHÔNG nói về chủ đề không phù hợp với trẻ em
+- CÓ THỂ chuyển đổi giữa tiếng Việt và tiếng Anh theo yêu cầu
+
+**CÁCH TRẢ LỜI:**
+- Câu trả lời ngắn gọn, rõ ràng (2-4 câu)
+- Dùng emoji phù hợp 😊📚✨ (không lạm dụng)
+- Hỏi lại để kiểm tra hiểu biết của em
+
+Hãy là người bạn học tập đáng tin cậy của các em!"""
+        }
+        
+        # ============================================
+        # 6. BUILD MESSAGES FOR GPT
+        # ============================================
+        messages = []
+        
+        if is_new_session:
+            # Chỉ thêm system prompt cho session mới
+            messages.append(system_prompt)
+        else:
+            # Session cũ: load từ context (đã có system prompt từ trước)
+            if context_messages:
+                # Lấy 10 messages gần nhất
+                messages = context_messages[-10:]
+        
+        # Add current user message
+        messages.append({
+            "role": "user",
+            "content": user_message
+        })
+        
+        # ============================================
+        # 7. GREETING FOR NEW SESSIONS
+        # ============================================
+        greeting_message = ""
+        if is_new_session:
+            greetings = [
+                "Chào bé yêu! Hôm nay bé khỏe không? Em là Yên Hoà ChatBot, sẵn sàng giúp bé học tập vui vẻ nè! 😊",
+                "Xin chào bé! Em rất vui được làm quen với bé. Có câu hỏi gì về bài học không? 📚",
+                "Hi bé! Em là trợ lý học tập Yên Hoà. Hôm nay bé muốn học gì nhỉ? ✨",
+                "Chào bé ngoan! Em sẵn sàng giúp bé giải đáp thắc mắc rồi nè! 🎓",
+                "Xin chào! Em là Yên Hoà ChatBot - người bạn học tập của bé. Bé cần giúp gì không? 😄"
+            ]
+            greeting_message = random.choice(greetings) + "\n\n"
+        
+        # ============================================
+        # 8. CALL GPT-4
+        # ============================================
+        completion = client.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+            temperature=0.8,
+            max_tokens=500
+        )
+        
+        assistant_response = completion.choices[0].message.content.strip()
+        full_response = greeting_message + assistant_response
+        
+        # ============================================
+        # 9. SAVE TO DATABASE
+        # ============================================
+        # Build new context
+        if is_new_session:
+            new_context = [
+                system_prompt,
+                {"role": "user", "content": user_message},
+                {"role": "assistant", "content": full_response}
+            ]
+        else:
+            new_context = messages + [
+                {"role": "assistant", "content": full_response}
+            ]
+        
+        # Keep only last 20 messages
+        if len(new_context) > 20:
+            new_context = new_context[-20:]
+        
+        db_helper.update_session(
+            session_id=session_id,
+            context=new_context
+        )
+        
+        # Save individual messages
+        db_helper.save_message(
+            session_id=session_id,
+            role='user',
+            content=user_message
+        )
+        
+        db_helper.save_message(
+            session_id=session_id,
+            role='assistant',
+            content=full_response
+        )
+        
+        logger.info(f"✅ Response generated | Voice: {current_voice_mode} | Session: {session_id[:8]}...")
         
         return jsonify({
-            'response': assistant_message,
-            'model': OPENAI_MODEL,
-            'detected_language': detected_lang,
+            'response': full_response,
             'session_id': session_id,
-            'context_length': len(ConversationManager.get_messages(session_id)) if CONTEXT_ENABLED else 0
+            'is_new_session': is_new_session,
+            'voice_mode': current_voice_mode
         })
     
     except Exception as e:
-        logger.error(f"Error in chat endpoint: {str(e)}")
+        logger.error(f"❌ Chat error: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/transcribe', methods=['POST'])
