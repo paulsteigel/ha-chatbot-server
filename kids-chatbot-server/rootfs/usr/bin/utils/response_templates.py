@@ -74,10 +74,25 @@ def get_response_template(template_type, language='auto'):
                 "For all other questions, respond naturally in the user's language."
             )
         },
+        
+        'greeting': {
+            'vi': (
+                "Xin chào! Mình là Yên Hoà, trợ lý học tập của bạn. "
+                "Mình ở đây để giúp bạn học tập vui vẻ và giải đáp mọi thắc mắc. "
+                "Bạn cần giúp gì nào?"
+            ),
+            'en': (
+                "Hello! I'm Yen Hoa, your learning assistant. "
+                "I'm here to make learning fun and answer all your questions. "
+                "How can I help you today?"
+            )
+        },
+        
         'inappropriate': {
             'vi': "Mình không thể trả lời câu hỏi này. Chúng ta cùng tìm hiểu chủ đề khác nhé?",
             'en': "I can't answer that question. How about we explore a different topic?"
         },
+        
         'language_switch': {
             'vi': "Được rồi! Mình sẽ nói tiếng {language} từ bây giờ nhé.",
             'en': "Sure! I'll speak {language} from now on."
