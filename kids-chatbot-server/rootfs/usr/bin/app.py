@@ -12,6 +12,7 @@ from pathlib import Path
 import io
 import struct
 import json
+import uuid
 
 # Import utilities
 from utils.content_filter import is_safe_content
