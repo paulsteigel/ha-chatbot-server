@@ -1,5 +1,5 @@
 name: Kids ChatBot Server
-version: "1.0.40"
+version: "1.0.41"
 slug: kids-chatbot-server
 description: OpenAI-powered voice chatbot with context memory for kids
 url: https://github.com/paulsteigel/ha-chatbot-server
@@ -68,3 +68,32 @@ voice_english:
     - onyx
     - nova
     - shimmer
+db_host:
+  name: "Database Host"
+  description: "MySQL server hostname/IP"
+  type: str
+  default: "192.168.100.251"
+
+db_user:
+  name: "Database User"
+  description: "MySQL username"
+  type: str
+  default: "paulsteigel"
+
+db_password:
+  name: "Database Password"
+  description: "MySQL password"
+  type: password
+  default: ""
+
+db_name:
+  name: "Database Name"
+  description: "MySQL database name"
+  type: str
+  default: "homeassistant"
+
+context_persist:
+  name: "Persist Conversations"
+  description: "Save conversation history to MySQL for future summarization"
+  type: boolean
+  default: true
