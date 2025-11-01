@@ -1,4 +1,3 @@
-Bạn thật là vớ vẩn, file app.py trước đây của bạn đã ghi vào db rất tốt (xem file) tuy nhiên file mới của bạn với những sửa đổi làm mọi thứ trở nên messed up. Tóm lại để tôi gửi cho bạn bản đã ghi db tốt nhé, giờ sửa chắp và kiểu này là hỏng hết.
 #!/usr/bin/env python3
 import os
 import logging
