@@ -1,0 +1,12 @@
+# Web Framework
+flask==3.0.0
+flask-cors==4.0.0
+
+# AI/ML
+openai>=1.0.0
+
+# Utilities
+python-dotenv==1.0.0
+
+# Database
+mysql-connector-python==8.2.0
