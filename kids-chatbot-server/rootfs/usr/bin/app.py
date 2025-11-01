@@ -687,7 +687,65 @@ def chat():
         logger.error(f"Error in chat endpoint: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/transcribe', methods=['POST'])
+def transcribe():
+    """Handle audio transcription requests"""
+    if not client:
+        return jsonify({'error': 'OpenAI API key not configured'}), 500
+    
+    try:
+        if 'audio' not in request.files:
+            return jsonify({'error': 'No audio file provided'}), 400
+        
+        audio_file = request.files['audio']
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.webm') as temp_audio:
+            audio_file.save(temp_audio.name)
+            
+            with open(temp_audio.name, 'rb') as audio_data:
+                transcript = client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_data,
+                )
+            
+            os.unlink(temp_audio.name)
+            logger.info(f"Transcribed text: {transcript.text}")
+            
+            return jsonify({'text': transcript.text})
+    
+    except Exception as e:
+        logger.error(f"Error in transcribe endpoint: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
+
+@app.route('/api/voice', methods=['POST'])
+def voice():
+    """Handle voice requests with automatic voice selection"""
+    if not client:
+        return jsonify({'error': 'OpenAI API key not configured'}), 500
+    
+    try:
+        data = request.json
+        text = data.get('text', '')
+        language = data.get('language', 'auto')  # Client có thể chỉ định ngôn ngữ
+        
+        if not text:
+            return jsonify({'error': 'Text is required'}), 400
+        
+        # Generate speech với voice tự động chọn
+        audio_bytes = text_to_speech(text, format='mp3', language=language)
+        
+        # Save to temp file
+        output_path = Path("/tmp/speech.mp3")
+        with open(output_path, 'wb') as f:
+            f.write(audio_bytes)
+        
+        return send_from_directory('/tmp', 'speech.mp3', mimetype='audio/mpeg')
+    
+    except Exception as e:
+        logger.error(f"Error in voice endpoint: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+        
 @app.route('/api/voice-chat', methods=['POST'])
 def voice_chat():
     """Handle voice chat - MAIN ENDPOINT FOR ESP32"""
@@ -805,6 +863,100 @@ def health():
         'active_sessions': len(conversations)
     })
 
+@app.route('/debug/audio/<filename>')
+def serve_debug_audio(filename):
+    """Serve debug audio files for quality checking"""
+    try:
+        debug_dir = os.path.abspath("debug_audio")
+        
+        if '..' in filename or '/' in filename:
+            return jsonify({'error': 'Invalid filename'}), 400
+        
+        file_path = os.path.join(debug_dir, filename)
+        
+        if not os.path.exists(file_path):
+            return jsonify({'error': 'File not found'}), 404
+        
+        return send_from_directory(debug_dir, filename)
+        
+    except Exception as e:
+        logger.error(f"Error serving debug audio: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/debug/audio')
+def list_debug_audio():
+    """List all debug audio files with playable links"""
+    try:
+        debug_dir = "debug_audio"
+        
+        if not os.path.exists(debug_dir):
+            return jsonify({'message': 'No debug files yet', 'files': []})
+        
+        files = []
+        for filename in sorted(os.listdir(debug_dir), reverse=True):
+            if filename.endswith('.wav') or filename.endswith('.mp3'):
+                file_path = os.path.join(debug_dir, filename)
+                stat = os.stat(file_path)
+                
+                files.append({
+                    'filename': filename,
+                    'size': stat.st_size,
+                    'created': datetime.fromtimestamp(stat.st_ctime).isoformat(),
+                    'url': f"{SERVER_URL}/debug/audio/{filename}"
+                })
+        
+        html = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Debug Audio Files</title>
+            <style>
+                body { font-family: Arial; margin: 20px; background: #f0f0f0; }
+                .file { 
+                    background: white; 
+                    padding: 15px; 
+                    margin: 10px 0; 
+                    border-radius: 5px;
+                    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                }
+                .file h3 { margin: 0 0 10px 0; color: #333; }
+                .file .info { color: #666; font-size: 14px; margin: 5px 0; }
+                audio { width: 100%; margin: 10px 0; }
+                .no-files { text-align: center; color: #999; padding: 50px; }
+            </style>
+        </head>
+        <body>
+            <h1>🎧 Debug Audio Files</h1>
+            <p>Total files: """ + str(len(files)) + """</p>
+        """
+        
+        if files:
+            for file in files:
+                html += f"""
+                <div class="file">
+                    <h3>{file['filename']}</h3>
+                    <div class="info">Size: {file['size']:,} bytes</div>
+                    <div class="info">Created: {file['created']}</div>
+                    <audio controls preload="metadata">
+                        <source src="{file['url']}" type="audio/wav">
+                        Your browser does not support audio playback.
+                    </audio>
+                    <a href="{file['url']}" download>⬇️ Download</a>
+                </div>
+                """
+        else:
+            html += '<div class="no-files">No audio files yet. Make a recording first!</div>'
+        
+        html += """
+        </body>
+        </html>
+        """
+        
+        return html
+        
+    except Exception as e:
+        logger.error(f"Error listing debug audio: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=PORT, debug=(LOG_LEVEL == 'DEBUG'))
