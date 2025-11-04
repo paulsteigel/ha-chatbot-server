@@ -2,13 +2,14 @@
 aiohttp==3.9.5
 websockets==12.0
 
-# AI & STT (updated version)
+# AI & STT (pin httpx first)
+httpx==0.27.2
 openai==1.54.0
 
 # TTS
 edge-tts==6.1.12
 
-# Audio processing (minimal)
+# Audio processing
 numpy==1.26.4
 
 # Utilities
