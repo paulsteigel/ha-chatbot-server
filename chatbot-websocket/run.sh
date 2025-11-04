@@ -4,7 +4,13 @@ set -e
 
 CONFIG_PATH=/data/options.json
 
-bashio::log.info "Starting School Chatbot WebSocket Server..."
+bashio::log.info "🚀 Starting School Chatbot WebSocket Server..."
+
+# Activate virtual environment if exists
+if [ -d "/opt/venv" ]; then
+    export PATH="/opt/venv/bin:$PATH"
+    bashio::log.info "✅ Virtual environment activated"
+fi
 
 # Load configuration
 export AI_PROVIDER=$(bashio::config 'ai_provider')
@@ -29,16 +35,17 @@ if [ -z "$AI_API_KEY" ]; then
     bashio::log.warning "⚠️  AI API key not configured!"
 fi
 
-bashio::log.info "✅ Configuration loaded"
+bashio::log.info "📋 Configuration:"
 bashio::log.info "   AI Provider: ${AI_PROVIDER}"
 bashio::log.info "   AI Model: ${AI_MODEL}"
 bashio::log.info "   TTS Provider: ${TTS_PROVIDER}"
 bashio::log.info "   STT Model: ${STT_MODEL}"
 
-# Create data directory
+# Create data directories
 mkdir -p /data/firmware
 mkdir -p /data/logs
 
 # Start application
 cd /app
+bashio::log.info "🎯 Starting server on port ${PORT}..."
 exec python3 -m app.main 2>&1 | tee /data/logs/chatbot.log
