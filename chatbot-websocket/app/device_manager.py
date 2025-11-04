@@ -4,14 +4,17 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 class DeviceManager:
-    def __init__(self):
-        self.devices = {}
-        logger.info("📱 Device manager initialized")
+    """Manage connected ESP32 devices"""
     
-    def register_device(self, device_id, ws):
-        """Register a device"""
+    def __init__(self):
+        """Initialize device manager"""
+        self.devices = {}  # device_id -> device_info
+        logger.info("📱 Device Manager initialized")
+    
+    def register_device(self, device_id, websocket):
+        """Register a new device"""
         self.devices[device_id] = {
-            'ws': ws,
+            'websocket': websocket,
             'connected_at': datetime.now(),
             'last_activity': datetime.now()
         }
@@ -23,10 +26,11 @@ class DeviceManager:
             del self.devices[device_id]
             logger.info(f"❌ Device unregistered: {device_id}")
     
-    def get_device(self, device_id):
-        """Get device info"""
-        return self.devices.get(device_id)
+    def update_activity(self, device_id):
+        """Update device last activity"""
+        if device_id in self.devices:
+            self.devices[device_id]['last_activity'] = datetime.now()
     
-    def list_devices(self):
-        """List all connected devices"""
-        return list(self.devices.keys())
+    def get_device_count(self):
+        """Get number of connected devices"""
+        return len(self.devices)
