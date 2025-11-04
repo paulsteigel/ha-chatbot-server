@@ -5,54 +5,30 @@ from collections import defaultdict
 logger = logging.getLogger(__name__)
 
 class AIService:
-    """AI service with multiple provider support"""
-    
-    # Provider configurations
-    PROVIDERS = {
-        "openai": {
-            "base_url": "https://api.openai.com/v1",
-            "default_model": "gpt-4o-mini",
-            "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"]
-        },
-        "deepseek": {
-            "base_url": "https://api.deepseek.com/v1",
-            "default_model": "deepseek-chat",
-            "models": ["deepseek-chat", "deepseek-coder", "deepseek-reasoner"]
-        },
-        "deepseek-v3": {
-            "base_url": "https://api.deepseek.com/v1",
-            "default_model": "deepseek-chat",  # v3 uses same endpoint
-            "models": ["deepseek-chat", "deepseek-reasoner"]
-        }
-    }
+    """AI service with OpenAI and DeepSeek support"""
     
     def __init__(self, config):
-        """Initialize AI service with provider selection"""
+        """Initialize AI service"""
         self.provider = config.get('ai_provider', 'deepseek')
+        self.model = config.get('ai_model', 'deepseek-chat')
         
-        # Get provider config
-        provider_config = self.PROVIDERS.get(self.provider)
-        if not provider_config:
-            raise ValueError(f"Unknown AI provider: {self.provider}")
-        
-        # Get API key based on provider
-        if self.provider.startswith('deepseek'):
-            api_key = config.get('deepseek_api_key')
-            model = config.get('deepseek_model', provider_config['default_model'])
-        else:  # openai
+        # Get API key and base URL based on provider
+        if self.provider == 'openai':
             api_key = config.get('openai_api_key')
-            model = config.get('openai_model', provider_config['default_model'])
+            base_url = config.get('openai_base_url', 'https://api.openai.com/v1')
+        else:  # deepseek
+            api_key = config.get('deepseek_api_key')
+            base_url = 'https://api.deepseek.com/v1'
         
         if not api_key:
             raise ValueError(f"API key required for provider: {self.provider}")
         
-        # Initialize client
+        # Initialize OpenAI client (works for both OpenAI and DeepSeek)
         self.client = AsyncOpenAI(
             api_key=api_key,
-            base_url=provider_config['base_url']
+            base_url=base_url
         )
         
-        self.model = model
         self.system_prompt = config.get('system_prompt', 
             "Bạn là trợ lý AI thân thiện, hỗ trợ cả tiếng Việt và tiếng Anh.")
         self.max_context = config.get('max_context_messages', 10)
@@ -65,8 +41,8 @@ class AIService:
         logger.info(f"✅ AI Service initialized")
         logger.info(f"   Provider: {self.provider}")
         logger.info(f"   Model: {self.model}")
-        logger.info(f"   Base URL: {provider_config['base_url']}")
-        logger.info(f"   Max context: {self.max_context} messages")
+        logger.info(f"   Base URL: {base_url}")
+        logger.info(f"   Max context: {self.max_context}")
         logger.info(f"   Temperature: {self.temperature}")
         logger.info(f"   Max tokens: {self.max_tokens}")
     
@@ -115,8 +91,6 @@ class AIService:
         
         except Exception as e:
             logger.error(f"❌ AI error: {e}", exc_info=True)
-            logger.error(f"   Provider: {self.provider}")
-            logger.error(f"   Model: {self.model}")
             return "Xin lỗi, tôi đang gặp sự cố. Sorry, I'm experiencing technical difficulties."
     
     def clear_context(self, device_id):
@@ -128,14 +102,3 @@ class AIService:
     def get_context_length(self, device_id):
         """Get current context length for a device"""
         return len(self.contexts.get(device_id, []))
-    
-    def get_provider_info(self):
-        """Get current provider information"""
-        return {
-            "provider": self.provider,
-            "model": self.model,
-            "base_url": self.PROVIDERS[self.provider]["base_url"],
-            "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
-            "max_context": self.max_context
-        }
