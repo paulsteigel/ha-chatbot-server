@@ -13,10 +13,15 @@ ports:
   5000/tcp: 5000
 ports_description:
   5000/tcp: "WebSocket Server"
+  
+# ===== QUAN TRỌNG: Bỏ dòng "image" để build local =====
+# image: "ghcr.io/paulsteigel/ha-chatbot-websocket-{arch}"
+
 options:
   ai_provider: "openai"
   ai_model: "gpt-4o-mini"
   ai_api_key: ""
+  ai_base_url: ""
   tts_provider: "edge-tts"
   tts_voice_vi: "vi-VN-HoaiMyNeural"
   tts_voice_en: "en-US-AriaNeural"
@@ -28,6 +33,7 @@ options:
   custom_prompt: "Bạn là trợ lý thân thiện trong trường học, hỗ trợ học sinh tiểu học."
   vad_threshold: 0.5
   log_level: "info"
+  
 schema:
   ai_provider: list(openai|deepseek|groq)
   ai_model: str
@@ -44,4 +50,3 @@ schema:
   custom_prompt: str
   vad_threshold: float(0.1,1.0)
   log_level: list(debug|info|warning|error)
-image: "ghcr.io/paulsteigel/ha-chatbot-websocket-{arch}"
