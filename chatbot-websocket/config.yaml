@@ -1,13 +1,17 @@
-name: ESP32 Chatbot WebSocket
-version: "1.0.0"
-slug: chatbot_websocket
-description: WebSocket server for ESP32 chatbot with multiple AI providers
+name: School Chatbot WebSocket
+version: "1.0.2"
+slug: school-chatbot-websocket
+description: WebSocket server for ESP32 school chatbot - Yên Hoà
+url: https://github.com/paulsteigel/ha-chatbot-server
 arch:
   - aarch64
   - amd64
   - armhf
   - armv7
   - i386
+init: false
+startup: application
+boot: auto
 ports:
   5000/tcp: 5000
 ports_description:
@@ -28,11 +32,11 @@ options:
   tts_voice_en: "en-US-AriaNeural"
   
   # Chat Settings
-  system_prompt: "Bạn là trợ lý AI thân thiện, hỗ trợ cả tiếng Việt và tiếng Anh."
+  system_prompt: "Bạn là trợ lý AI thân thiện tên Yên Hoà, hỗ trợ các em học sinh tiểu học ở Đà Bắc, Hoà Bình. Bạn có thể trả lời cả tiếng Việt và tiếng Anh."
   max_context_messages: 10
   temperature: 0.7
   max_tokens: 500
-  log_level: "info"
+  log_level: "INFO"
 
 schema:
   ai_provider: list(openai|deepseek)
@@ -46,4 +50,4 @@ schema:
   max_context_messages: int(1,50)?
   temperature: float(0.0,2.0)?
   max_tokens: int(50,4000)?
-  log_level: list(debug|info|warning|error)?
+  log_level: list(DEBUG|INFO|WARNING|ERROR)?
