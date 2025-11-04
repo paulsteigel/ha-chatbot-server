@@ -48,7 +48,6 @@ async def init_app():
     logger.info("=" * 80)
     
     # Get configuration from environment
-    ai_provider = os.getenv('AI_PROVIDER', 'deepseek')
     ai_model = os.getenv('AI_MODEL', 'deepseek-chat')
     ai_api_key = os.getenv('AI_API_KEY', '')
     
@@ -57,7 +56,6 @@ async def init_app():
     stt_base_url = os.getenv('STT_BASE_URL', 'https://api.deepseek.com/v1')
     
     logger.info("📋 Configuration:")
-    logger.info(f"   AI Provider: {ai_provider}")
     logger.info(f"   AI Model: {ai_model}")
     logger.info(f"   TTS: Google TTS (gTTS) 🆓 FREE")
     logger.info(f"   STT: {'Enabled' if stt_api_key else 'Disabled (no API key)'}")
@@ -77,10 +75,7 @@ async def init_app():
     tts_service = TTSService()
     
     logger.info("   🤖 Setting up AI Service...")
-    ai_service = AIService(
-        provider=ai_provider,
-        model=ai_model
-    )
+    ai_service = AIService(model=ai_model)
     
     logger.info("   📱 Setting up Device Manager...")
     device_manager = DeviceManager()
@@ -150,5 +145,5 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         logger.info("⏹️ Shutting down...")
     except Exception as e:
-        logger.error(f"❌ Fatal error: {e}", exc_info=True)
+        logger.error(f("❌ Fatal error: {e}", exc_info=True)
         raise
