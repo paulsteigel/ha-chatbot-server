@@ -1,3 +1,7 @@
+"""
+WebSocket Server for Yên Hoà Chatbot
+Home Assistant Add-on Version with FREE Google TTS
+"""
 import logging
 import os
 from aiohttp import web
@@ -36,38 +40,67 @@ async def init_app():
         api_key = os.getenv('DEEPSEEK_API_KEY')
         base_url = 'https://api.deepseek.com/v1'
     
-    logger.info(f"🤖 Initializing services with {ai_provider}...")
+    logger.info("=" * 80)
+    logger.info("🤖 YÊN HOÀ CHATBOT - WEBSOCKET SERVER")
+    logger.info("=" * 80)
+    logger.info(f"📋 Configuration:")
+    logger.info(f"   AI Provider: {ai_provider}")
+    logger.info(f"   AI Model: {ai_model}")
+    logger.info(f"   TTS: Google TTS (gTTS) 🆓 FREE")
+    logger.info(f"   Log Level: {log_level}")
+    logger.info("=" * 80)
     
     # Initialize services
+    logger.info("🔧 Initializing services...")
+    
+    # STT Service
+    logger.info("   📝 Setting up Speech-to-Text...")
     stt_service = STTService(
         api_key=api_key,
         base_url=base_url
     )
     
+    # TTS Service (FREE Google TTS)
+    logger.info("   🔊 Setting up Text-to-Speech (Google TTS)...")
     tts_service = TTSService(
-        voice_vi=os.getenv('TTS_VOICE_VI', 'vi-VN-HoaiMyNeural'),
-        voice_en=os.getenv('TTS_VOICE_EN', 'en-US-AriaNeural')
+        voice_vi='vi',  # Vietnamese
+        voice_en='en'   # English
     )
     
+    # AI Service
+    logger.info("   🤖 Setting up AI Service...")
     ai_service = AIService(
         api_key=api_key,
         base_url=base_url,
         model=ai_model,
-        system_prompt=os.getenv('SYSTEM_PROMPT', 'Bạn là trợ lý AI thân thiện.'),
+        system_prompt=os.getenv('SYSTEM_PROMPT', 
+            'Bạn là Yên Hoà, trợ lý AI thân thiện của trường học. '
+            'Bạn giúp học sinh và giáo viên với các câu hỏi về học tập và đời sống.'),
         max_context=int(os.getenv('MAX_CONTEXT_MESSAGES', '10')),
         temperature=float(os.getenv('TEMPERATURE', '0.7')),
         max_tokens=int(os.getenv('MAX_TOKENS', '500'))
     )
     
+    # Device Manager
+    logger.info("   📱 Setting up Device Manager...")
     device_manager = DeviceManager()
+    
+    # OTA Manager
+    logger.info("   🔄 Setting up OTA Manager...")
     ota_manager = OTAManager()
     
     # Initialize all services
+    logger.info("🚀 Starting services...")
     await stt_service.initialize()
     await tts_service.initialize()
     await ai_service.initialize()
     
+    # Test TTS (important!)
+    logger.info("🧪 Testing TTS service...")
+    await tts_service.test()
+    
     # Setup WebSocket handler
+    logger.info("🔌 Setting up WebSocket handler...")
     ws_handler = WebSocketHandler(
         stt_service=stt_service,
         tts_service=tts_service,
@@ -86,14 +119,29 @@ async def init_app():
     app['tts_service'] = tts_service
     app['ai_service'] = ai_service
     
-    logger.info("✅ Application initialized")
+    logger.info("=" * 80)
+    logger.info("✅ Application initialized successfully!")
+    logger.info("=" * 80)
+    logger.info("📡 Server endpoints:")
+    logger.info("   WebSocket: ws://0.0.0.0:5000/ws")
+    logger.info("   Health: http://0.0.0.0:5000/health")
+    logger.info("   Status: http://0.0.0.0:5000/api/status")
+    logger.info("=" * 80)
+    
     return app
 
+async def cleanup(app):
+    """Cleanup resources"""
+    logger.info("🧹 Cleaning up resources...")
+    # Add cleanup code if needed
+
 if __name__ == '__main__':
-    logger.info("🚀 Starting WebSocket server...")
+    logger.info("🚀 Starting Yên Hoà WebSocket Server...")
+    
+    app = init_app()
     
     web.run_app(
-        init_app(),
+        app,
         host='0.0.0.0',
         port=5000,
         access_log=logger
