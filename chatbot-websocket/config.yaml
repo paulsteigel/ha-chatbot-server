@@ -1,5 +1,5 @@
 name: School Chatbot WebSocket
-version: "1.0.2"
+version: "1.0.3"
 slug: chatbot_websocket
 description: WebSocket server for ESP32 School Assistant
 arch:
