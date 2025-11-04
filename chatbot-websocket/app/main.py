@@ -50,13 +50,21 @@ async def init_app():
     # Get configuration from environment
     ai_model = os.getenv('AI_MODEL', 'deepseek-chat')
     ai_api_key = os.getenv('AI_API_KEY', '')
+    ai_base_url = os.getenv('AI_BASE_URL', 'https://api.deepseek.com/v1')
+    
+    # System prompt for AI
+    system_prompt = os.getenv('SYSTEM_PROMPT', 
+        "Bạn là Yên Hoà, trợ lý AI thông minh và thân thiện của trường học. "
+        "Hãy trả lời một cách ngắn gọn, rõ ràng và hữu ích."
+    )
     
     # STT configuration
-    stt_api_key = os.getenv('STT_API_KEY', ai_api_key)  # Use AI key as fallback
-    stt_base_url = os.getenv('STT_BASE_URL', 'https://api.deepseek.com/v1')
+    stt_api_key = os.getenv('STT_API_KEY', ai_api_key)
+    stt_base_url = os.getenv('STT_BASE_URL', ai_base_url)
     
     logger.info("📋 Configuration:")
     logger.info(f"   AI Model: {ai_model}")
+    logger.info(f"   AI Base URL: {ai_base_url}")
     logger.info(f"   TTS: Google TTS (gTTS) 🆓 FREE")
     logger.info(f"   STT: {'Enabled' if stt_api_key else 'Disabled (no API key)'}")
     logger.info(f"   Log Level: INFO")
@@ -75,7 +83,12 @@ async def init_app():
     tts_service = TTSService()
     
     logger.info("   🤖 Setting up AI Service...")
-    ai_service = AIService(model=ai_model)
+    ai_service = AIService(
+        model=ai_model,
+        api_key=ai_api_key,
+        base_url=ai_base_url,
+        system_prompt=system_prompt
+    )
     
     logger.info("   📱 Setting up Device Manager...")
     device_manager = DeviceManager()
@@ -145,5 +158,5 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         logger.info("⏹️ Shutting down...")
     except Exception as e:
-        logger.error(f("❌ Fatal error: {e}", exc_info=True))
+        logger.error(f"❌ Fatal error: {e}", exc_info=True)
         raise
