@@ -1,5 +1,5 @@
 name: School Chatbot WebSocket
-version: "1.0.6"
+version: "1.0.1"
 slug: chatbot_websocket
 description: WebSocket server for ESP32 School Assistant
 arch:
@@ -9,10 +9,10 @@ arch:
   - armv7
   - i386
 
-# ⭐ CRITICAL: Disable ingress for WebSocket
-ingress: false
+# NO IMAGE LINE - Build from local Dockerfile
+# image: <-- DELETE THIS LINE
 
-# Use host network mode for direct access
+ingress: false
 network_mode: host
 
 ports:
@@ -40,5 +40,3 @@ schema:
   tts_voice_en: str
   openai_api_key: password
   openai_base_url: str?
-
-image: ghcr.io/{arch}-addon-chatbot-websocket
