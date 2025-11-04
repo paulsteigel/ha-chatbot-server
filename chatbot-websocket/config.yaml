@@ -1,0 +1,47 @@
+name: "School Chatbot Server (WebSocket)"
+version: "1.0.0"
+slug: chatbot-websocket
+description: "WebSocket-based AI chatbot for ESP32 school devices"
+arch:
+  - aarch64
+  - amd64
+  - armv7
+init: false
+startup: application
+boot: auto
+ports:
+  5000/tcp: 5000
+ports_description:
+  5000/tcp: "WebSocket Server"
+options:
+  ai_provider: "openai"
+  ai_model: "gpt-4o-mini"
+  ai_api_key: ""
+  tts_provider: "edge-tts"
+  tts_voice_vi: "vi-VN-HoaiMyNeural"
+  tts_voice_en: "en-US-AriaNeural"
+  stt_model: "base"
+  context_enabled: true
+  context_messages: 10
+  silence_timeout: 8
+  max_recording_duration: 30
+  custom_prompt: "Bạn là trợ lý thân thiện trong trường học, hỗ trợ học sinh tiểu học."
+  vad_threshold: 0.5
+  log_level: "info"
+schema:
+  ai_provider: list(openai|deepseek|groq)
+  ai_model: str
+  ai_api_key: password
+  ai_base_url: str?
+  tts_provider: list(edge-tts|piper|openai)
+  tts_voice_vi: str
+  tts_voice_en: str
+  stt_model: list(tiny|base|small|medium)
+  context_enabled: bool
+  context_messages: int(1,50)
+  silence_timeout: int(3,30)
+  max_recording_duration: int(10,60)
+  custom_prompt: str
+  vad_threshold: float(0.1,1.0)
+  log_level: list(debug|info|warning|error)
+image: "ghcr.io/paulsteigel/ha-chatbot-websocket-{arch}"
