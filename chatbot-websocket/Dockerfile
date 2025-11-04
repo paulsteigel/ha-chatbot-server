@@ -5,6 +5,7 @@ FROM $BUILD_FROM
 RUN apk add --no-cache \
     ffmpeg \
     build-base \
+    python3-dev \
     && rm -rf /var/cache/apk/*
 
 WORKDIR /app
