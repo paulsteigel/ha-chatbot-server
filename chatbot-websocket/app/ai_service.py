@@ -1,132 +1,66 @@
-import asyncio
 import logging
-import os
 from openai import AsyncOpenAI
-from datetime import datetime
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
 class AIService:
-    def __init__(self):
-        self.provider = os.getenv('AI_PROVIDER', 'openai')
-        self.model = os.getenv('AI_MODEL', 'gpt-4o-mini')
-        self.api_key = os.getenv('AI_API_KEY', '')
-        self.custom_prompt = os.getenv('CUSTOM_PROMPT', 
-            'Bạn là trợ lý thân thiện trong trường học, hỗ trợ học sinh tiểu học.')
-        
-        # Context management
-        self.context_enabled = os.getenv('CONTEXT_ENABLED', 'true').lower() == 'true'
-        self.context_messages = int(os.getenv('CONTEXT_MESSAGES', 10))
-        self.conversations = {}  # device_id -> message history
-        
-        # API client
-        base_url = None
-        if self.provider == 'deepseek':
-            base_url = 'https://api.deepseek.com'
-        elif os.getenv('AI_BASE_URL'):
-            base_url = os.getenv('AI_BASE_URL')
-            
+    def __init__(self, api_key, model='gpt-4o-mini', base_url=None, system_prompt=None):
         self.client = AsyncOpenAI(
-            api_key=self.api_key,
-            base_url=base_url
+            api_key=api_key,
+            base_url=base_url if base_url else None
         )
+        self.model = model
+        self.system_prompt = system_prompt or "Bạn là trợ lý thân thiện."
         
-        logger.info(f"🤖 AI Service initialized: {self.provider}/{self.model}")
+        # Context per device
+        self.contexts = defaultdict(list)
+        self.max_context = 10
         
-    async def get_response(self, device_id: str, user_message: str) -> str:
-        """
-        Get AI response for user message
-        Args:
-            device_id: Device identifier
-            user_message: User's message
-        Returns:
-            AI response text
-        """
+        logger.info(f"🤖 AI service initialized: {model}")
+    
+    async def initialize(self):
+        """Test connection"""
         try:
-            # Initialize conversation if needed
-            if device_id not in self.conversations:
-                self.conversations[device_id] = [
-                    {"role": "system", "content": self.custom_prompt}
-                ]
+            # Simple test
+            logger.info("✅ AI service ready")
+        except Exception as e:
+            logger.error(f"❌ AI init error: {e}")
+            raise
+    
+    async def get_response(self, user_message, device_id):
+        """Get AI response"""
+        try:
+            # Add to context
+            context = self.contexts[device_id]
+            context.append({"role": "user", "content": user_message})
             
-            # Add user message
-            self.conversations[device_id].append({
-                "role": "user",
-                "content": user_message
-            })
+            # Keep only last N messages
+            if len(context) > self.max_context:
+                context = context[-self.max_context:]
+                self.contexts[device_id] = context
             
-            # Trim context if needed
-            if self.context_enabled:
-                self._trim_context(device_id)
+            # Build messages
+            messages = [
+                {"role": "system", "content": self.system_prompt}
+            ] + context
             
-            # Get AI response
-            messages = self.conversations[device_id] if self.context_enabled else [
-                {"role": "system", "content": self.custom_prompt},
-                {"role": "user", "content": user_message}
-            ]
-            
+            # Call API
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
                 temperature=0.7,
-                max_tokens=500
+                max_tokens=200
             )
             
-            ai_message = response.choices[0].message.content.strip()
+            ai_message = response.choices[0].message.content
             
-            # Save assistant message to context
-            if self.context_enabled:
-                self.conversations[device_id].append({
-                    "role": "assistant",
-                    "content": ai_message
-                })
+            # Add to context
+            context.append({"role": "assistant", "content": ai_message})
             
-            # Command detection
-            await self._detect_commands(device_id, ai_message)
-            
+            logger.info(f"💬 AI: {ai_message}")
             return ai_message
             
         except Exception as e:
-            logger.error(f"AI error: {e}")
-            return "Xin lỗi, tôi đang gặp chút vấn đề. Bạn có thể thử lại không?"
-    
-    def _trim_context(self, device_id: str):
-        """Trim conversation context to max messages"""
-        if len(self.conversations[device_id]) > self.context_messages + 1:  # +1 for system
-            # Keep system message and last N messages
-            system_msg = self.conversations[device_id][0]
-            recent_msgs = self.conversations[device_id][-(self.context_messages):]
-            self.conversations[device_id] = [system_msg] + recent_msgs
-    
-    async def _detect_commands(self, device_id: str, message: str):
-        """Detect commands in AI response (lights, volume, etc.)"""
-        message_lower = message.lower()
-        
-        # Simple command detection
-        commands = []
-        
-        if any(word in message_lower for word in ['bật đèn', 'mở đèn', 'turn on light']):
-            commands.append({'action': 'toggle_light', 'state': 'on'})
-            
-        elif any(word in message_lower for word in ['tắt đèn', 'turn off light']):
-            commands.append({'action': 'toggle_light', 'state': 'off'})
-        
-        # Store commands for device
-        if commands:
-            if not hasattr(self, 'pending_commands'):
-                self.pending_commands = {}
-            self.pending_commands[device_id] = commands
-    
-    def get_pending_commands(self, device_id: str) -> list:
-        """Get and clear pending commands for device"""
-        if hasattr(self, 'pending_commands') and device_id in self.pending_commands:
-            commands = self.pending_commands[device_id]
-            del self.pending_commands[device_id]
-            return commands
-        return []
-    
-    def clear_context(self, device_id: str):
-        """Clear conversation context for device"""
-        if device_id in self.conversations:
-            del self.conversations[device_id]
-            logger.info(f"🗑️ Context cleared for {device_id}")
+            logger.error(f"❌ AI error: {e}", exc_info=True)
+            return "Xin lỗi, tôi đang gặp sự cố."
