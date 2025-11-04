@@ -1,104 +1,75 @@
 import logging
 from openai import AsyncOpenAI
-from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
 class AIService:
-    """AI service with OpenAI and DeepSeek support"""
+    """AI service for chat completion"""
     
-    def __init__(self, config):
+    def __init__(self, api_key, base_url, model, system_prompt, max_context=10, temperature=0.7, max_tokens=500):
         """Initialize AI service"""
-        self.provider = config.get('ai_provider', 'deepseek')
-        self.model = config.get('ai_model', 'deepseek-chat')
-        
-        # Get API key and base URL based on provider
-        if self.provider == 'openai':
-            api_key = config.get('openai_api_key')
-            base_url = config.get('openai_base_url', 'https://api.openai.com/v1')
-        else:  # deepseek
-            api_key = config.get('deepseek_api_key')
-            base_url = 'https://api.deepseek.com/v1'
-        
-        if not api_key:
-            raise ValueError(f"API key required for provider: {self.provider}")
-        
-        # Initialize OpenAI client (works for both OpenAI and DeepSeek)
         self.client = AsyncOpenAI(
             api_key=api_key,
             base_url=base_url
         )
-        
-        self.system_prompt = config.get('system_prompt', 
-            "Bạn là trợ lý AI thân thiện, hỗ trợ cả tiếng Việt và tiếng Anh.")
-        self.max_context = config.get('max_context_messages', 10)
-        self.temperature = config.get('temperature', 0.7)
-        self.max_tokens = config.get('max_tokens', 500)
-        
-        # Context storage per device
-        self.contexts = defaultdict(list)
-        
-        logger.info(f"✅ AI Service initialized")
-        logger.info(f"   Provider: {self.provider}")
-        logger.info(f"   Model: {self.model}")
-        logger.info(f"   Base URL: {base_url}")
-        logger.info(f"   Max context: {self.max_context}")
-        logger.info(f"   Temperature: {self.temperature}")
-        logger.info(f"   Max tokens: {self.max_tokens}")
+        self.model = model
+        self.system_prompt = system_prompt
+        self.max_context = max_context
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.conversations = {}  # device_id -> messages
+        logger.info(f"🤖 AI Service initialized with {model}")
     
-    async def get_response(self, user_message, device_id):
-        """Get AI response with context tracking"""
+    async def initialize(self):
+        """Initialize service"""
+        logger.info("✅ AI Service ready")
+    
+    async def chat(self, text, language='vi', device_id=None):
+        """Process chat message"""
         try:
-            logger.info(f"🤖 AI Request - Device: {device_id}")
-            logger.info(f"   Provider: {self.provider}")
-            logger.info(f"   Model: {self.model}")
-            logger.info(f"   Message: {user_message}")
+            # Get or create conversation
+            if device_id not in self.conversations:
+                self.conversations[device_id] = [
+                    {"role": "system", "content": self.system_prompt}
+                ]
             
-            # Get or create context for device
-            context = self.contexts[device_id]
+            # Add user message
+            self.conversations[device_id].append({
+                "role": "user",
+                "content": text
+            })
             
-            # Add user message to context
-            context.append({"role": "user", "content": user_message})
+            # Keep only recent messages
+            if len(self.conversations[device_id]) > self.max_context * 2 + 1:
+                self.conversations[device_id] = [
+                    self.conversations[device_id][0]  # Keep system prompt
+                ] + self.conversations[device_id][-(self.max_context * 2):]
             
-            # Keep only last N messages
-            if len(context) > self.max_context:
-                context = context[-self.max_context:]
-                self.contexts[device_id] = context
-            
-            # Build messages with system prompt
-            messages = [
-                {"role": "system", "content": self.system_prompt}
-            ] + context
-            
-            logger.info(f"   Context length: {len(context)} messages")
-            
-            # Call API
+            # Get AI response
             response = await self.client.chat.completions.create(
                 model=self.model,
-                messages=messages,
+                messages=self.conversations[device_id],
                 temperature=self.temperature,
                 max_tokens=self.max_tokens
             )
             
-            ai_message = response.choices[0].message.content
+            assistant_message = response.choices[0].message.content
             
-            # Add assistant response to context
-            context.append({"role": "assistant", "content": ai_message})
+            # Add assistant message to conversation
+            self.conversations[device_id].append({
+                "role": "assistant",
+                "content": assistant_message
+            })
             
-            logger.info(f"💬 AI Response: {ai_message}")
+            logger.info(f"💬 AI Response: {assistant_message[:50]}...")
+            return assistant_message
             
-            return ai_message
-        
         except Exception as e:
-            logger.error(f"❌ AI error: {e}", exc_info=True)
-            return "Xin lỗi, tôi đang gặp sự cố. Sorry, I'm experiencing technical difficulties."
+            logger.error(f"❌ AI Error: {e}")
+            return "Xin lỗi, tôi gặp sự cố. Bạn có thể hỏi lại được không?"
     
-    def clear_context(self, device_id):
-        """Clear conversation context for a device"""
-        if device_id in self.contexts:
-            del self.contexts[device_id]
-            logger.info(f"🗑️ Cleared context for device: {device_id}")
-    
-    def get_context_length(self, device_id):
-        """Get current context length for a device"""
-        return len(self.contexts.get(device_id, []))
+    def clear_conversation(self, device_id):
+        """Clear conversation history"""
+        if device_id in self.conversations:
+            del self.conversations[device_id]
+            logger.info(f"🗑️ Cleared conversation for {device_id}")
