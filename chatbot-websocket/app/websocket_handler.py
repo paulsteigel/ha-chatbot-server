@@ -1,112 +1,87 @@
-import asyncio
-import json
 import logging
-from aiohttp import web, WSMsgType
-from audio_processor import AudioProcessor
-from stt_service import STTService
-from tts_service import TTSService
-from ai_service import AIService
+import json
+import asyncio
+from aiohttp import web
+from .audio_processor import AudioProcessor  # ← Fix: Thêm dấu chấm
 
 logger = logging.getLogger(__name__)
 
 class WebSocketHandler:
-    def __init__(self, device_manager):
-        self.device_manager = device_manager
-        self.stt = STTService()
-        self.tts = TTSService()
-        self.ai = AIService()
+    def __init__(self, app):
+        self.app = app
+        self.active_connections = {}
+        logger.info("🔌 WebSocket handler initialized")
         
-    async def handle_websocket(self, request):
-        ws = web.WebSocketResponse(heartbeat=30)
+    async def websocket_handler(self, request):
+        """Handle WebSocket connections"""
+        ws = web.WebSocketResponse()
         await ws.prepare(request)
         
-        device_id = None
-        audio_processor = None
+        device_id = request.rel_url.query.get('device_id', 'unknown')
+        logger.info(f"📱 Device connected: {device_id}")
+        
+        # Register device
+        self.active_connections[device_id] = ws
+        self.app['devices'].register_device(device_id, ws)
+        
+        # Create audio processor for this connection
+        audio_processor = AudioProcessor(
+            stt_service=self.app['stt'],
+            tts_service=self.app['tts'],
+            ai_service=self.app['ai'],
+            device_id=device_id
+        )
         
         try:
             async for msg in ws:
-                if msg.type == WSMsgType.TEXT:
-                    await self.handle_text_message(ws, msg.data, device_id, audio_processor)
+                if msg.type == web.WSMsgType.BINARY:
+                    # Handle audio data
+                    await audio_processor.process_audio(msg.data, ws)
                     
-                elif msg.type == WSMsgType.BINARY:
-                    if audio_processor:
-                        await audio_processor.process_audio_chunk(msg.data, ws)
-                    
-                elif msg.type == WSMsgType.ERROR:
-                    logger.error(f'WebSocket error: {ws.exception()}')
+                elif msg.type == web.WSMsgType.TEXT:
+                    # Handle text commands
+                    try:
+                        data = json.loads(msg.data)
+                        await self.handle_command(data, ws, device_id)
+                    except json.JSONDecodeError:
+                        logger.error(f"❌ Invalid JSON from {device_id}")
+                        
+                elif msg.type == web.WSMsgType.ERROR:
+                    logger.error(f'❌ WebSocket error: {ws.exception()}')
                     
         except Exception as e:
-            logger.error(f"WebSocket error: {e}")
+            logger.error(f"❌ Error handling connection: {e}", exc_info=True)
             
         finally:
-            if device_id:
-                self.device_manager.disconnect_device(device_id)
-                if audio_processor:
-                    await audio_processor.cleanup()
-            logger.info(f"Device {device_id} disconnected")
+            # Cleanup
+            if device_id in self.active_connections:
+                del self.active_connections[device_id]
+            self.app['devices'].unregister_device(device_id)
+            logger.info(f"📱 Device disconnected: {device_id}")
             
         return ws
     
-    async def handle_text_message(self, ws, data, device_id, audio_processor):
-        try:
-            message = json.loads(data)
-            msg_type = message.get('type')
-            
-            if msg_type == 'register':
-                device_id = message.get('device_id')
-                self.device_manager.register_device(device_id, ws)
-                audio_processor = AudioProcessor(device_id, self.stt, self.tts, self.ai)
-                
-                await ws.send_json({
-                    'type': 'registered',
-                    'device_id': device_id,
-                    'config': {
-                        'sample_rate': 16000,
-                        'channels': 1,
-                        'format': 'pcm16'
-                    }
-                })
-                logger.info(f"✅ Device {device_id} registered")
-                
-            elif msg_type == 'start_conversation':
-                if audio_processor:
-                    await audio_processor.start_conversation()
-                    await ws.send_json({'type': 'conversation_started'})
-                    
-            elif msg_type == 'end_conversation':
-                if audio_processor:
-                    await audio_processor.end_conversation()
-                    await ws.send_json({'type': 'conversation_ended'})
-                    
-            elif msg_type == 'command':
-                await self.handle_command(ws, message.get('command'), audio_processor)
-                
-            elif msg_type == 'ping':
-                await ws.send_json({'type': 'pong'})
-                
-        except json.JSONDecodeError:
-            logger.error("Invalid JSON received")
-            await ws.send_json({'type': 'error', 'message': 'Invalid JSON'})
-    
-    async def handle_command(self, ws, command, audio_processor):
-        """Handle device commands (lights, volume, etc.)"""
-        if not command:
-            return
-            
-        cmd = command.get('action')
+    async def handle_command(self, data, ws, device_id):
+        """Handle text commands"""
+        cmd = data.get('type')
         
-        if cmd == 'set_volume':
-            volume = command.get('volume', 50)
+        if cmd == 'ping':
+            await ws.send_json({'type': 'pong'})
+            
+        elif cmd == 'status':
             await ws.send_json({
-                'type': 'command_response',
-                'action': 'set_volume',
-                'volume': volume
+                'type': 'status',
+                'device_id': device_id,
+                'connected': True
             })
             
-        elif cmd == 'toggle_light':
-            state = command.get('state', 'toggle')
+        elif cmd == 'ota_check':
+            # Check for firmware updates
+            latest = self.app['ota'].get_latest_firmware()
             await ws.send_json({
-                'type': 'command_response',
-                'action': 'toggle_light',
-                'state': state
+                'type': 'ota_available',
+                'version': latest['version'] if latest else None
             })
+            
+        else:
+            logger.warning(f"⚠️  Unknown command: {cmd}")
