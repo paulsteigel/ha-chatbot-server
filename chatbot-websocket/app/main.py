@@ -40,6 +40,14 @@ async def status_handler(request):
     return web.json_response(status)
 
 
+async def serve_index(request):
+    """Serve the web test interface"""
+    try:
+        with open('/static/index.html', 'r', encoding='utf-8') as f:
+            return web.Response(text=f.read(), content_type='text/html')
+    except FileNotFoundError:
+        return web.Response(text="Test page not found", status=404)
+
 async def init_app():
     """Initialize application"""
     logger.info("🚀 Starting Yên Hoà WebSocket Server...")
@@ -146,6 +154,8 @@ async def init_app():
     app.router.add_get('/ws', ws_handler.handle)
     app.router.add_get('/health', health_handler)
     app.router.add_get('/api/status', status_handler)
+    app.router.add_get('/', serve_index)
+    app.router.add_static('/static', '/static')
     
     logger.info("=" * 80)
     logger.info("✅ Application initialized successfully!")
