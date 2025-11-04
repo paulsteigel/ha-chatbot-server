@@ -1,11 +1,9 @@
 ARG BUILD_FROM
 FROM $BUILD_FROM
 
-# Install system dependencies
+# Install only essential dependencies
 RUN apk add --no-cache \
     ffmpeg \
-    build-base \
-    python3-dev \
     && rm -rf /var/cache/apk/*
 
 WORKDIR /app
