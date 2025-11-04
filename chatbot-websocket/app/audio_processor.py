@@ -2,8 +2,8 @@ import asyncio
 import io
 import logging
 import numpy as np
-import webrtcvad
 from datetime import datetime, timedelta
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,8 @@ class AudioProcessor:
         self.frame_duration = 30  # ms
         self.frame_size = int(self.sample_rate * self.frame_duration / 1000)
         
-        self.vad = webrtcvad.Vad(2)  # Aggressiveness 2
+        # Simple energy-based VAD
+        self.vad_threshold = float(os.getenv('VAD_THRESHOLD', 0.02))
         self.audio_buffer = bytearray()
         self.is_speaking = False
         self.silence_start = None
@@ -40,6 +41,16 @@ class AudioProcessor:
             await self.process_final_audio()
         logger.info(f"🛑 Conversation ended for {self.device_id}")
         
+    def _calculate_energy(self, audio_chunk):
+        """Calculate audio energy for VAD"""
+        try:
+            audio_np = np.frombuffer(audio_chunk, dtype=np.int16).astype(np.float32) / 32768.0
+            energy = np.sqrt(np.mean(audio_np ** 2))
+            return energy
+        except Exception as e:
+            logger.error(f"Energy calculation error: {e}")
+            return 0.0
+    
     async def process_audio_chunk(self, audio_data, ws):
         """Process incoming PCM audio chunk"""
         if not self.conversation_active:
@@ -47,22 +58,23 @@ class AudioProcessor:
             
         self.audio_buffer.extend(audio_data)
         
-        # VAD check
-        if len(audio_data) == self.frame_size * 2:  # 16-bit samples
-            is_speech = self.vad.is_speech(audio_data, self.sample_rate)
-            
-            if is_speech:
+        # Simple energy-based VAD
+        energy = self._calculate_energy(audio_data)
+        is_speech = energy > self.vad_threshold
+        
+        if is_speech:
+            if not self.is_speaking:
                 self.is_speaking = True
-                self.silence_start = None
                 await ws.send_json({'type': 'vad', 'speaking': True})
-                
-            elif self.is_speaking:
-                if self.silence_start is None:
-                    self.silence_start = datetime.now()
-                elif datetime.now() - self.silence_start > self.silence_timeout:
-                    # Silence detected, process audio
-                    await self.process_final_audio(ws)
-                    await ws.send_json({'type': 'vad', 'speaking': False})
+            self.silence_start = None
+            
+        elif self.is_speaking:
+            if self.silence_start is None:
+                self.silence_start = datetime.now()
+            elif datetime.now() - self.silence_start > self.silence_timeout:
+                # Silence detected, process audio
+                await self.process_final_audio(ws)
+                await ws.send_json({'type': 'vad', 'speaking': False})
                     
     async def process_final_audio(self, ws):
         """Transcribe audio and get AI response"""
@@ -77,6 +89,8 @@ class AudioProcessor:
             if not text or len(text.strip()) < 3:
                 logger.info("No speech detected")
                 self.audio_buffer.clear()
+                self.is_speaking = False
+                self.silence_start = None
                 return
                 
             logger.info(f"📝 User: {text}")
@@ -96,8 +110,20 @@ class AudioProcessor:
                 'role': 'assistant'
             })
             
+            # Check for commands
+            commands = self.ai.get_pending_commands(self.device_id)
+            if commands:
+                for cmd in commands:
+                    await ws.send_json({
+                        'type': 'command',
+                        'command': cmd
+                    })
+            
             # TTS
             audio_chunks = await self.tts.synthesize(response_text)
+            
+            # Send audio start marker
+            await ws.send_json({'type': 'audio_start'})
             
             for chunk in audio_chunks:
                 await ws.send_bytes(chunk)
@@ -106,7 +132,7 @@ class AudioProcessor:
             await ws.send_json({'type': 'audio_complete'})
             
         except Exception as e:
-            logger.error(f"Error processing audio: {e}")
+            logger.error(f"Error processing audio: {e}", exc_info=True)
             await ws.send_json({'type': 'error', 'message': str(e)})
             
         finally:
