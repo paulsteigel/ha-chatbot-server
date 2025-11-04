@@ -7,5 +7,3 @@ labels:
   org.opencontainers.image.description: "AI chatbot for ESP32 school devices"
   org.opencontainers.image.source: "https://github.com/paulsteigel/ha-chatbot-server"
   org.opencontainers.image.licenses: "MIT"
-args:
-  PYTHON_VERSION: "3.11"
