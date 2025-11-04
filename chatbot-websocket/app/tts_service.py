@@ -1,53 +1,48 @@
 import logging
+import base64
 import edge_tts
-import io
 
 logger = logging.getLogger(__name__)
 
 class TTSService:
-    def __init__(self, voice_vi="vi-VN-HoaiMyNeural", voice_en="en-US-AriaNeural"):
-        """
-        Initialize TTS service
-        Args:
-            voice_vi: Vietnamese voice
-            voice_en: English voice
-        """
+    """Text-to-Speech service using Edge TTS"""
+    
+    def __init__(self, voice_vi, voice_en):
+        """Initialize TTS service"""
         self.voice_vi = voice_vi
         self.voice_en = voice_en
-        logger.info(f"🎵 TTS initialized: VI={voice_vi}, EN={voice_en}")
+        logger.info(f"🔊 TTS Service initialized (VI: {voice_vi}, EN: {voice_en})")
     
     async def initialize(self):
-        """No initialization needed for edge-tts"""
-        logger.info("✅ TTS service ready")
+        """Initialize service"""
+        logger.info("✅ TTS Service ready")
     
-    async def synthesize(self, text, language="vi"):
-        """
-        Synthesize text to speech
-        Args:
-            text: Text to synthesize
-            language: "vi" or "en"
-        Returns:
-            bytes: Audio data (MP3)
-        """
+    async def synthesize(self, text, language='vi'):
+        """Convert text to speech"""
         try:
-            voice = self.voice_vi if language == "vi" else self.voice_en
+            voice = self.voice_vi if language == 'vi' else self.voice_en
+            
+            # Create temporary file
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_file:
+                temp_path = temp_file.name
             
             # Generate speech
             communicate = edge_tts.Communicate(text, voice)
-            audio_buffer = io.BytesIO()
+            await communicate.save(temp_path)
             
-            async for chunk in communicate.stream():
-                if chunk["type"] == "audio":
-                    audio_buffer.write(chunk["data"])
+            # Read and encode
+            with open(temp_path, 'rb') as audio_file:
+                audio_data = audio_file.read()
+                audio_base64 = base64.b64encode(audio_data).decode('utf-8')
             
-            audio_data = audio_buffer.getvalue()
-            logger.info(f"🔊 Synthesized {len(audio_data)} bytes for: {text[:50]}...")
-            return audio_data
+            # Cleanup
+            import os
+            os.unlink(temp_path)
+            
+            logger.info(f"🔊 Synthesized: {text[:50]}...")
+            return audio_base64
             
         except Exception as e:
-            logger.error(f"❌ TTS error: {e}")
-            return b""
-    
-    async def close(self):
-        """Cleanup"""
-        pass
+            logger.error(f"❌ TTS Error: {e}")
+            return ""
