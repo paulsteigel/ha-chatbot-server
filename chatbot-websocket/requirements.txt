@@ -8,5 +8,10 @@ python-dotenv==1.0.0
 # Text-to-Speech (FREE)
 gTTS==2.5.0
 
-# AI Services (choose one)
-openai==1.12.0
+# AI Services - FIXED VERSIONS
+openai==1.54.0
+httpx==0.27.0
+
+# Additional dependencies
+pydantic==2.9.0
+typing-extensions==4.12.2
