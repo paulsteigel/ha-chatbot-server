@@ -1,42 +1,24 @@
 #!/usr/bin/with-contenv bashio
 
-set -e
-
-bashio::log.info "🚀 Starting School Chatbot WebSocket Server..."
-
-# Load configuration from options
+# Get config from options
 export AI_PROVIDER=$(bashio::config 'ai_provider')
 export AI_MODEL=$(bashio::config 'ai_model')
-export AI_API_KEY=$(bashio::config 'ai_api_key')
-export AI_BASE_URL=$(bashio::config 'ai_base_url')
 export TTS_VOICE_VI=$(bashio::config 'tts_voice_vi')
 export TTS_VOICE_EN=$(bashio::config 'tts_voice_en')
-export STT_MODEL=$(bashio::config 'stt_model')
-export CONTEXT_ENABLED=$(bashio::config 'context_enabled')
-export CONTEXT_MESSAGES=$(bashio::config 'context_messages')
-export SILENCE_TIMEOUT=$(bashio::config 'silence_timeout')
-export MAX_RECORDING=$(bashio::config 'max_recording_duration')
-export CUSTOM_PROMPT=$(bashio::config 'custom_prompt')
-export VAD_THRESHOLD=$(bashio::config 'vad_threshold')
-export LOG_LEVEL=$(bashio::config 'log_level')
-export PORT=5000
+export OPENAI_API_KEY=$(bashio::config 'openai_api_key')
+export OPENAI_BASE_URL=$(bashio::config 'openai_base_url')
 
-# Validate API key
-if [ -z "$AI_API_KEY" ]; then
-    bashio::log.warning "⚠️  AI API key not configured!"
-fi
+# ✅ REMOVE: LOG_LEVEL export or set valid default
+# export LOG_LEVEL="NULL"  <-- DELETE THIS
 
+# Display config
+bashio::log.info "🚀 Starting School Chatbot WebSocket Server..."
 bashio::log.info "📋 Configuration:"
 bashio::log.info "   AI Provider: ${AI_PROVIDER}"
 bashio::log.info "   AI Model: ${AI_MODEL}"
 bashio::log.info "   TTS Voice (VI): ${TTS_VOICE_VI}"
-bashio::log.info "   STT Model: ${STT_MODEL}"
 
-# Create data directories
-mkdir -p /data/firmware
-mkdir -p /data/logs
+bashio::log.info "🎯 Starting server on port 5000..."
 
-# Start application
-cd /app
-bashio::log.info "🎯 Starting server on port ${PORT}..."
-exec python3 -m app.main 2>&1 | tee /data/logs/chatbot.log
+# Run application
+exec python3 -m app.main
