@@ -1,0 +1,29 @@
+
+---
+
+## 🚀 DEPLOYMENT STEPS
+
+Anh làm theo bước này:
+
+```bash
+# 1. Clone repo
+cd ~/
+git clone https://github.com/paulsteigel/ha-chatbot-server.git
+cd ha-chatbot-server
+
+# 2. Create branch
+git checkout -b websocket
+
+# 3. Copy all files above vào đúng vị trí
+
+# 4. Commit
+git add .
+git commit -m "Add WebSocket chatbot server with OTA support"
+
+# 5. Push
+git push origin websocket
+
+# 6. Trong Home Assistant:
+# - Supervisor → Add-on Store → Repositories
+# - Add: https://github.com/paulsteigel/ha-chatbot-server
+# - Install "School Chatbot Server (WebSocket)"
