@@ -1,4 +1,4 @@
-#!/usr/bin/with-contenv bashio
+#!/command/with-contenv bashio
 
 # Get AI configuration
 export AI_PROVIDER=$(bashio::config 'ai_provider')
