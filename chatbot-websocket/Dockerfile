@@ -1,18 +1,24 @@
-ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base-python:3.11
-FROM $BUILD_FROM
+FROM alpine:3.19
 
-# Install system dependencies
+# Install Python and dependencies
 RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    py3-setuptools \
     ffmpeg \
     build-base \
+    python3-dev \
+    linux-headers \
+    bash \
     && rm -rf /var/cache/apk/*
+
+# Create symbolic link for python
+RUN ln -sf /usr/bin/python3 /usr/bin/python
 
 WORKDIR /app
 
-# Copy requirements
+# Copy requirements and install
 COPY requirements.txt .
-
-# Install Python packages
 RUN pip3 install --break-system-packages --no-cache-dir -r requirements.txt
 
 # Copy application
@@ -23,7 +29,8 @@ RUN chmod +x /run.sh
 
 EXPOSE 5000
 
+# Simple healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:5000/health || exit 1
+    CMD nc -z localhost 5000 || exit 1
 
 CMD ["/run.sh"]
