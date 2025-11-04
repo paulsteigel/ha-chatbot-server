@@ -15,6 +15,9 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 # Copy application
 COPY app/ ./app/
 
+# Copy static files
+COPY static/ /static/
+
 # Copy s6-overlay service
 COPY rootfs /
 
