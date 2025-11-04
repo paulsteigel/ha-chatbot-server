@@ -1,5 +1,5 @@
 name: School Chatbot WebSocket
-version: "1.0.13"
+version: "1.0.14"
 slug: school-chatbot-websocket
 description: WebSocket server for ESP32 school chatbot - Yên Hoà
 url: https://github.com/paulsteigel/ha-chatbot-server
