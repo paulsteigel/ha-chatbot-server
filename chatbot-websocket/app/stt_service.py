@@ -1,55 +1,60 @@
 import logging
-import whisper
 import numpy as np
 import io
-import soundfile as sf
+import wave
+from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
 class STTService:
-    def __init__(self, model_name="base"):
-        """Initialize Whisper STT"""
-        self.model_name = model_name
-        self.model = None
-        logger.info(f"🎤 Initializing Whisper STT with model: {model_name}")
+    def __init__(self, api_key, base_url=None):
+        """Initialize OpenAI Whisper API"""
+        self.client = AsyncOpenAI(
+            api_key=api_key,
+            base_url=base_url if base_url else None
+        )
+        logger.info("🎤 Using OpenAI Whisper API for STT")
         
     async def initialize(self):
-        """Load Whisper model"""
-        try:
-            self.model = whisper.load_model(self.model_name)
-            logger.info(f"✅ Whisper model '{self.model_name}' loaded successfully")
-        except Exception as e:
-            logger.error(f"❌ Failed to load Whisper model: {e}")
-            raise
+        """No model to load - using API"""
+        logger.info("✅ STT service ready (API mode)")
     
     async def transcribe(self, audio_data, sample_rate=16000):
         """
-        Transcribe audio to text
+        Transcribe audio using OpenAI API
         Args:
-            audio_data: numpy array of audio samples (int16)
-            sample_rate: sample rate (default 16000)
+            audio_data: numpy array (int16)
+            sample_rate: sample rate
         Returns:
             str: transcribed text
         """
         try:
-            # Convert to float32 [-1, 1]
-            if audio_data.dtype == np.int16:
-                audio_float = audio_data.astype(np.float32) / 32768.0
-            else:
-                audio_float = audio_data
+            # Convert to WAV format
+            wav_buffer = io.BytesIO()
+            with wave.open(wav_buffer, 'wb') as wav_file:
+                wav_file.setnchannels(1)
+                wav_file.setsampwidth(2)  # 16-bit
+                wav_file.setframerate(sample_rate)
+                wav_file.writeframes(audio_data.tobytes())
             
-            # Transcribe
-            result = self.model.transcribe(
-                audio_float,
-                language="vi",
-                task="transcribe",
-                fp16=False
+            wav_buffer.seek(0)
+            wav_buffer.name = "audio.wav"
+            
+            # Call API
+            transcript = await self.client.audio.transcriptions.create(
+                model="whisper-1",
+                file=wav_buffer,
+                language="vi"
             )
             
-            text = result["text"].strip()
+            text = transcript.text.strip()
             logger.info(f"📝 Transcribed: {text}")
             return text
             
         except Exception as e:
-            logger.error(f"❌ Transcription error: {e}", exc_info=True)
+            logger.error(f"❌ STT API error: {e}")
             return ""
+    
+    async def close(self):
+        """Cleanup"""
+        await self.client.close()
