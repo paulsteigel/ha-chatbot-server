@@ -7,6 +7,7 @@ from typing import Optional, List, Dict
 from openai import AsyncOpenAI
 import httpx
 
+
 class AIService:
     """AI Chat Service"""
     
@@ -70,12 +71,13 @@ class AIService:
         if len(conv) > self.max_context:
             self.conversations[device_id] = conv[-self.max_context:]
     
-    async def chat(self, message: str, device_id: str = "default") -> Optional[str]:
+    async def chat(self, message: str, language: str = 'auto', device_id: str = "default") -> Optional[str]:
         """
         Chat with AI
         
         Args:
             message: User message
+            language: Language code (not used, for compatibility)
             device_id: Device identifier for conversation context
         
         Returns:
@@ -86,7 +88,7 @@ class AIService:
                 self.logger.error("❌ AI client not initialized")
                 return None
             
-            self.logger.info(f"💬 User: {message}")
+            self.logger.info(f"💬 User [{device_id}]: {message}")
             
             # Add user message to history
             self._add_message(device_id, "user", message)
@@ -113,7 +115,7 @@ class AIService:
             # Add to history
             self._add_message(device_id, "assistant", reply)
             
-            self.logger.info(f"🤖 AI: {reply}")
+            self.logger.info(f"🤖 AI [{device_id}]: {reply}")
             return reply
             
         except Exception as e:
@@ -129,7 +131,7 @@ class AIService:
     async def test(self):
         """Test AI service"""
         self.logger.info("🧪 Testing AI service...")
-        response = await self.chat("Xin chào!", "test")
+        response = await self.chat("Xin chào!", "vi", "test")
         if response:
             self.logger.info(f"✅ AI test OK: {response}")
         else:
