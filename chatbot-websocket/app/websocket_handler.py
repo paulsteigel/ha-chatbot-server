@@ -109,7 +109,8 @@ class WebSocketHandler:
         if not device_id:
             return {'type': 'error', 'message': 'device_id required'}
         
-        self.device_manager.register_device(device_id, device_type, firmware_version)
+        # SAU (ĐÚNG):
+        self.device_manager.register_device(device_id, device_type)
         self.logger.info(f"✅ Device registered: {device_id} (FW: {firmware_version})")
         
         return {
