@@ -1,45 +1,32 @@
 import logging
 from datetime import datetime
-from typing import Dict
-from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-@dataclass
-class DeviceInfo:
-    device_id: str
-    ws: object
-    state: str  # 'idle', 'listening', 'processing', 'speaking'
-    connected_at: datetime
-    last_activity: datetime
-
 class DeviceManager:
     def __init__(self):
-        self.devices: Dict[str, DeviceInfo] = {}
-        
-    def register_device(self, device_id: str, ws):
-        """Register new device"""
-        self.devices[device_id] = DeviceInfo(
-            device_id=device_id,
-            ws=ws,
-            state='idle',
-            connected_at=datetime.now(),
-            last_activity=datetime.now()
-        )
-        logger.info(f"📱 Device registered: {device_id}")
-        
-    def disconnect_device(self, device_id: str):
-        """Disconnect device"""
+        self.devices = {}
+        logger.info("📱 Device manager initialized")
+    
+    def register_device(self, device_id, ws):
+        """Register a device"""
+        self.devices[device_id] = {
+            'ws': ws,
+            'connected_at': datetime.now(),
+            'last_activity': datetime.now()
+        }
+        logger.info(f"✅ Device registered: {device_id}")
+    
+    def unregister_device(self, device_id):
+        """Unregister a device"""
         if device_id in self.devices:
             del self.devices[device_id]
-            logger.info(f"📱 Device disconnected: {device_id}")
-            
-    def update_state(self, device_id: str, state: str):
-        """Update device state"""
-        if device_id in self.devices:
-            self.devices[device_id].state = state
-            self.devices[device_id].last_activity = datetime.now()
-            
-    def get_device(self, device_id: str) -> DeviceInfo:
+            logger.info(f"❌ Device unregistered: {device_id}")
+    
+    def get_device(self, device_id):
         """Get device info"""
         return self.devices.get(device_id)
+    
+    def list_devices(self):
+        """List all connected devices"""
+        return list(self.devices.keys())
