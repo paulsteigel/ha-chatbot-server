@@ -1,1 +1,9 @@
-
+aiohttp==3.9.1
+websockets==12.0
+numpy==1.24.3
+openai-whisper==20231117
+edge-tts==6.1.9
+openai==1.6.1
+webrtcvad==2.0.10
+pydub==0.25.1
+python-dotenv==1.0.0
