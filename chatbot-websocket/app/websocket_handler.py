@@ -1,237 +1,243 @@
+"""
+WebSocket Handler
+Handles WebSocket connections and message routing
+"""
 import logging
 import json
 import asyncio
-from aiohttp import web
-import aiohttp
+from typing import Optional
+from aiohttp import web, WSMsgType
+import base64
 
-logger = logging.getLogger(__name__)
 
 class WebSocketHandler:
-    """Handle WebSocket connections from ESP32 devices"""
+    """WebSocket connection handler"""
     
-    def __init__(self, stt_service, tts_service, ai_service, device_manager, ota_manager):
-        """Initialize WebSocket handler"""
-        self.stt_service = stt_service
-        self.tts_service = tts_service
-        self.ai_service = ai_service
+    HEARTBEAT_INTERVAL = 30
+    HEARTBEAT_TIMEOUT = 90
+    
+    def __init__(self, device_manager, ai_service, tts_service, stt_service):
+        self.logger = logging.getLogger('app.websocket_handler')
         self.device_manager = device_manager
-        self.ota_manager = ota_manager
-        self.silence_timeout = 10  # seconds
-        logger.info("🌐 WebSocket handler initialized")
+        self.ai_service = ai_service
+        self.tts_service = tts_service
+        self.stt_service = stt_service
+        self.logger.info("🌐 WebSocket handler initialized")
     
     async def handle(self, request):
         """Handle WebSocket connection"""
-        ws = web.WebSocketResponse()
+        ws = web.WebSocketResponse(heartbeat=self.HEARTBEAT_INTERVAL)
         await ws.prepare(request)
         
+        self.logger.info("🔌 New WebSocket connection")
+        
         device_id = None
-        silence_task = None
         
         try:
-            logger.info("🔌 New WebSocket connection")
-            
             async for msg in ws:
-                if msg.type == aiohttp.WSMsgType.TEXT:
+                if msg.type == WSMsgType.TEXT:
                     try:
                         data = json.loads(msg.data)
-                        msg_type = data.get('type')
+                        response = await self._process_message(data, device_id)
                         
-                        logger.debug(f"📨 Received: {msg_type}")
+                        # Update device_id if registered
+                        if response and response.get('type') == 'registered':
+                            device_id = response.get('device_id')
                         
-                        # Cancel silence timeout on activity
-                        if silence_task:
-                            silence_task.cancel()
-                        
-                        if msg_type == 'register':
-                            device_id = data.get('device_id')
-                            firmware_version = data.get('firmware_version', 'unknown')
+                        if response:
+                            await ws.send_json(response)
                             
-                            self.device_manager.register_device(device_id, ws)
-                            
-                            await ws.send_json({
-                                'type': 'registered',
-                                'device_id': device_id,
-                                'server_version': '1.0.2'
-                            })
-                            logger.info(f"✅ Device registered: {device_id} (FW: {firmware_version})")
-                        
-                        elif msg_type == 'audio':
-                            # Voice interaction flow
-                            audio_data = data.get('data')
-                            language = data.get('language', 'vi')
-                            
-                            # Step 1: STT
-                            await ws.send_json({'type': 'status', 'message': 'transcribing'})
-                            text = await self.stt_service.transcribe(audio_data, language)
-                            
-                            if not text:
-                                await ws.send_json({
-                                    'type': 'error',
-                                    'message': 'Không nghe rõ, bạn nói lại được không?'
-                                })
-                                continue
-                            
-                            await ws.send_json({
-                                'type': 'transcription',
-                                'text': text
-                            })
-                            
-                            # Step 2: AI Processing
-                            await ws.send_json({'type': 'status', 'message': 'thinking'})
-                            ai_response = await self.ai_service.chat(text, language, device_id)
-                            
-                            await ws.send_json({
-                                'type': 'response',
-                                'text': ai_response
-                            })
-                            
-                            # Step 3: TTS
-                            await ws.send_json({'type': 'status', 'message': 'speaking'})
-                            audio_response = await self.tts_service.synthesize(ai_response, language)
-                            
-                            # Send audio in chunks if needed
-                            await ws.send_json({
-                                'type': 'audio_response',
-                                'data': audio_response,
-                                'format': 'mp3'
-                            })
-                            
-                            await ws.send_json({'type': 'status', 'message': 'ready'})
-                            
-                            # Start silence timeout
-                            silence_task = asyncio.create_task(
-                                self._silence_timeout(ws, device_id)
-                            )
-                        
-                        elif msg_type == 'chat':
-                            # Text-only chat
-                            text = data.get('text')
-                            language = data.get('language', 'vi')
-                            
-                            ai_response = await self.ai_service.chat(text, language, device_id)
-                            
-                            await ws.send_json({
-                                'type': 'response',
-                                'text': ai_response
-                            })
-                        
-                        elif msg_type == 'command':
-                            # Handle device commands (LED, volume, etc.)
-                            command = data.get('command')
-                            await self._handle_command(ws, device_id, command, data)
-                        
-                        elif msg_type == 'check_update':
-                            # OTA update check
-                            current_version = data.get('version')
-                            update_info = await self.ota_manager.check_update(
-                                device_id, current_version
-                            )
-                            await ws.send_json({
-                                'type': 'update_info',
-                                **update_info
-                            })
-                        
-                        elif msg_type == 'ping':
-                            await ws.send_json({'type': 'pong'})
-                            self.device_manager.update_activity(device_id)
-                        
-                        elif msg_type == 'clear_context':
-                            # Clear conversation history
-                            self.ai_service.clear_conversation(device_id)
-                            await ws.send_json({
-                                'type': 'context_cleared',
-                                'message': 'Conversation history cleared'
-                            })
-                    
                     except json.JSONDecodeError:
-                        logger.error("❌ Invalid JSON received")
+                        self.logger.error(f"❌ Invalid JSON: {msg.data}")
                         await ws.send_json({
                             'type': 'error',
                             'message': 'Invalid JSON format'
                         })
                     except Exception as e:
-                        logger.error(f"❌ Error processing message: {e}", exc_info=True)
+                        self.logger.error(f"❌ Error processing message: {e}", exc_info=True)
                         await ws.send_json({
                             'type': 'error',
                             'message': str(e)
                         })
                 
-                elif msg.type == aiohttp.WSMsgType.ERROR:
-                    logger.error(f"❌ WebSocket error: {ws.exception()}")
+                elif msg.type == WSMsgType.ERROR:
+                    self.logger.error(f"❌ WebSocket error: {ws.exception()}")
+        
+        except Exception as e:
+            self.logger.error(f"❌ WebSocket handler error: {e}", exc_info=True)
         
         finally:
-            if silence_task:
-                silence_task.cancel()
-            
             if device_id:
                 self.device_manager.unregister_device(device_id)
-                self.ai_service.clear_conversation(device_id)
-                logger.info(f"🔌 Device disconnected: {device_id}")
+                # Clear AI conversation history
+                await self.ai_service.clear_conversation(device_id)
+                self.logger.info(f"🔌 Device disconnected: {device_id}")
             
-            logger.info("🔌 WebSocket connection closed")
+            self.logger.info("🔌 WebSocket connection closed")
         
         return ws
     
-    async def _silence_timeout(self, ws, device_id):
-        """Handle silence timeout"""
-        try:
-            await asyncio.sleep(self.silence_timeout)
-            await ws.send_json({
-                'type': 'timeout',
-                'message': 'Conversation ended due to inactivity'
-            })
-            logger.info(f"⏱️ Silence timeout for {device_id}")
-        except asyncio.CancelledError:
-            pass
-    
-    async def _handle_command(self, ws, device_id, command, data):
-        """Handle device commands"""
-        try:
-            if command == 'led_control':
-                # Control RGB LED
-                color = data.get('color', 'white')
-                state = data.get('state', 'on')
-                await ws.send_json({
-                    'type': 'command_response',
-                    'command': 'led_control',
-                    'status': 'ok'
-                })
-            
-            elif command == 'volume':
-                # Control volume
-                level = data.get('level', 50)
-                await ws.send_json({
-                    'type': 'command_response',
-                    'command': 'volume',
-                    'level': level,
-                    'status': 'ok'
-                })
-            
-            elif command == 'light_control':
-                # Control connected light
-                state = data.get('state', 'on')
-                await ws.send_json({
-                    'type': 'command_response',
-                    'command': 'light_control',
-                    'state': state,
-                    'status': 'ok'
-                })
-            
-            logger.info(f"🎮 Command executed: {command} for {device_id}")
+    async def _process_message(self, data: dict, device_id: Optional[str]) -> Optional[dict]:
+        """Process incoming message"""
+        msg_type = data.get('type')
         
-        except Exception as e:
-            logger.error(f"❌ Command error: {e}")
-            await ws.send_json({
-                'type': 'command_response',
-                'command': command,
-                'status': 'error',
-                'message': str(e)
-            })
+        if msg_type == 'register':
+            return await self._handle_register(data)
+        
+        elif msg_type == 'chat':
+            return await self._handle_chat(data, device_id)
+        
+        elif msg_type == 'voice':
+            return await self._handle_voice(data, device_id)
+        
+        elif msg_type == 'command':
+            return await self._handle_command(data, device_id)
+        
+        elif msg_type == 'ping':
+            return {'type': 'pong', 'timestamp': data.get('timestamp')}
+        
+        else:
+            self.logger.warning(f"⚠️ Unknown message type: {msg_type}")
+            return {'type': 'error', 'message': f'Unknown message type: {msg_type}'}
     
-    async def get_status(self, request):
-        """Get server status"""
-        return web.json_response({
-            'status': 'ok',
-            'connected_devices': self.device_manager.get_device_count(),
-            'version': '1.0.2'
-        })
+    async def _handle_register(self, data: dict) -> dict:
+        """Handle device registration"""
+        device_id = data.get('device_id')
+        device_type = data.get('device_type', 'unknown')
+        firmware_version = data.get('firmware_version', 'unknown')
+        
+        if not device_id:
+            return {'type': 'error', 'message': 'device_id required'}
+        
+        self.device_manager.register_device(device_id, device_type, firmware_version)
+        self.logger.info(f"✅ Device registered: {device_id} (FW: {firmware_version})")
+        
+        return {
+            'type': 'registered',
+            'device_id': device_id,
+            'message': 'Device registered successfully'
+        }
+    
+    async def _handle_chat(self, data: dict, device_id: Optional[str]) -> dict:
+        """Handle chat message"""
+        text = data.get('text', '').strip()
+        language = data.get('language', 'auto')
+        
+        if not text:
+            return {'type': 'error', 'message': 'text required'}
+        
+        if not device_id:
+            return {'type': 'error', 'message': 'Device not registered'}
+        
+        # Get AI response
+        ai_response = await self.ai_service.chat(text, language, device_id)
+        
+        if not ai_response:
+            return {
+                'type': 'chat_response',
+                'text': 'Xin lỗi, mình không thể trả lời lúc này.',
+                'language': language
+            }
+        
+        # Generate TTS audio
+        audio_data = await self.tts_service.synthesize(ai_response, language)
+        
+        response = {
+            'type': 'chat_response',
+            'text': ai_response,
+            'language': language
+        }
+        
+        # Add audio if available
+        if audio_data:
+            # Convert to base64 for JSON transmission
+            audio_base64 = base64.b64encode(audio_data).decode('utf-8')
+            response['audio'] = audio_base64
+            response['audio_format'] = 'mp3'
+            self.logger.info(f"🔊 Sending audio: {len(audio_data)} bytes")
+        else:
+            self.logger.warning("⚠️ No audio generated")
+        
+        return response
+    
+    async def _handle_voice(self, data: dict, device_id: Optional[str]) -> dict:
+        """Handle voice input"""
+        if not device_id:
+            return {'type': 'error', 'message': 'Device not registered'}
+        
+        audio_base64 = data.get('audio')
+        audio_format = data.get('format', 'wav')
+        language = data.get('language', 'auto')
+        
+        if not audio_base64:
+            return {'type': 'error', 'message': 'audio required'}
+        
+        try:
+            # Decode base64 audio
+            audio_data = base64.b64decode(audio_base64)
+            
+            # Transcribe audio to text
+            text = await self.stt_service.transcribe(audio_data, language)
+            
+            if not text:
+                return {
+                    'type': 'voice_response',
+                    'text': 'Xin lỗi, mình không nghe rõ.',
+                    'language': language
+                }
+            
+            self.logger.info(f"🎤 Transcribed: {text}")
+            
+            # Get AI response
+            ai_response = await self.ai_service.chat(text, language, device_id)
+            
+            if not ai_response:
+                return {
+                    'type': 'voice_response',
+                    'text': 'Xin lỗi, mình không thể trả lời lúc này.',
+                    'transcribed_text': text,
+                    'language': language
+                }
+            
+            # Generate TTS audio
+            audio_response = await self.tts_service.synthesize(ai_response, language)
+            
+            response = {
+                'type': 'voice_response',
+                'text': ai_response,
+                'transcribed_text': text,
+                'language': language
+            }
+            
+            # Add audio if available
+            if audio_response:
+                audio_base64 = base64.b64encode(audio_response).decode('utf-8')
+                response['audio'] = audio_base64
+                response['audio_format'] = 'mp3'
+                self.logger.info(f"🔊 Sending audio: {len(audio_response)} bytes")
+            
+            return response
+            
+        except Exception as e:
+            self.logger.error(f"❌ Voice processing error: {e}", exc_info=True)
+            return {'type': 'error', 'message': f'Voice processing failed: {str(e)}'}
+    
+    async def _handle_command(self, data: dict, device_id: Optional[str]) -> dict:
+        """Handle device command"""
+        if not device_id:
+            return {'type': 'error', 'message': 'Device not registered'}
+        
+        command = data.get('command')
+        params = data.get('params', {})
+        
+        if not command:
+            return {'type': 'error', 'message': 'command required'}
+        
+        self.logger.info(f"🎮 Command executed: {command} for {device_id}")
+        
+        return {
+            'type': 'command_response',
+            'command': command,
+            'status': 'success',
+            'message': f'Command {command} executed'
+        }
