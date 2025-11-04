@@ -1,70 +1,91 @@
-import os
 import logging
-import uvicorn
-from fastapi import FastAPI
-from app.websocket_handler import websocket_endpoint
-from app.ai_service import AIService
-from app.stt_service import STTService
-from app.tts_service import TTSService
+import os
+from aiohttp import web
+from .stt_service import STTService
+from .tts_service import TTSService
+from .ai_service import AIService
+from .device_manager import DeviceManager
+from .ota_manager import OTAManager
+from .websocket_handler import WebSocketHandler
 
-# Setup logging from environment
-log_level = os.getenv('LOG_LEVEL', 'info').upper()
+# ✅ FIX: Handle invalid log level
+log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
+
+# Validate log level
+valid_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
+if log_level not in valid_levels:
+    log_level = 'INFO'
+
 logging.basicConfig(
     level=getattr(logging, log_level),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Build config from environment variables
-config = {
-    'ai_provider': os.getenv('AI_PROVIDER', 'deepseek'),
-    'ai_model': os.getenv('AI_MODEL', 'deepseek-chat'),
-    'openai_api_key': os.getenv('OPENAI_API_KEY', ''),
-    'openai_base_url': os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
-    'deepseek_api_key': os.getenv('DEEPSEEK_API_KEY', ''),
-    'tts_voice_vi': os.getenv('TTS_VOICE_VI', 'vi-VN-HoaiMyNeural'),
-    'tts_voice_en': os.getenv('TTS_VOICE_EN', 'en-US-AriaNeural'),
-    'system_prompt': os.getenv('SYSTEM_PROMPT', 'Bạn là trợ lý AI thân thiện.'),
-    'max_context_messages': int(os.getenv('MAX_CONTEXT_MESSAGES', '10')),
-    'temperature': float(os.getenv('TEMPERATURE', '0.7')),
-    'max_tokens': int(os.getenv('MAX_TOKENS', '500'))
-}
-
-logger.info("="*60)
-logger.info("ESP32 Chatbot WebSocket Server Starting...")
-logger.info(f"AI Provider: {config['ai_provider']}")
-logger.info(f"AI Model: {config['ai_model']}")
-logger.info(f"Log Level: {log_level}")
-logger.info("="*60)
-
-# Initialize services
-ai_service = AIService(config)
-stt_service = STTService(config)
-tts_service = TTSService(config)
-
-# Create FastAPI app
-app = FastAPI(title="ESP32 Chatbot WebSocket Server")
-
-# Health check endpoint
-@app.get("/health")
-async def health_check():
-    """Health check endpoint for Docker"""
-    return {
-        "status": "healthy",
-        "provider": config['ai_provider'],
-        "model": config['ai_model']
-    }
-
-# Register WebSocket endpoint
-app.add_websocket_route("/ws", websocket_endpoint)
-
-if __name__ == "__main__":
-    port = int(os.getenv('PORT', '5000'))
-    logger.info(f"🚀 Starting server on port {port}")
+async def init_app():
+    """Initialize application"""
+    app = web.Application()
     
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=port,
-        log_level=log_level.lower()
+    # Get config from environment
+    openai_api_key = os.getenv('OPENAI_API_KEY')
+    openai_base_url = os.getenv('OPENAI_BASE_URL')
+    ai_model = os.getenv('AI_MODEL', 'gpt-4o-mini')
+    
+    logger.info("🚀 Initializing services...")
+    
+    # Initialize services
+    stt_service = STTService(
+        api_key=openai_api_key,
+        base_url=openai_base_url
+    )
+    
+    tts_service = TTSService(
+        voice_vi=os.getenv('TTS_VOICE_VI', 'vi-VN-HoaiMyNeural'),
+        voice_en=os.getenv('TTS_VOICE_EN', 'en-US-AriaNeural')
+    )
+    
+    ai_service = AIService(
+        api_key=openai_api_key,
+        base_url=openai_base_url,
+        model=ai_model
+    )
+    
+    device_manager = DeviceManager()
+    ota_manager = OTAManager()
+    
+    # Initialize all services
+    await stt_service.initialize()
+    await tts_service.initialize()
+    await ai_service.initialize()
+    
+    # Setup WebSocket handler
+    ws_handler = WebSocketHandler(
+        stt_service=stt_service,
+        tts_service=tts_service,
+        ai_service=ai_service,
+        device_manager=device_manager,
+        ota_manager=ota_manager
+    )
+    
+    # Add routes
+    app.router.add_get('/ws', ws_handler.handle)
+    app.router.add_get('/health', lambda r: web.Response(text='OK'))
+    
+    # Store services in app for cleanup
+    app['stt_service'] = stt_service
+    app['tts_service'] = tts_service
+    app['ai_service'] = ai_service
+    
+    logger.info("✅ Application initialized")
+    return app
+
+if __name__ == '__main__':
+    logger.info("🎯 Starting WebSocket server...")
+    
+    web.run_app(
+        init_app(),
+        host='0.0.0.0',
+        port=5000,
+        access_log=logger,
+        print=lambda msg: logger.info(f"🌐 {msg}")
     )
