@@ -8,7 +8,7 @@ labels:
   org.opencontainers.image.title: "School Chatbot WebSocket Server"
   org.opencontainers.image.description: "AI chatbot for ESP32 school devices with WebSocket"
   org.opencontainers.image.source: "https://github.com/paulsteigel/ha-chatbot-server"
-  org.opencontainers.image.authors: "Your Name <your@email.com>"
+  org.opencontainers.image.authors: "Đặng Đình Ngọc <ngocdd@sfdp.net>"
   org.opencontainers.image.licenses: "MIT"
 args:
   PYTHON_VERSION: "3.11"
