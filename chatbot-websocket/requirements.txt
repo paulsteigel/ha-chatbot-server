@@ -2,18 +2,14 @@
 aiohttp==3.9.5
 websockets==12.0
 
-# AI
+# AI & STT (use API only)
 openai==1.40.0
 
 # TTS
 edge-tts==6.1.12
 
-# STT - Changed to openai-whisper
-openai-whisper==20240930
-
-# Audio processing
-numpy>=1.26.0
-soundfile==0.12.1
+# Audio processing (minimal)
+numpy==1.26.4
 
 # Utilities
 python-dotenv==1.0.1
