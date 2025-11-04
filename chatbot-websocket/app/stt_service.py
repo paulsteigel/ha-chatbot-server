@@ -1,60 +1,55 @@
-import asyncio
 import logging
-import os
+import whisper
 import numpy as np
-from faster_whisper import WhisperModel
-from concurrent.futures import ThreadPoolExecutor
+import io
+import soundfile as sf
 
 logger = logging.getLogger(__name__)
 
 class STTService:
-    def __init__(self):
-        model_name = os.getenv('STT_MODEL', 'base')
-        logger.info(f"🎤 Loading Faster-Whisper model: {model_name}")
+    def __init__(self, model_name="base"):
+        """Initialize Whisper STT"""
+        self.model_name = model_name
+        self.model = None
+        logger.info(f"🎤 Initializing Whisper STT with model: {model_name}")
         
-        # Use faster-whisper (optimized C++ implementation)
-        self.model = WhisperModel(
-            model_name,
-            device="cpu",
-            compute_type="int8"  # Faster on CPU
-        )
-        
-        self.executor = ThreadPoolExecutor(max_workers=2)
-        logger.info("✅ Whisper model loaded")
-        
-    async def transcribe(self, audio_np: np.ndarray, sample_rate: int = 16000) -> str:
+    async def initialize(self):
+        """Load Whisper model"""
+        try:
+            self.model = whisper.load_model(self.model_name)
+            logger.info(f"✅ Whisper model '{self.model_name}' loaded successfully")
+        except Exception as e:
+            logger.error(f"❌ Failed to load Whisper model: {e}")
+            raise
+    
+    async def transcribe(self, audio_data, sample_rate=16000):
         """
-        Transcribe audio using Faster-Whisper
+        Transcribe audio to text
         Args:
-            audio_np: numpy array of int16 PCM samples
-            sample_rate: sample rate (should be 16000)
+            audio_data: numpy array of audio samples (int16)
+            sample_rate: sample rate (default 16000)
         Returns:
-            Transcribed text
+            str: transcribed text
         """
         try:
-            # Convert to float32 and normalize
-            audio_float = audio_np.astype(np.float32) / 32768.0
+            # Convert to float32 [-1, 1]
+            if audio_data.dtype == np.int16:
+                audio_float = audio_data.astype(np.float32) / 32768.0
+            else:
+                audio_float = audio_data
             
-            # Run in thread pool
-            loop = asyncio.get_event_loop()
-            segments, info = await loop.run_in_executor(
-                self.executor,
-                lambda: self.model.transcribe(
-                    audio_float,
-                    language=None,  # Auto-detect
-                    task='transcribe',
-                    vad_filter=True,
-                    vad_parameters=dict(min_silence_duration_ms=500)
-                )
+            # Transcribe
+            result = self.model.transcribe(
+                audio_float,
+                language="vi",
+                task="transcribe",
+                fp16=False
             )
             
-            # Combine segments
-            text = " ".join([segment.text for segment in segments]).strip()
-            
-            logger.info(f"📝 Transcribed ({info.language}): {text}")
-            
+            text = result["text"].strip()
+            logger.info(f"📝 Transcribed: {text}")
             return text
             
         except Exception as e:
-            logger.error(f"STT error: {e}")
+            logger.error(f"❌ Transcription error: {e}", exc_info=True)
             return ""
