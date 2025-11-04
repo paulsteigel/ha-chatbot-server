@@ -58,8 +58,8 @@ class WebSocketHandler:
                                 'text': text
                             })
                             
-                            # ✅ FIX: Use correct method with device_id
-                            ai_response = await self.ai_service.get_response(text, device_id)
+                            # AI processing
+                            ai_response = await self.ai_service.chat(text, language)
                             
                             await ws.send_json({
                                 'type': 'response',
@@ -82,15 +82,7 @@ class WebSocketHandler:
                             text = data.get('text')
                             language = data.get('language', 'vi')
                             
-                            # ✅ FIX: Use correct method with device_id
-                            if device_id is None:
-                                await ws.send_json({
-                                    'type': 'error',
-                                    'message': 'Device not registered. Send register message first.'
-                                })
-                                continue
-                            
-                            ai_response = await self.ai_service.get_response(text, device_id)
+                            ai_response = await self.ai_service.chat(text, language)
                             
                             await ws.send_json({
                                 'type': 'response',
