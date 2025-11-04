@@ -25,3 +25,13 @@ EXPOSE 5000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s \
     CMD wget --no-verbose --tries=1 --spider http://localhost:5000/health || exit 1
+# Install dependencies with fixed versions
+RUN pip3 install --no-cache-dir \
+    websockets==12.0 \
+    aiohttp==3.9.1 \
+    python-dotenv==1.0.0 \
+    gTTS==2.5.0 \
+    openai==1.54.0 \
+    httpx==0.27.0 \
+    pydantic==2.9.0 \
+    typing-extensions==4.12.2
