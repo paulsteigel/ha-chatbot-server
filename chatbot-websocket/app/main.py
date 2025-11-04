@@ -8,10 +8,8 @@ from .device_manager import DeviceManager
 from .ota_manager import OTAManager
 from .websocket_handler import WebSocketHandler
 
-# ✅ FIX: Handle invalid log level
+# Setup logging
 log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
-
-# Validate log level
 valid_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
 if log_level not in valid_levels:
     log_level = 'INFO'
@@ -27,16 +25,23 @@ async def init_app():
     app = web.Application()
     
     # Get config from environment
-    openai_api_key = os.getenv('OPENAI_API_KEY')
-    openai_base_url = os.getenv('OPENAI_BASE_URL')
-    ai_model = os.getenv('AI_MODEL', 'gpt-4o-mini')
+    ai_provider = os.getenv('AI_PROVIDER', 'deepseek')
+    ai_model = os.getenv('AI_MODEL', 'deepseek-chat')
     
-    logger.info("🚀 Initializing services...")
+    # API Keys based on provider
+    if ai_provider == 'openai':
+        api_key = os.getenv('OPENAI_API_KEY')
+        base_url = os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1')
+    else:  # deepseek
+        api_key = os.getenv('DEEPSEEK_API_KEY')
+        base_url = 'https://api.deepseek.com/v1'
+    
+    logger.info(f"🤖 Initializing services with {ai_provider}...")
     
     # Initialize services
     stt_service = STTService(
-        api_key=openai_api_key,
-        base_url=openai_base_url
+        api_key=api_key,
+        base_url=base_url
     )
     
     tts_service = TTSService(
@@ -45,9 +50,13 @@ async def init_app():
     )
     
     ai_service = AIService(
-        api_key=openai_api_key,
-        base_url=openai_base_url,
-        model=ai_model
+        api_key=api_key,
+        base_url=base_url,
+        model=ai_model,
+        system_prompt=os.getenv('SYSTEM_PROMPT', 'Bạn là trợ lý AI thân thiện.'),
+        max_context=int(os.getenv('MAX_CONTEXT_MESSAGES', '10')),
+        temperature=float(os.getenv('TEMPERATURE', '0.7')),
+        max_tokens=int(os.getenv('MAX_TOKENS', '500'))
     )
     
     device_manager = DeviceManager()
@@ -70,6 +79,7 @@ async def init_app():
     # Add routes
     app.router.add_get('/ws', ws_handler.handle)
     app.router.add_get('/health', lambda r: web.Response(text='OK'))
+    app.router.add_get('/api/status', ws_handler.get_status)
     
     # Store services in app for cleanup
     app['stt_service'] = stt_service
@@ -80,12 +90,11 @@ async def init_app():
     return app
 
 if __name__ == '__main__':
-    logger.info("🎯 Starting WebSocket server...")
+    logger.info("🚀 Starting WebSocket server...")
     
     web.run_app(
         init_app(),
         host='0.0.0.0',
         port=5000,
-        access_log=logger,
-        print=lambda msg: logger.info(f"🌐 {msg}")
+        access_log=logger
     )
