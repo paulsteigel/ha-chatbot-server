@@ -12,10 +12,10 @@ class AIService:
     """AI Chat Service"""
     
     def __init__(self, api_key: str, base_url: str, model: str,
-                 system_prompt: str, max_context: int = 10,
-                 temperature: float = 0.7, max_tokens: int = 500):
+             system_prompt: str, max_context: int = 10,
+             temperature: float = 0.7, max_tokens: int = 500):
         self.logger = logging.getLogger('AIService')
-        
+    
         self.api_key = api_key
         self.base_url = base_url
         self.model = model
@@ -23,15 +23,22 @@ class AIService:
         self.max_context = max_context
         self.temperature = temperature
         self.max_tokens = max_tokens
-        
+    
         # Conversation history
         self.conversations = {}
-        
-        self.client = None
-        
+    
+        # ✅ KHỞI TẠO HTTP CLIENT NGAY
+        from openai import OpenAI
+        self.client = OpenAI(
+            api_key=api_key,
+            base_url=base_url
+        )
+    
         self.logger.info(f"🤖 Initializing AI Service...")
         self.logger.info(f"   Model: {model}")
         self.logger.info(f"   Base URL: {base_url}")
+        self.logger.info(f"✅ AI client initialized successfully")
+
     
     async def initialize(self):
         """Initialize the AI service"""
