@@ -96,15 +96,31 @@ async def init_app():
     logger.info("   🔄 Setting up OTA Manager...")
     ota_manager = OTAManager()
     
-    # Start services
+    # Start services (only if they have start() method)
     logger.info("🚀 Starting services...")
-    await stt_service.start()
-    await tts_service.start()
-    await ai_service.start()
+    
+    # Check and start services
+    if hasattr(stt_service, 'start'):
+        await stt_service.start()
+    else:
+        logger.info("✅ STT Service ready (no start() needed)")
+    
+    if hasattr(tts_service, 'start'):
+        await tts_service.start()
+    else:
+        logger.info("✅ TTS Service ready (no start() needed)")
+    
+    if hasattr(ai_service, 'start'):
+        await ai_service.start()
+    else:
+        logger.info("✅ AI Service ready (no start() needed)")
     
     # Test TTS
     logger.info("🧪 Testing TTS service...")
-    await tts_service.test()
+    if hasattr(tts_service, 'test'):
+        await tts_service.test()
+    else:
+        logger.info("⚠️ TTS test() method not available")
     
     # Setup WebSocket handler
     logger.info("🔌 Setting up WebSocket handler...")
