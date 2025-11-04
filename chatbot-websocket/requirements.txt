@@ -2,8 +2,8 @@
 aiohttp==3.9.5
 websockets==12.0
 
-# AI & STT (use API only)
-openai==1.40.0
+# AI & STT (updated version)
+openai==1.54.0
 
 # TTS
 edge-tts==6.1.12
