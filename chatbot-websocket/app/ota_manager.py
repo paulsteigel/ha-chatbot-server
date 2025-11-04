@@ -1,90 +1,41 @@
-import os
 import logging
-import asyncio
-from aiohttp import web
+import os
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 class OTAManager:
-    def __init__(self):
-        self.firmware_dir = Path('/data/firmware')
-        self.firmware_dir.mkdir(exist_ok=True)
-        
-    async def upload_firmware(self, request):
-        """Handle firmware upload"""
+    def __init__(self, firmware_dir='/data/firmware'):
+        self.firmware_dir = Path(firmware_dir)
+        self.firmware_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"📦 OTA manager initialized: {firmware_dir}")
+    
+    def get_latest_firmware(self):
+        """Get latest firmware info"""
         try:
-            reader = await request.multipart()
-            field = await reader.next()
+            firmware_files = list(self.firmware_dir.glob('*.bin'))
+            if not firmware_files:
+                return None
             
-            if field.name != 'firmware':
-                return web.json_response({'error': 'Invalid field name'}, status=400)
+            # Get most recent
+            latest = max(firmware_files, key=os.path.getctime)
             
-            filename = field.filename
-            if not filename.endswith('.bin'):
-                return web.json_response({'error': 'Only .bin files allowed'}, status=400)
-            
-            filepath = self.firmware_dir / filename
-            
-            size = 0
-            with open(filepath, 'wb') as f:
-                while True:
-                    chunk = await field.read_chunk()
-                    if not chunk:
-                        break
-                    size += len(chunk)
-                    f.write(chunk)
-            
-            logger.info(f"✅ Firmware uploaded: {filename} ({size} bytes)")
-            
-            return web.json_response({
-                'success': True,
-                'filename': filename,
-                'size': size,
-                'url': f'/firmware/{filename}'
-            })
-            
+            return {
+                'version': latest.stem,
+                'path': str(latest),
+                'size': latest.stat().st_size
+            }
         except Exception as e:
-            logger.error(f"Firmware upload error: {e}")
-            return web.json_response({'error': str(e)}, status=500)
+            logger.error(f"❌ Error getting firmware: {e}")
+            return None
     
-    async def list_firmware(self, request):
-        """List available firmware files"""
+    def upload_firmware(self, file_data, version):
+        """Upload new firmware"""
         try:
-            files = []
-            for filepath in self.firmware_dir.glob('*.bin'):
-                stat = filepath.stat()
-                files.append({
-                    'filename': filepath.name,
-                    'size': stat.st_size,
-                    'modified': stat.st_mtime,
-                    'url': f'/firmware/{filepath.name}'
-                })
-            
-            return web.json_response({'files': files})
-            
+            firmware_path = self.firmware_dir / f"{version}.bin"
+            firmware_path.write_bytes(file_data)
+            logger.info(f"✅ Firmware uploaded: {version}")
+            return True
         except Exception as e:
-            logger.error(f"List firmware error: {e}")
-            return web.json_response({'error': str(e)}, status=500)
-    
-    async def download_firmware(self, request):
-        """Serve firmware file"""
-        filename = request.match_info['filename']
-        filepath = self.firmware_dir / filename
-        
-        if not filepath.exists():
-            return web.Response(status=404, text='Firmware not found')
-        
-        return web.FileResponse(filepath)
-    
-    async def delete_firmware(self, request):
-        """Delete firmware file"""
-        filename = request.match_info['filename']
-        filepath = self.firmware_dir / filename
-        
-        if filepath.exists():
-            filepath.unlink()
-            logger.info(f"🗑️ Firmware deleted: {filename}")
-            return web.json_response({'success': True})
-        
-        return web.Response(status=404, text='Firmware not found')
+            logger.error(f"❌ Firmware upload error: {e}")
+            return False
