@@ -23,4 +23,4 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s \
     CMD wget --no-verbose --tries=1 --spider http://localhost:5000/health || exit 1
 
-CMD ["/run.sh"]
+# Let s6-overlay handle the startup - DO NOT override CMD
