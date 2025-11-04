@@ -1,60 +1,52 @@
 import logging
-import numpy as np
-import io
-import wave
+import base64
 from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
 class STTService:
-    def __init__(self, api_key, base_url=None):
-        """Initialize OpenAI Whisper API"""
+    """Speech-to-Text service using OpenAI Whisper"""
+    
+    def __init__(self, api_key, base_url):
+        """Initialize STT service"""
         self.client = AsyncOpenAI(
             api_key=api_key,
-            base_url=base_url if base_url else None
+            base_url=base_url
         )
-        logger.info("🎤 Using OpenAI Whisper API for STT")
-        
-    async def initialize(self):
-        """No model to load - using API"""
-        logger.info("✅ STT service ready (API mode)")
+        logger.info("🎤 STT Service initialized")
     
-    async def transcribe(self, audio_data, sample_rate=16000):
-        """
-        Transcribe audio using OpenAI API
-        Args:
-            audio_data: numpy array (int16)
-            sample_rate: sample rate
-        Returns:
-            str: transcribed text
-        """
+    async def initialize(self):
+        """Initialize service"""
+        logger.info("✅ STT Service ready")
+    
+    async def transcribe(self, audio_base64, language='vi'):
+        """Transcribe audio to text"""
         try:
-            # Convert to WAV format
-            wav_buffer = io.BytesIO()
-            with wave.open(wav_buffer, 'wb') as wav_file:
-                wav_file.setnchannels(1)
-                wav_file.setsampwidth(2)  # 16-bit
-                wav_file.setframerate(sample_rate)
-                wav_file.writeframes(audio_data.tobytes())
+            # Decode base64 audio
+            audio_data = base64.b64decode(audio_base64)
             
-            wav_buffer.seek(0)
-            wav_buffer.name = "audio.wav"
+            # Create temporary file
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
+                temp_file.write(audio_data)
+                temp_path = temp_file.name
             
-            # Call API
-            transcript = await self.client.audio.transcriptions.create(
-                model="whisper-1",
-                file=wav_buffer,
-                language="vi"
-            )
+            # Transcribe
+            with open(temp_path, 'rb') as audio_file:
+                transcript = await self.client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file,
+                    language=language if language == 'vi' else 'en'
+                )
             
-            text = transcript.text.strip()
-            logger.info(f"📝 Transcribed: {text}")
+            # Cleanup
+            import os
+            os.unlink(temp_path)
+            
+            text = transcript.text
+            logger.info(f"🎤 Transcribed: {text}")
             return text
             
         except Exception as e:
-            logger.error(f"❌ STT API error: {e}")
+            logger.error(f"❌ STT Error: {e}")
             return ""
-    
-    async def close(self):
-        """Cleanup"""
-        await self.client.close()
