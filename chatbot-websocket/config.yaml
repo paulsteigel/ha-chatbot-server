@@ -1,7 +1,7 @@
 name: "School Chatbot Server"
-version: "1.0.0"
+version: "1.0.1"
 slug: chatbot-websocket
-description: "WebSocket AI chatbot for ESP32 school devices"
+description: "WebSocket AI chatbot for ESP32 (using online STT)"
 url: https://github.com/paulsteigel/ha-chatbot-server
 arch:
   - aarch64
@@ -22,7 +22,6 @@ options:
   ai_base_url: ""
   tts_voice_vi: "vi-VN-HoaiMyNeural"
   tts_voice_en: "en-US-AriaNeural"
-  stt_model: "base"
   context_enabled: true
   context_messages: 10
   silence_timeout: 8
@@ -38,7 +37,6 @@ schema:
   ai_base_url: str?
   tts_voice_vi: str
   tts_voice_en: str
-  stt_model: list(tiny|base|small|medium)
   context_enabled: bool
   context_messages: int(1,50)
   silence_timeout: int(3,30)
