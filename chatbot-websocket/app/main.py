@@ -145,5 +145,5 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         logger.info("⏹️ Shutting down...")
     except Exception as e:
-        logger.error(f("❌ Fatal error: {e}", exc_info=True)
+        logger.error(f("❌ Fatal error: {e}", exc_info=True))
         raise
