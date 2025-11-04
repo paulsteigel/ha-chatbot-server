@@ -1,46 +1,44 @@
-name: "School Chatbot Server"
-version: "1.0.5"
-slug: chatbot-websocket
-description: "WebSocket AI chatbot for ESP32 (using online STT)"
-url: https://github.com/paulsteigel/ha-chatbot-server
+name: School Chatbot WebSocket
+version: "1.0.6"
+slug: chatbot_websocket
+description: WebSocket server for ESP32 School Assistant
 arch:
   - aarch64
   - amd64
+  - armhf
   - armv7
-init: false
-startup: application
-boot: auto
+  - i386
+
+# ⭐ CRITICAL: Disable ingress for WebSocket
+ingress: false
+
+# Use host network mode for direct access
+network_mode: host
+
 ports:
   5000/tcp: 5000
+
 ports_description:
-  5000/tcp: "WebSocket Server & Web UI"
-  
+  5000/tcp: WebSocket server (ws://IP:5000/ws)
+
+startup: application
+boot: auto
+init: false
+
 options:
-  ai_provider: "openai"
+  ai_provider: "deepseek"
   ai_model: "gpt-4o-mini"
-  ai_api_key: ""
-  ai_base_url: ""
   tts_voice_vi: "vi-VN-HoaiMyNeural"
   tts_voice_en: "en-US-AriaNeural"
-  context_enabled: true
-  context_messages: 10
-  silence_timeout: 8
-  max_recording_duration: 30
-  custom_prompt: "Bạn là trợ lý thân thiện trong trường học."
-  vad_threshold: 0.02
-  log_level: "info"
-  
+  openai_api_key: ""
+  openai_base_url: "https://api.deepseek.com/v1"
+
 schema:
-  ai_provider: list(openai|deepseek|groq)
+  ai_provider: str
   ai_model: str
-  ai_api_key: password
-  ai_base_url: str?
   tts_voice_vi: str
   tts_voice_en: str
-  context_enabled: bool
-  context_messages: int(1,50)
-  silence_timeout: int(3,30)
-  max_recording_duration: int(10,60)
-  custom_prompt: str
-  vad_threshold: float(0.01,1.0)
-  log_level: list(debug|info|warning|error)
+  openai_api_key: password
+  openai_base_url: str?
+
+image: ghcr.io/{arch}-addon-chatbot-websocket
