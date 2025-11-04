@@ -1,5 +1,5 @@
 name: "School Chatbot Server"
-version: "1.0.3"
+version: "1.0.4"
 slug: chatbot-websocket
 description: "WebSocket AI chatbot for ESP32 (using online STT)"
 url: https://github.com/paulsteigel/ha-chatbot-server
