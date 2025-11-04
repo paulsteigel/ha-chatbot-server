@@ -109,9 +109,8 @@ class WebSocketHandler:
         if not device_id:
             return {'type': 'error', 'message': 'device_id required'}
         
-        # SAU (ĐÚNG):
         self.device_manager.register_device(device_id, device_type)
-        self.logger.info(f"✅ Device registered: {device_id} (FW: {firmware_version})")
+        self.logger.info(f"✅ Device registered: {device_id} (Type: {device_type}, FW: {firmware_version})")
         
         return {
             'type': 'registered',
@@ -121,7 +120,9 @@ class WebSocketHandler:
     
     async def _handle_chat(self, data: dict, device_id: Optional[str]) -> dict:
         """Handle chat message"""
-        text = data.get('text', '').strip()
+        # Support both 'text' and 'message' fields for compatibility
+        text = data.get('text') or data.get('message', '')
+        text = text.strip()
         language = data.get('language', 'auto')
         
         if not text:
@@ -129,6 +130,8 @@ class WebSocketHandler:
         
         if not device_id:
             return {'type': 'error', 'message': 'Device not registered'}
+        
+        self.logger.info(f"💬 Chat from {device_id}: {text}")
         
         # Get AI response
         ai_response = await self.ai_service.chat(text, language, device_id)
@@ -139,6 +142,8 @@ class WebSocketHandler:
                 'text': 'Xin lỗi, mình không thể trả lời lúc này.',
                 'language': language
             }
+        
+        self.logger.info(f"🤖 AI response: {ai_response}")
         
         # Generate TTS audio
         audio_data = await self.tts_service.synthesize(ai_response, language)
@@ -177,6 +182,8 @@ class WebSocketHandler:
             # Decode base64 audio
             audio_data = base64.b64decode(audio_base64)
             
+            self.logger.info(f"🎤 Processing voice input from {device_id}: {len(audio_data)} bytes")
+            
             # Transcribe audio to text
             text = await self.stt_service.transcribe(audio_data, language)
             
@@ -199,6 +206,8 @@ class WebSocketHandler:
                     'transcribed_text': text,
                     'language': language
                 }
+            
+            self.logger.info(f"🤖 AI response: {ai_response}")
             
             # Generate TTS audio
             audio_response = await self.tts_service.synthesize(ai_response, language)
@@ -234,11 +243,14 @@ class WebSocketHandler:
         if not command:
             return {'type': 'error', 'message': 'command required'}
         
-        self.logger.info(f"🎮 Command executed: {command} for {device_id}")
+        self.logger.info(f"🎮 Command from {device_id}: {command} with params: {params}")
+        
+        # Here you can add command handling logic
+        # For example: volume control, LED control, etc.
         
         return {
             'type': 'command_response',
             'command': command,
             'status': 'success',
-            'message': f'Command {command} executed'
+            'message': f'Command {command} executed successfully'
         }
