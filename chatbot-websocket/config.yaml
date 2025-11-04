@@ -1,42 +1,50 @@
-name: School Chatbot WebSocket
-version: "1.0.4"
+name: ESP32 Chatbot WebSocket
+version: "1.0.5"
 slug: chatbot_websocket
-description: WebSocket server for ESP32 School Assistant
+description: WebSocket server for ESP32 chatbot with multiple AI providers
 arch:
   - aarch64
   - amd64
   - armhf
   - armv7
   - i386
-
-# NO IMAGE LINE - Build from local Dockerfile
-# image: <-- DELETE THIS LINE
-
-ingress: false
-network_mode: host
-
 ports:
   5000/tcp: 5000
-
 ports_description:
-  5000/tcp: WebSocket server (ws://IP:5000/ws)
-
-startup: application
-boot: auto
-init: false
+  5000/tcp: WebSocket server port
 
 options:
   ai_provider: "deepseek"
-  ai_model: "gpt-4o-mini"
-  tts_voice_vi: "vi-VN-HoaiMyNeural"
-  tts_voice_en: "en-US-AriaNeural"
+  
+  # OpenAI Settings
   openai_api_key: ""
-  openai_base_url: "https://api.deepseek.com/v1"
+  openai_model: "gpt-4o-mini"
+  
+  # DeepSeek Settings
+  deepseek_api_key: ""
+  deepseek_model: "deepseek-chat"
+  
+  # General Settings
+  system_prompt: "Bạn là trợ lý AI thân thiện, hỗ trợ cả tiếng Việt và tiếng Anh."
+  max_context_messages: 10
+  temperature: 0.7
+  max_tokens: 500
+  log_level: "info"
 
 schema:
-  ai_provider: str
-  ai_model: str
-  tts_voice_vi: str
-  tts_voice_en: str
-  openai_api_key: password
-  openai_base_url: str?
+  ai_provider: list(openai|deepseek|deepseek-v3)
+  
+  # OpenAI
+  openai_api_key: str?
+  openai_model: list(gpt-4o|gpt-4o-mini|gpt-4-turbo|gpt-3.5-turbo)?
+  
+  # DeepSeek
+  deepseek_api_key: str?
+  deepseek_model: list(deepseek-chat|deepseek-coder|deepseek-reasoner)?
+  
+  # General
+  system_prompt: str?
+  max_context_messages: int(1,50)?
+  temperature: float(0.0,2.0)?
+  max_tokens: int(50,4000)?
+  log_level: list(debug|info|warning|error)?
