@@ -1,218 +1,507 @@
 <!DOCTYPE html>
-<html>
+<html lang="vi">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Yên Hoà Chatbot</title>
+    <title>School Chatbot 🤖</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            height: 100vh;
+            min-height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
+            padding: 20px;
         }
+
         .container {
-            width: 90%;
-            max-width: 600px;
             background: white;
             border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            width: 100%;
+            max-width: 500px;
             overflow: hidden;
         }
+
         .header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             padding: 20px;
             text-align: center;
         }
-        .status {
-            padding: 10px;
-            text-align: center;
-            font-weight: bold;
-            transition: all 0.3s;
+
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 5px;
         }
-        .status.connected { background: #4caf50; color: white; }
-        .status.disconnected { background: #f44336; color: white; }
-        #messages {
+
+        .status {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .chat-container {
             height: 400px;
             overflow-y: auto;
             padding: 20px;
             background: #f5f5f5;
         }
+
         .message {
-            margin: 10px 0;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: flex-start;
+        }
+
+        .message.user {
+            justify-content: flex-end;
+        }
+
+        .message-content {
+            max-width: 70%;
             padding: 12px 16px;
             border-radius: 18px;
-            max-width: 80%;
-            animation: fadeIn 0.3s;
             word-wrap: break-word;
         }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        .user {
-            background: #667eea;
-            color: white;
-            margin-left: auto;
-            text-align: right;
-        }
-        .bot {
+
+        .message.bot .message-content {
             background: white;
             color: #333;
-            border: 1px solid #e0e0e0;
+            border-bottom-left-radius: 4px;
         }
-        .input-area {
+
+        .message.user .message-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+
+        .message-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
             display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            margin: 0 10px;
+            flex-shrink: 0;
+        }
+
+        .message.bot .message-icon {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .message.user .message-icon {
+            background: #764ba2;
+        }
+
+        .input-container {
             padding: 20px;
             background: white;
             border-top: 1px solid #e0e0e0;
+            display: flex;
+            gap: 10px;
         }
-        #input {
+
+        #messageInput {
             flex: 1;
             padding: 12px 16px;
             border: 2px solid #e0e0e0;
             border-radius: 25px;
-            font-size: 16px;
+            font-size: 14px;
             outline: none;
-            transition: border 0.3s;
+            transition: border-color 0.3s;
         }
-        #input:focus {
+
+        #messageInput:focus {
             border-color: #667eea;
         }
-        #send {
-            margin-left: 10px;
-            padding: 12px 24px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+
+        button {
+            padding: 12px 20px;
             border: none;
             border-radius: 25px;
-            font-size: 16px;
             cursor: pointer;
-            transition: transform 0.2s;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+            outline: none;
         }
-        #send:hover {
-            transform: scale(1.05);
+
+        #sendBtn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
         }
-        #send:active {
-            transform: scale(0.95);
+
+        #sendBtn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
         }
-        #send:disabled {
+
+        #sendBtn:disabled {
             opacity: 0.5;
             cursor: not-allowed;
+            transform: none;
+        }
+
+        #voiceBtn {
+            background: white;
+            border: 2px solid #667eea;
+            color: #667eea;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        #voiceBtn:hover {
+            background: #667eea;
+            color: white;
+        }
+
+        #voiceBtn.recording {
+            background: #ff4444;
+            border-color: #ff4444;
+            color: white;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        .audio-player {
+            margin-top: 10px;
+            width: 100%;
+        }
+
+        .error {
+            color: #ff4444;
+            font-size: 12px;
+            padding: 8px;
+            background: #ffebee;
+            border-radius: 8px;
+            margin-top: 8px;
+        }
+
+        .typing-indicator {
+            display: none;
+            padding: 12px 16px;
+            background: white;
+            border-radius: 18px;
+            width: fit-content;
+        }
+
+        .typing-indicator.show {
+            display: block;
+        }
+
+        .typing-indicator span {
+            height: 8px;
+            width: 8px;
+            background: #667eea;
+            border-radius: 50%;
+            display: inline-block;
+            margin: 0 2px;
+            animation: typing 1.4s infinite;
+        }
+
+        .typing-indicator span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .typing-indicator span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-10px); }
+        }
+
+        .voice-status {
+            text-align: center;
+            padding: 10px;
+            font-size: 12px;
+            color: #666;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🤖 Yên Hoà Chatbot</h1>
-            <p>Trợ lý AI thông minh của trường</p>
+            <h1>🤖 School Chatbot</h1>
+            <div class="status" id="status">Đang kết nối...</div>
         </div>
-        <div id="status" class="status disconnected">❌ Đang kết nối...</div>
-        <div id="messages"></div>
-        <div class="input-area">
-            <input id="input" placeholder="Nhập tin nhắn..." disabled />
-            <button id="send" disabled>Gửi</button>
+
+        <div class="chat-container" id="chatContainer">
+            <div class="message bot">
+                <div class="message-icon">🤖</div>
+                <div class="message-content">
+                    Xin chào! Mình là trợ lý ảo của bạn. Bạn có thể gõ tin nhắn hoặc nhấn nút mic để nói chuyện nhé! 😊
+                </div>
+            </div>
+        </div>
+
+        <div class="voice-status" id="voiceStatus"></div>
+
+        <div class="input-container">
+            <button id="voiceBtn" title="Nhấn để ghi âm">🎤</button>
+            <input type="text" id="messageInput" placeholder="Nhập tin nhắn...">
+            <button id="sendBtn">Gửi</button>
         </div>
     </div>
-    
+
     <script>
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = protocol + '//' + window.location.host + '/ws';
-        
-        console.log('Connecting to:', wsUrl);
-        
-        const ws = new WebSocket(wsUrl);
-        const status = document.getElementById('status');
-        const messages = document.getElementById('messages');
-        const input = document.getElementById('input');
-        const send = document.getElementById('send');
-        
-        ws.onopen = () => {
-            console.log('✅ WebSocket connected');
-            status.textContent = '✅ Đã kết nối';
-            status.className = 'status connected';
-            input.disabled = false;
-            send.disabled = false;
+        let ws = null;
+        let deviceId = 'web-' + Date.now();
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let isRecording = false;
+
+        const statusEl = document.getElementById('status');
+        const chatContainer = document.getElementById('chatContainer');
+        const messageInput = document.getElementById('messageInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const voiceBtn = document.getElementById('voiceBtn');
+        const voiceStatus = document.getElementById('voiceStatus');
+
+        // Connect WebSocket
+        function connect() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws`;
             
-            ws.send(JSON.stringify({
-                type: 'register',
-                device_id: 'web-' + Date.now(),
-                device_type: 'web',
-                firmware_version: '1.0.0'
-            }));
-            
-            input.focus();
-        };
-        
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            console.log('📨 Received:', data);
-            
-            if (data.type === 'chat_response') {
-                addMessage('🤖 ' + data.text, 'bot');
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                console.log('✅ WebSocket connected');
+                statusEl.textContent = '✅ Đã kết nối';
+                statusEl.style.color = '#4ade80';
                 
-                if (data.audio) {
-                    const audio = new Audio('data:audio/mp3;base64,' + data.audio);
-                    audio.play().catch(e => console.error('Audio error:', e));
-                }
-            } else if (data.type === 'error') {
-                addMessage('❌ Lỗi: ' + data.message, 'bot');
-            }
-        };
-        
-        ws.onerror = (error) => {
-            console.error('❌ WebSocket error:', error);
-            status.textContent = '❌ Lỗi kết nối';
-            status.className = 'status disconnected';
-            input.disabled = true;
-            send.disabled = true;
-        };
-        
-        ws.onclose = (event) => {
-            console.log('❌ WebSocket closed:', event.code, event.reason);
-            status.textContent = '❌ Mất kết nối';
-            status.className = 'status disconnected';
-            input.disabled = true;
-            send.disabled = true;
-        };
-        
-        function addMessage(text, type) {
-            const div = document.createElement('div');
-            div.className = 'message ' + type;
-            div.textContent = text;
-            messages.appendChild(div);
-            messages.scrollTop = messages.scrollHeight;
+                // Register device
+                ws.send(JSON.stringify({
+                    type: 'register',
+                    device_id: deviceId,
+                    device_type: 'web',
+                    firmware_version: '1.0.0'
+                }));
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                console.log('📨 Received:', data);
+                handleMessage(data);
+            };
+
+            ws.onerror = (error) => {
+                console.error('❌ WebSocket error:', error);
+                statusEl.textContent = '❌ Lỗi kết nối';
+                statusEl.style.color = '#ff4444';
+            };
+
+            ws.onclose = () => {
+                console.log('🔌 WebSocket closed');
+                statusEl.textContent = '🔌 Đã ngắt kết nối';
+                statusEl.style.color = '#fbbf24';
+                
+                // Reconnect after 3 seconds
+                setTimeout(connect, 3000);
+            };
         }
-        
-        function sendMessage() {
-            const text = input.value.trim();
-            if (!text || ws.readyState !== WebSocket.OPEN) return;
+
+        // Handle incoming messages
+        function handleMessage(data) {
+            if (data.type === 'registered') {
+                console.log('✅ Device registered:', data.device_id);
+            }
+            else if (data.type === 'chat_response') {
+                addMessage('bot', data.text);
+                
+                // Play audio if available
+                if (data.audio) {
+                    playAudio(data.audio);
+                }
+            }
+            else if (data.type === 'voice_response') {
+                addMessage('bot', data.text);
+                
+                // Show transcribed text
+                if (data.transcribed_text) {
+                    console.log('🎤 Bạn nói:', data.transcribed_text);
+                }
+                
+                // Play audio response
+                if (data.audio) {
+                    playAudio(data.audio);
+                }
+            }
+            else if (data.type === 'error') {
+                showError(data.message);
+            }
+        }
+
+        // Add message to chat
+        function addMessage(sender, text) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender}`;
             
-            addMessage('👤 ' + text, 'user');
+            const icon = document.createElement('div');
+            icon.className = 'message-icon';
+            icon.textContent = sender === 'bot' ? '🤖' : '👤';
+            
+            const content = document.createElement('div');
+            content.className = 'message-content';
+            content.textContent = text;
+            
+            if (sender === 'bot') {
+                messageDiv.appendChild(icon);
+                messageDiv.appendChild(content);
+            } else {
+                messageDiv.appendChild(content);
+                messageDiv.appendChild(icon);
+            }
+            
+            chatContainer.appendChild(messageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        // Play audio
+        function playAudio(base64Audio) {
+            const audio = new Audio('data:audio/mp3;base64,' + base64Audio);
+            audio.play().catch(err => {
+                console.error('❌ Audio playback error:', err);
+            });
+        }
+
+        // Show error
+        function showError(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error';
+            errorDiv.textContent = '❌ Lỗi: ' + message;
+            chatContainer.appendChild(errorDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        // Send text message
+        function sendMessage() {
+            const text = messageInput.value.trim();
+            if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+            addMessage('user', text);
             
             ws.send(JSON.stringify({
                 type: 'chat',
-                message: text
+                message: text,
+                language: 'auto'
             }));
-            
-            input.value = '';
-            input.focus();
+
+            messageInput.value = '';
         }
-        
-        send.onclick = sendMessage;
-        input.onkeypress = (e) => {
+
+        // Voice recording
+        async function toggleVoiceRecording() {
+            if (isRecording) {
+                stopRecording();
+            } else {
+                await startRecording();
+            }
+        }
+
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = (event) => {
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                    sendVoiceMessage(audioBlob);
+                    
+                    // Stop all tracks
+                    stream.getTracks().forEach(track => track.stop());
+                };
+
+                mediaRecorder.start();
+                isRecording = true;
+                voiceBtn.classList.add('recording');
+                voiceStatus.textContent = '🎤 Đang ghi âm... Nhấn lại để dừng';
+                voiceStatus.style.color = '#ff4444';
+                
+                console.log('🎤 Recording started');
+            } catch (err) {
+                console.error('❌ Microphone error:', err);
+                showError('Không thể truy cập microphone. Vui lòng cho phép quyền truy cập.');
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                isRecording = false;
+                voiceBtn.classList.remove('recording');
+                voiceStatus.textContent = '⏳ Đang xử lý...';
+                voiceStatus.style.color = '#667eea';
+                
+                console.log('🎤 Recording stopped');
+            }
+        }
+
+        async function sendVoiceMessage(audioBlob) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                showError('WebSocket chưa kết nối');
+                voiceStatus.textContent = '';
+                return;
+            }
+
+            try {
+                // Convert blob to base64
+                const reader = new FileReader();
+                reader.readAsDataURL(audioBlob);
+                reader.onloadend = () => {
+                    const base64Audio = reader.result.split(',')[1];
+                    
+                    ws.send(JSON.stringify({
+                        type: 'voice',
+                        audio: base64Audio,
+                        format: 'wav',
+                        language: 'auto'
+                    }));
+
+                    addMessage('user', '🎤 (Tin nhắn thoại)');
+                    voiceStatus.textContent = '';
+                };
+            } catch (err) {
+                console.error('❌ Error sending voice:', err);
+                showError('Lỗi gửi tin nhắn thoại');
+                voiceStatus.textContent = '';
+            }
+        }
+
+        // Event listeners
+        sendBtn.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') sendMessage();
-        };
-        
-        document.body.addEventListener('click', () => {
-            const audio = new Audio();
-            audio.play().catch(() => {});
-        }, { once: true });
+        });
+        voiceBtn.addEventListener('click', toggleVoiceRecording);
+
+        // Connect on load
+        connect();
     </script>
 </body>
 </html>
