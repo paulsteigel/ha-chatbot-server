@@ -6,24 +6,24 @@ RUN apk add --no-cache \
     python3-dev \
     py3-pip \
     ffmpeg \
-    portaudio-dev \
     build-base \
     && rm -rf /var/cache/apk/*
 
 # Set working directory
 WORKDIR /app
 
-# Copy requirements
-COPY requirements.txt .
-
-# Create virtual environment and install packages
+# Create virtual environment
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-RUN pip3 install --no-cache-dir --upgrade pip setuptools wheel \
-    && pip3 install --no-cache-dir -r requirements.txt
+# Upgrade pip first
+RUN pip install --no-cache-dir --upgrade pip
 
-# Copy application
+# Copy and install requirements
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
 COPY app/ ./app/
 COPY run.sh /
 
