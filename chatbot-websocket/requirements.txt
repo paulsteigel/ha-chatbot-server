@@ -1,19 +1,15 @@
-# Web framework
-aiohttp==3.10.11
-websockets==13.1
+# Web
+aiohttp
+websockets
 
-# Audio processing - UPDATED for Python 3.12
-numpy>=1.26.0
-soundfile==0.12.1
-
-# STT - Lighter and faster
-faster-whisper==1.0.3
+# STT - No numpy required
+faster-whisper
 
 # TTS
-edge-tts==6.1.12
+edge-tts
 
 # AI
-openai==1.54.3
+openai
 
 # Utils
-python-dotenv==1.0.1
+python-dotenv
