@@ -1,15 +1,6 @@
-# Web
 aiohttp
 websockets
-
-# STT - No numpy required
 faster-whisper
-
-# TTS
 edge-tts
-
-# AI
 openai
-
-# Utils
 python-dotenv
