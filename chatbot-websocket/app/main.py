@@ -50,19 +50,28 @@ async def init_app():
     # Get configuration from environment
     ai_provider = os.getenv('AI_PROVIDER', 'deepseek')
     ai_model = os.getenv('AI_MODEL', 'deepseek-chat')
+    ai_api_key = os.getenv('AI_API_KEY', '')
+    
+    # STT configuration
+    stt_api_key = os.getenv('STT_API_KEY', ai_api_key)  # Use AI key as fallback
+    stt_base_url = os.getenv('STT_BASE_URL', 'https://api.deepseek.com/v1')
     
     logger.info("📋 Configuration:")
     logger.info(f"   AI Provider: {ai_provider}")
     logger.info(f"   AI Model: {ai_model}")
     logger.info(f"   TTS: Google TTS (gTTS) 🆓 FREE")
-    logger.info(f"   Log Level: {logging.getLevelName(logger.level)}")
+    logger.info(f"   STT: {'Enabled' if stt_api_key else 'Disabled (no API key)'}")
+    logger.info(f"   Log Level: INFO")
     logger.info("=" * 80)
     
     # Initialize services
     logger.info("🔧 Initializing services...")
     
     logger.info("   📝 Setting up Speech-to-Text...")
-    stt_service = STTService()
+    stt_service = STTService(
+        api_key=stt_api_key,
+        base_url=stt_base_url
+    )
     
     logger.info("   🔊 Setting up Text-to-Speech (Google TTS)...")
     tts_service = TTSService()
