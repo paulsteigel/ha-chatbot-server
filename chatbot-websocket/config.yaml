@@ -1,5 +1,5 @@
 name: School Chatbot WebSocket
-version: "1.1.0"
+version: "1.1.1"
 slug: school-chatbot-websocket
 description: AI Chatbot WebSocket Server - Multi-provider support
 url: https://github.com/paulsteigel/ha-chatbot-server
