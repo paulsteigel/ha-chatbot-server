@@ -1,7 +1,7 @@
-name: School Chatbot WebSocket
+name: Kids ChatBot Server
 version: "1.1.0"
-slug: school-chatbot-websocket
-description: AI Chatbot WebSocket Server - Yên Hoà, Đà Bắc (Multi-provider support)
+slug: kids-chatbot-server
+description: OpenAI-powered voice chatbot with context memory for kids
 url: https://github.com/paulsteigel/ha-chatbot-server
 arch:
   - aarch64
@@ -111,3 +111,4 @@ schema:
   max_tokens: int(50,4000)?
   max_context_messages: int(1,50)?
   log_level: list(DEBUG|INFO|WARNING|ERROR)?
+
