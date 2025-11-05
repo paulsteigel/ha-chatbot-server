@@ -94,7 +94,7 @@ async def lifespan(app: FastAPI):
         else:
             # For DeepSeek, we still use OpenAI for TTS (if available)
             if OPENAI_API_KEY:
-                tts_service = TTSService(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
+                tts_service = TTSService()
             else:
                 logger.warning("⚠️ No OpenAI key for TTS, using DeepSeek key (may not work)")
                 tts_service = TTSService(api_key=DEEPSEEK_API_KEY, base_url=OPENAI_BASE_URL)
@@ -104,11 +104,11 @@ async def lifespan(app: FastAPI):
         # Initialize STT Service
         logger.info("🎤 Initializing STT Service...")
         if AI_PROVIDER == 'openai':
-            stt_service = STTService(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
+            stt_service = STTService()
         else:
             # For DeepSeek, we still use OpenAI for STT (if available)
             if OPENAI_API_KEY:
-                stt_service = STTService(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
+                stt_service = STTService()
             else:
                 logger.warning("⚠️ No OpenAI key for STT, using DeepSeek key (may not work)")
                 stt_service = STTService(api_key=DEEPSEEK_API_KEY, base_url=OPENAI_BASE_URL)
