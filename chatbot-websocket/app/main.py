@@ -12,7 +12,8 @@ from fastapi.responses import HTMLResponse, JSONResponse
 # Import services
 from app.ai_service import AIService
 from app.tts_service import TTSService
-from app.stt_service import STTService
+from app.stt_service_local import STTService  # ← ĐỔI SANG LOCAL
+
 from app.device_manager import DeviceManager
 from app.ota_manager import OTAManager
 from app.websocket_handler import WebSocketHandler
