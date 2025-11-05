@@ -203,10 +203,9 @@ class WebSocketHandler:
             self.logger.info(f"   Audio size: {len(audio_data)} bytes")
             
             # Transcribe audio to text
-            transcribed_text = await self.stt_service.transcribe(
-                audio_data, 
-                language if language != 'auto' else 'vi',
-                audio_format
+            text = await self.stt_service.transcribe(
+                audio_data,
+                language=language  # hoặc chỉ: language
             )
             
             if not transcribed_text:
