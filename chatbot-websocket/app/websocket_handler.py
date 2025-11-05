@@ -4,253 +4,288 @@ Handles WebSocket connections and message routing
 """
 import logging
 import json
-import asyncio
-from typing import Optional
-from aiohttp import web, WSMsgType
 import base64
+from typing import Optional, Dict, Any
+from fastapi import WebSocket, WebSocketDisconnect
 
 
 class WebSocketHandler:
-    """WebSocket connection handler"""
+    """Handle WebSocket connections and messages"""
     
-    HEARTBEAT_INTERVAL = 30
-    HEARTBEAT_TIMEOUT = 90
-    
-    def __init__(self, device_manager, ai_service, tts_service, stt_service):
-        self.logger = logging.getLogger('app.websocket_handler')
-        self.device_manager = device_manager
+    def __init__(self, ai_service, tts_service, stt_service, device_manager, ota_manager):
+        """
+        Initialize WebSocket handler
+        
+        Args:
+            ai_service: AI service instance
+            tts_service: TTS service instance
+            stt_service: STT service instance
+            device_manager: Device manager instance
+            ota_manager: OTA manager instance
+        """
+        self.logger = logging.getLogger('WebSocketHandler')
         self.ai_service = ai_service
         self.tts_service = tts_service
         self.stt_service = stt_service
-        self.logger.info("🌐 WebSocket handler initialized")
+        self.device_manager = device_manager
+        self.ota_manager = ota_manager
+        
+        # Store active connections
+        self.active_connections: Dict[str, WebSocket] = {}
+        
+        self.logger.info("🔌 WebSocket Handler initialized")
     
-    async def handle(self, request):
-        """Handle WebSocket connection"""
-        ws = web.WebSocketResponse(heartbeat=self.HEARTBEAT_INTERVAL)
-        await ws.prepare(request)
+    async def handle_connection(self, websocket: WebSocket, device_id: Optional[str] = None):
+        """
+        Handle WebSocket connection lifecycle
         
-        self.logger.info("🔌 New WebSocket connection")
+        Args:
+            websocket: FastAPI WebSocket instance
+            device_id: Optional device identifier
+        """
+        # Accept connection
+        await websocket.accept()
         
-        device_id = None
+        # Generate device_id if not provided
+        if not device_id:
+            device_id = f"web-{id(websocket)}"
+        
+        self.logger.info(f"📱 New WebSocket connection: {device_id}")
+        
+        # Store connection
+        self.active_connections[device_id] = websocket
         
         try:
-            async for msg in ws:
-                if msg.type == WSMsgType.TEXT:
-                    try:
-                        data = json.loads(msg.data)
-                        response = await self._process_message(data, device_id)
-                        
-                        # Update device_id if registered
-                        if response and response.get('type') == 'registered':
-                            device_id = response.get('device_id')
-                        
-                        if response:
-                            await ws.send_json(response)
-                            
-                    except json.JSONDecodeError:
-                        self.logger.error(f"❌ Invalid JSON: {msg.data}")
-                        await ws.send_json({
-                            'type': 'error',
-                            'message': 'Invalid JSON format'
-                        })
-                    except Exception as e:
-                        self.logger.error(f"❌ Error processing message: {e}", exc_info=True)
-                        await ws.send_json({
-                            'type': 'error',
-                            'message': str(e)
-                        })
+            # Connection loop
+            while True:
+                # Receive message
+                data = await websocket.receive_text()
                 
-                elif msg.type == WSMsgType.ERROR:
-                    self.logger.error(f"❌ WebSocket error: {ws.exception()}")
+                try:
+                    message = json.loads(data)
+                    await self.handle_message(websocket, device_id, message)
+                    
+                except json.JSONDecodeError as e:
+                    self.logger.error(f"❌ Invalid JSON from {device_id}: {e}")
+                    await self.send_error(websocket, "Invalid JSON format")
+                    
+                except Exception as e:
+                    self.logger.error(f"❌ Error handling message from {device_id}: {e}", exc_info=True)
+                    await self.send_error(websocket, f"Server error: {str(e)}")
+        
+        except WebSocketDisconnect:
+            self.logger.info(f"🔌 WebSocket disconnected: {device_id}")
         
         except Exception as e:
-            self.logger.error(f"❌ WebSocket handler error: {e}", exc_info=True)
+            self.logger.error(f"❌ WebSocket error for {device_id}: {e}", exc_info=True)
         
         finally:
-            if device_id:
-                self.device_manager.unregister_device(device_id)
-                # Clear AI conversation history
-                await self.ai_service.clear_conversation(device_id)
-                self.logger.info(f"🔌 Device disconnected: {device_id}")
+            # Cleanup
+            if device_id in self.active_connections:
+                del self.active_connections[device_id]
             
-            self.logger.info("🔌 WebSocket connection closed")
-        
-        return ws
+            self.device_manager.unregister_device(device_id)
+            self.logger.info(f"🧹 Cleaned up connection: {device_id}")
     
-    async def _process_message(self, data: dict, device_id: Optional[str]) -> Optional[dict]:
-        """Process incoming message"""
-        msg_type = data.get('type')
+    async def handle_message(self, websocket: WebSocket, device_id: str, message: Dict[str, Any]):
+        """
+        Handle incoming WebSocket message
         
+        Args:
+            websocket: WebSocket connection
+            device_id: Device identifier
+            message: Parsed message dictionary
+        """
+        msg_type = message.get('type')
+        
+        self.logger.info(f"📨 Message from {device_id}: {msg_type}")
+        self.logger.debug(f"   Data: {message}")
+        
+        # Route message based on type
         if msg_type == 'register':
-            return await self._handle_register(data)
+            await self.handle_register(websocket, device_id, message)
         
         elif msg_type == 'chat':
-            return await self._handle_chat(data, device_id)
+            await self.handle_chat(websocket, device_id, message)
         
         elif msg_type == 'voice':
-            return await self._handle_voice(data, device_id)
-        
-        elif msg_type == 'command':
-            return await self._handle_command(data, device_id)
+            await self.handle_voice(websocket, device_id, message)
         
         elif msg_type == 'ping':
-            return {'type': 'pong', 'timestamp': data.get('timestamp')}
+            await self.handle_ping(websocket, device_id, message)
+        
+        elif msg_type == 'ota_check':
+            await self.handle_ota_check(websocket, device_id, message)
         
         else:
-            self.logger.warning(f"⚠️ Unknown message type: {msg_type}")
-            return {'type': 'error', 'message': f'Unknown message type: {msg_type}'}
+            self.logger.warning(f"⚠️ Unknown message type from {device_id}: {msg_type}")
+            await self.send_error(websocket, f"Unknown message type: {msg_type}")
     
-    async def _handle_register(self, data: dict) -> dict:
+    async def handle_register(self, websocket: WebSocket, device_id: str, message: Dict[str, Any]):
         """Handle device registration"""
-        device_id = data.get('device_id')
-        device_type = data.get('device_type', 'unknown')
-        firmware_version = data.get('firmware_version', 'unknown')
+        device_type = message.get('device_type', 'unknown')
+        firmware_version = message.get('firmware_version', 'unknown')
         
-        if not device_id:
-            return {'type': 'error', 'message': 'device_id required'}
+        self.logger.info(f"✅ Registering device: {device_id}")
+        self.logger.info(f"   Type: {device_type}")
+        self.logger.info(f"   Firmware: {firmware_version}")
         
+        # Register device
         self.device_manager.register_device(device_id, device_type)
-        self.logger.info(f"✅ Device registered: {device_id} (Type: {device_type}, FW: {firmware_version})")
         
-        return {
+        # Send confirmation
+        await websocket.send_json({
             'type': 'registered',
             'device_id': device_id,
-            'message': 'Device registered successfully'
-        }
+            'server_version': '1.0.0',
+            'timestamp': self._get_timestamp()
+        })
     
-    async def _handle_chat(self, data: dict, device_id: Optional[str]) -> dict:
-        """Handle chat message"""
-        # Support both 'text' and 'message' fields for compatibility
-        text = data.get('text') or data.get('message', '')
-        text = text.strip()
-        language = data.get('language', 'auto')
+    async def handle_chat(self, websocket: WebSocket, device_id: str, message: Dict[str, Any]):
+        """Handle text chat message"""
+        text = message.get('text') or message.get('message', '')
+        language = message.get('language', 'auto')
         
         if not text:
-            return {'type': 'error', 'message': 'text required'}
-        
-        if not device_id:
-            return {'type': 'error', 'message': 'Device not registered'}
+            await self.send_error(websocket, "No text provided")
+            return
         
         self.logger.info(f"💬 Chat from {device_id}: {text}")
         
-        # Get AI response
-        ai_response = await self.ai_service.chat(text, language, device_id)
+        # Update activity
+        self.device_manager.update_activity(device_id, 'message')
         
-        if not ai_response:
-            return {
+        try:
+            # Get AI response
+            response_text = await self.ai_service.chat(text, language)
+            
+            if not response_text:
+                await self.send_error(websocket, "Failed to generate response")
+                return
+            
+            self.logger.info(f"🤖 AI Response: {response_text}")
+            
+            # Generate TTS audio
+            audio_base64 = await self.tts_service.synthesize(response_text, language)
+            
+            # Send response
+            await websocket.send_json({
                 'type': 'chat_response',
-                'text': 'Xin lỗi, mình không thể trả lời lúc này.',
-                'language': language
-            }
-        
-        self.logger.info(f"🤖 AI response: {ai_response}")
-        
-        # Generate TTS audio
-        audio_data = await self.tts_service.synthesize(ai_response, language)
-        
-        response = {
-            'type': 'chat_response',
-            'text': ai_response,
-            'language': language
-        }
-        
-        # Add audio if available
-        if audio_data:
-            # Convert to base64 for JSON transmission
-            audio_base64 = base64.b64encode(audio_data).decode('utf-8')
-            response['audio'] = audio_base64
-            response['audio_format'] = 'mp3'
-            self.logger.info(f"🔊 Sending audio: {len(audio_data)} bytes")
-        else:
-            self.logger.warning("⚠️ No audio generated")
-        
-        return response
+                'text': response_text,
+                'audio': audio_base64,
+                'audio_format': 'mp3',
+                'language': language,
+                'timestamp': self._get_timestamp()
+            })
+            
+        except Exception as e:
+            self.logger.error(f"❌ Chat error: {e}", exc_info=True)
+            await self.send_error(websocket, f"Chat error: {str(e)}")
     
-    async def _handle_voice(self, data: dict, device_id: Optional[str]) -> dict:
-        """Handle voice input"""
-        if not device_id:
-            return {'type': 'error', 'message': 'Device not registered'}
-        
-        audio_base64 = data.get('audio')
-        audio_format = data.get('format', 'wav')
-        language = data.get('language', 'auto')
+    async def handle_voice(self, websocket: WebSocket, device_id: str, message: Dict[str, Any]):
+        """Handle voice message"""
+        audio_base64 = message.get('audio')
+        audio_format = message.get('format', 'wav')
+        language = message.get('language', 'auto')
         
         if not audio_base64:
-            return {'type': 'error', 'message': 'audio required'}
+            await self.send_error(websocket, "No audio data provided")
+            return
+        
+        self.logger.info(f"🎤 Voice message from {device_id} (Format: {audio_format})")
+        
+        # Update activity
+        self.device_manager.update_activity(device_id, 'voice')
         
         try:
             # Decode base64 audio
             audio_data = base64.b64decode(audio_base64)
-            
-            self.logger.info(f"🎤 Processing voice input from {device_id}: {len(audio_data)} bytes")
+            self.logger.info(f"   Audio size: {len(audio_data)} bytes")
             
             # Transcribe audio to text
-            text = await self.stt_service.transcribe(audio_data, language)
+            transcribed_text = await self.stt_service.transcribe(
+                audio_data, 
+                language if language != 'auto' else 'vi',
+                audio_format
+            )
             
-            if not text:
-                return {
-                    'type': 'voice_response',
-                    'text': 'Xin lỗi, mình không nghe rõ.',
-                    'language': language
-                }
+            if not transcribed_text:
+                await self.send_error(websocket, "Failed to transcribe audio")
+                return
             
-            self.logger.info(f"🎤 Transcribed: {text}")
+            self.logger.info(f"📝 Transcribed: {transcribed_text}")
             
             # Get AI response
-            ai_response = await self.ai_service.chat(text, language, device_id)
+            response_text = await self.ai_service.chat(transcribed_text, language)
             
-            if not ai_response:
-                return {
-                    'type': 'voice_response',
-                    'text': 'Xin lỗi, mình không thể trả lời lúc này.',
-                    'transcribed_text': text,
-                    'language': language
-                }
+            if not response_text:
+                await self.send_error(websocket, "Failed to generate response")
+                return
             
-            self.logger.info(f"🤖 AI response: {ai_response}")
+            self.logger.info(f"🤖 AI Response: {response_text}")
             
             # Generate TTS audio
-            audio_response = await self.tts_service.synthesize(ai_response, language)
+            audio_response = await self.tts_service.synthesize(response_text, language)
             
-            response = {
+            # Send response
+            await websocket.send_json({
                 'type': 'voice_response',
-                'text': ai_response,
-                'transcribed_text': text,
-                'language': language
-            }
-            
-            # Add audio if available
-            if audio_response:
-                audio_base64 = base64.b64encode(audio_response).decode('utf-8')
-                response['audio'] = audio_base64
-                response['audio_format'] = 'mp3'
-                self.logger.info(f"🔊 Sending audio: {len(audio_response)} bytes")
-            
-            return response
+                'transcribed_text': transcribed_text,
+                'text': response_text,
+                'audio': audio_response,
+                'audio_format': 'mp3',
+                'language': language,
+                'timestamp': self._get_timestamp()
+            })
             
         except Exception as e:
             self.logger.error(f"❌ Voice processing error: {e}", exc_info=True)
-            return {'type': 'error', 'message': f'Voice processing failed: {str(e)}'}
+            await self.send_error(websocket, f"Voice error: {str(e)}")
     
-    async def _handle_command(self, data: dict, device_id: Optional[str]) -> dict:
-        """Handle device command"""
-        if not device_id:
-            return {'type': 'error', 'message': 'Device not registered'}
+    async def handle_ping(self, websocket: WebSocket, device_id: str, message: Dict[str, Any]):
+        """Handle ping message"""
+        self.logger.debug(f"🏓 Ping from {device_id}")
         
-        command = data.get('command')
-        params = data.get('params', {})
+        await websocket.send_json({
+            'type': 'pong',
+            'timestamp': self._get_timestamp()
+        })
+    
+    async def handle_ota_check(self, websocket: WebSocket, device_id: str, message: Dict[str, Any]):
+        """Handle OTA update check"""
+        current_version = message.get('current_version', 'unknown')
         
-        if not command:
-            return {'type': 'error', 'message': 'command required'}
+        self.logger.info(f"📦 OTA check from {device_id} (Version: {current_version})")
         
-        self.logger.info(f"🎮 Command from {device_id}: {command} with params: {params}")
+        # Check for updates
+        update_info = await self.ota_manager.check_update(device_id, current_version)
         
-        # Here you can add command handling logic
-        # For example: volume control, LED control, etc.
-        
-        return {
-            'type': 'command_response',
-            'command': command,
-            'status': 'success',
-            'message': f'Command {command} executed successfully'
-        }
+        await websocket.send_json({
+            'type': 'ota_response',
+            **update_info,
+            'timestamp': self._get_timestamp()
+        })
+    
+    async def send_error(self, websocket: WebSocket, error_message: str):
+        """Send error message to client"""
+        try:
+            await websocket.send_json({
+                'type': 'error',
+                'message': error_message,
+                'timestamp': self._get_timestamp()
+            })
+        except Exception as e:
+            self.logger.error(f"❌ Failed to send error: {e}")
+    
+    def _get_timestamp(self) -> int:
+        """Get current timestamp in milliseconds"""
+        from datetime import datetime
+        return int(datetime.now().timestamp() * 1000)
+    
+    def get_active_connections_count(self) -> int:
+        """Get number of active connections"""
+        return len(self.active_connections)
+    
+    def get_active_devices(self) -> list:
+        """Get list of active device IDs"""
+        return list(self.active_connections.keys())
