@@ -268,20 +268,10 @@ async def get_status():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """
-    Main WebSocket endpoint for device connections
-    
-    Protocol:
-        - Client sends JSON messages
-        - Server responds with JSON messages
-        - Message types: register, chat, voice, ping, ota_check
-    """
-    if not ws_handler:
-        logger.error("❌ WebSocket handler not initialized")
-        await websocket.close(code=1011, reason="Server not ready")
-        return
-    
-    await ws_handler.handle_connection(websocket)
+    # Generate unique device ID
+    import uuid
+    device_id = f"web-{id(websocket)}"
+    await ws_handler.handle_connection(websocket, device_id)
 
 
 # ==============================================================================
