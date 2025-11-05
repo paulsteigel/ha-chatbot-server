@@ -105,7 +105,12 @@ async def lifespan(app: FastAPI):
         
         # Initialize STT Service
         logger.info("🎤 Initializing STT Service...")
-        stt_service = STTService()
+        stt_service = STTService(
+            api_key=OPENAI_API_KEY,
+            base_url=OPENAI_BASE_URL,
+            model="whisper-1"
+        )
+
         
         # Initialize WebSocket Handler
         logger.info("🔌 Initializing WebSocket Handler...")
