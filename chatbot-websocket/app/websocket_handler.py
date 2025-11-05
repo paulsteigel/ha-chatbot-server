@@ -7,6 +7,7 @@ import json
 import base64
 from typing import Dict, Optional
 from fastapi import WebSocket, WebSocketDisconnect
+from app.command_detector import CommandDetector
 
 
 class WebSocketHandler:
@@ -20,6 +21,7 @@ class WebSocketHandler:
         self.ai_service = ai_service
         self.tts_service = tts_service
         self.stt_service = stt_service
+        self.command_detector = CommandDetector()
         self.logger.info("🔌 WebSocket Handler initialized")
     
     async def handle_connection(self, websocket: WebSocket, device_id: str):
@@ -222,7 +224,10 @@ class WebSocketHandler:
                 "type": "transcription",
                 "text": text
             })
-            
+
+            # STEP 2.1: COMMAND CONTROL IF ANY
+            command = self.command_detector.detect(text)
+
             # STEP 3: GET AI RESPONSE
             ai_response = await self.ai_service.chat(text)
             

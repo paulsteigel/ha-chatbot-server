@@ -489,6 +489,18 @@
                     // Show typing indicator for AI response
                     showTypingIndicator();
                     break;
+                
+                // NEW: Handle commands ← MỚI!
+                case 'command':
+                    console.log('🎯 Command:', data.command);
+                    // Don't show typing indicator for commands
+                    break;
+
+                case 'command_response':
+                    console.log('✅ Command response:', data.text);
+                    addMessage('bot', data.text);
+                    // No audio for command responses
+                    break;
 
                 case 'ai_response':
                     console.log('🤖 AI response received:', data.text);

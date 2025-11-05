@@ -74,6 +74,16 @@ async def lifespan(app: FastAPI):
     """
     global device_manager, ota_manager, ai_service, tts_service, stt_service, ws_handler
     
+    # Initialize WebSocket handler
+    ws_handler = WebSocketHandler(
+        device_manager=device_manager,
+        ai_service=ai_service,
+        tts_service=tts_service,
+        stt_service=stt_service,
+        ota_manager=ota_manager
+    )
+    # Command detector đã khởi tạo trong WebSocketHandler.__init__()
+
     logger.info("=" * 80)
     logger.info("🚀 SCHOOL CHATBOT WEBSOCKET SERVER")
     logger.info("=" * 80)
