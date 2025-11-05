@@ -1,122 +1,112 @@
 """
-STT Service - Local Faster-Whisper (FREE + FAST)
+STT (Speech-to-Text) Service - Handles audio transcription using OpenAI Whisper API
 """
 
 import os
 import logging
-import tempfile
 from typing import Optional
-from faster_whisper import WhisperModel
+from openai import AsyncOpenAI
 
 
 class STTService:
-    """Speech-to-Text using Faster-Whisper (Local)"""
+    """Speech-to-Text Service using OpenAI Whisper API"""
     
-    def __init__(self):
-        """Initialize STT Service"""
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = "https://api.openai.com/v1",
+        model: str = "whisper-1"
+    ):
+        """
+        Initialize STT Service
+        
+        Args:
+            api_key: OpenAI API key
+            base_url: API base URL (default: OpenAI)
+            model: Whisper model name (default: whisper-1)
+        """
         self.logger = logging.getLogger('STTService')
         
-        # Model configuration
-        model_size = os.getenv('WHISPER_MODEL', 'small')  # tiny, base, small, medium, large-v3
-        device = os.getenv('WHISPER_DEVICE', 'cpu')  # cpu or cuda
-        compute_type = os.getenv('WHISPER_COMPUTE_TYPE', 'int8')  # int8, float16, float32
+        self.api_key = api_key
+        self.base_url = base_url
+        self.model = model
         
-        self.logger.info(f"🎤 Initializing Faster-Whisper...")
-        self.logger.info(f"   Model: {model_size}")
-        self.logger.info(f"   Device: {device}")
-        self.logger.info(f"   Compute: {compute_type}")
+        self.logger.info("🎤 Initializing STT Service...")
+        self.logger.info(f"   Base URL: {base_url}")
+        self.logger.info(f"   Model: {model}")
         
+        # Initialize OpenAI client
         try:
-            # Load model
-            self.model = WhisperModel(
-                model_size,
-                device=device,
-                compute_type=compute_type,
-                download_root=os.getenv('WHISPER_CACHE_DIR', '/app/models')
+            self.client = AsyncOpenAI(
+                api_key=api_key,
+                base_url=base_url
             )
-            
-            self.logger.info("✅ STT Service initialized (Faster-Whisper Local)")
+            self.logger.info("✅ STT Service initialized")
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to load Whisper model: {e}")
-            self.model = None
+            self.logger.error(f"❌ Failed to initialize STT client: {e}")
+            raise
     
-    async def transcribe(self, audio_data: bytes, language: str = "auto") -> Optional[str]:
+    async def transcribe(self, audio_data: bytes, language: str = "auto") -> str:
         """
         Transcribe audio to text
         
         Args:
-            audio_data: Audio bytes (webm, mp3, wav, etc.)
-            language: Language code ('vi', 'en', 'auto')
+            audio_data: Audio data in bytes (WAV/MP3/OGG format)
+            language: Language code (e.g., "vi" for Vietnamese, "en" for English, "auto" for auto-detect)
         
         Returns:
-            Transcribed text or None
+            Transcribed text
         """
-        if not self.model:
-            self.logger.error("❌ Whisper model not loaded")
-            return None
-        
-        tmp_path = None
         try:
-            # Save audio to temp file
-            with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp:
-                tmp.write(audio_data)
-                tmp_path = tmp.name
+            self.logger.info(f"🎤 Transcribing audio ({len(audio_data)} bytes, language: {language})...")
             
-            self.logger.info(f"🎤 Transcribing audio ({len(audio_data)} bytes)...")
+            # Prepare audio file-like object
+            from io import BytesIO
+            audio_file = BytesIO(audio_data)
+            audio_file.name = "audio.wav"  # OpenAI requires a filename
             
-            # Determine language
-            lang = None if language == "auto" else language
+            # Call Whisper API
+            kwargs = {
+                "model": self.model,
+                "file": audio_file
+            }
             
-            # Transcribe
-            segments, info = self.model.transcribe(
-                tmp_path,
-                language=lang,
-                vad_filter=True,  # Voice Activity Detection - remove silence
-                vad_parameters={
-                    "threshold": 0.5,
-                    "min_speech_duration_ms": 250,
-                    "min_silence_duration_ms": 100
-                },
-                beam_size=5,
-                best_of=5,
-                temperature=0.0
-            )
+            # Add language parameter if not auto-detect
+            if language != "auto":
+                kwargs["language"] = language
             
-            # Combine segments
-            text_parts = []
-            for segment in segments:
-                text_parts.append(segment.text.strip())
+            response = await self.client.audio.transcriptions.create(**kwargs)
             
-            text = " ".join(text_parts).strip()
+            # Extract transcribed text
+            transcribed_text = response.text
             
-            if text:
-                self.logger.info(f"✅ Transcribed ({info.language}, {info.duration:.1f}s): {text[:100]}...")
-            else:
-                self.logger.warning("⚠️ No transcription result")
+            self.logger.info(f"✅ Transcription: {transcribed_text}")
             
-            return text if text else None
+            return transcribed_text
             
         except Exception as e:
             self.logger.error(f"❌ Transcription error: {e}", exc_info=True)
-            return None
+            return ""
+    
+    async def transcribe_file(self, file_path: str, language: str = "auto") -> str:
+        """
+        Transcribe audio file to text
+        
+        Args:
+            file_path: Path to audio file
+            language: Language code (default: auto-detect)
+        
+        Returns:
+            Transcribed text
+        """
+        try:
+            # Read audio file
+            with open(file_path, 'rb') as f:
+                audio_data = f.read()
             
-        finally:
-            # Cleanup temp file
-            if tmp_path and os.path.exists(tmp_path):
-                try:
-                    os.unlink(tmp_path)
-                except:
-                    pass
-    
-    async def transcribe_vietnamese(self, audio_data: bytes) -> Optional[str]:
-        """Transcribe Vietnamese audio"""
-        return await self.transcribe(audio_data, language='vi')
-    
-    async def transcribe_english(self, audio_data: bytes) -> Optional[str]:
-        """Transcribe English audio"""
-        return await self.transcribe(audio_data, language='en')
-    
-    def get_available_models(self) -> list:
-        """Get list of available Whisper models"""
-        return ['tiny', 'base', 'small', 'medium', 'large-v3']
+            return await self.transcribe(audio_data, language)
+            
+        except Exception as e:
+            self.logger.error(f"❌ File transcription error: {e}", exc_info=True)
+            return ""

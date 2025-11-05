@@ -8,7 +8,7 @@ import base64
 from typing import Dict, Optional
 from fastapi import WebSocket, WebSocketDisconnect
 
-vl
+
 class WebSocketHandler:
     """WebSocket handler for managing device connections and messages"""
     
@@ -191,7 +191,7 @@ class WebSocketHandler:
             await self.send_error(device_id, f"Text error: {e}")
     
     async def handle_voice(self, data: Dict):
-        """Handle voice message with optimized parallel processing"""
+        """Handle voice message"""
         try:
             device_id = data.get("device_id")
             audio_base64 = data.get("audio")
@@ -207,7 +207,7 @@ class WebSocketHandler:
             # Decode audio
             audio_data = base64.b64decode(audio_base64)
             
-            # ⚡ STEP 1: Fast STT transcription (0.5-1s)
+            # Transcribe audio
             text = await self.stt_service.transcribe(audio_data, language)
             
             if not text:
@@ -216,53 +216,28 @@ class WebSocketHandler:
             
             self.logger.info(f"📝 Transcription: {text}")
             
-            # ⚡ STEP 2: Send transcription immediately (user sees it fast)
-            await self.send_message(device_id, {
-                "type": "transcription",
-                "text": text
-            })
-            
-            # ⚡ STEP 3: Get AI response (2-3s)
+            # Get AI response
             ai_response = await self.ai_service.chat(text)
             
             if not ai_response:
                 await self.send_error(device_id, "AI service error")
                 return
             
-            # ⚡ STEP 4: Parallel - Send text + Generate TTS simultaneously
-            import asyncio
+            # Generate TTS audio
+            response_audio = await self.tts_service.synthesize(ai_response, language)
             
-            # Start both tasks in parallel
-            send_text_task = self.send_message(device_id, {
-                "type": "text",
-                "text": ai_response
+            # Send voice response
+            await self.send_message(device_id, {
+                "type": "voice_response",
+                "transcribed_text": text,
+                "text": ai_response,
+                "audio": response_audio,
+                "audio_format": "mp3"
             })
-            
-            tts_task = self.tts_service.synthesize(ai_response, language)
-            
-            # Wait for both to complete
-            _, response_audio = await asyncio.gather(
-                send_text_task,
-                tts_task
-            )
-            
-            # ⚡ STEP 5: Send audio response
-            if response_audio:
-                await self.send_message(device_id, {
-                    "type": "voice_response",
-                    "transcribed_text": text,
-                    "text": ai_response,
-                    "audio": response_audio,
-                    "audio_format": "mp3"
-                })
-            else:
-                # Text already sent, just notify
-                self.logger.warning("⚠️ TTS failed, text response already sent")
             
         except Exception as e:
             self.logger.error(f"❌ Voice error: {e}", exc_info=True)
             await self.send_error(device_id, f"Voice error: {e}")
-
     
     async def handle_ping(self, data: Dict):
         """Handle ping message"""
