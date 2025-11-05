@@ -67,23 +67,43 @@ logger = logging.getLogger('Main')
 HOST = os.getenv('HOST', '0.0.0.0')
 PORT = int(os.getenv('PORT', '5000'))
 
-# AI configuration
-AI_PROVIDER = get_config('ai_provider', 'openai')
-AI_MODEL = get_config('ai_model', 'gpt-4o-mini')
+# ✅ AI CONFIGURATION - AUTO MODEL SELECTION
+AI_PROVIDER = get_config('ai_provider', 'deepseek')
 
-SYSTEM_PROMPT_OVERRIDE = get_config('system_prompt', None)
-if SYSTEM_PROMPT_OVERRIDE:
-    SYSTEM_PROMPT = SYSTEM_PROMPT_OVERRIDE
-    logger.info("💬 Using custom system prompt from Home Assistant options")
+# Auto-select correct model for provider
+if AI_PROVIDER.lower() == 'openai':
+    DEFAULT_MODEL = AI_MODELS.get('openai', 'gpt-4o-mini')
+elif AI_PROVIDER.lower() == 'deepseek':
+    DEFAULT_MODEL = AI_MODELS.get('deepseek', 'deepseek-chat')
 else:
-    logger.info("💬 Using default system prompt from config.py")
+    DEFAULT_MODEL = 'gpt-4o-mini'
 
-logger.info(f"💬 System Prompt: {SYSTEM_PROMPT[:100]}...")
+# Allow manual override
+AI_MODEL = get_config('ai_model', DEFAULT_MODEL)
+
+logger.info("=" * 80)
+logger.info("🤖 AI CONFIGURATION")
+logger.info("=" * 80)
+logger.info(f"   Provider: {AI_PROVIDER}")
+logger.info(f"   Model (auto): {DEFAULT_MODEL}")
+logger.info(f"   Model (final): {AI_MODEL}")
+if AI_MODEL != DEFAULT_MODEL:
+    logger.warning(f"   ⚠️  Manual override detected!")
+logger.info("=" * 80)
+
+# ✅ SYSTEM_PROMPT - Allow override
+SYSTEM_PROMPT_OVERRIDE = get_config('system_prompt', None)
+if SYSTEM_PROMPT_OVERRIDE and len(SYSTEM_PROMPT_OVERRIDE) > 50:
+    FINAL_SYSTEM_PROMPT = SYSTEM_PROMPT_OVERRIDE
+    logger.info("💬 Using CUSTOM system prompt from Home Assistant")
+else:
+    FINAL_SYSTEM_PROMPT = SYSTEM_PROMPT
+    logger.info("💬 Using DEFAULT system prompt from config.py")
 
 # Chat configuration
-CHAT_TEMPERATURE = float(get_config('temperature', 0.7))
-CHAT_MAX_TOKENS = int(get_config('max_tokens', 500))
-CHAT_MAX_CONTEXT = int(get_config('max_context_messages', 10))
+CHAT_TEMPERATURE = float(get_config('temperature', AI_CONFIG.get("temperature", 0.7)))
+CHAT_MAX_TOKENS = int(get_config('max_tokens', AI_CONFIG.get("max_tokens", 300)))
+CHAT_MAX_CONTEXT = int(get_config('max_context_messages', AI_CONFIG.get("max_context_messages", 10)))
 
 # API Keys
 OPENAI_API_KEY = get_config('openai_api_key', '')
@@ -96,19 +116,23 @@ GROQ_API_KEY = get_config('groq_api_key', '')
 MYSQL_URL = get_config('mysql_url', '')
 
 # TTS configuration
-TTS_VOICE = get_config('tts_voice_vi', 'nova')
+TTS_VOICE = get_config('tts_voice_vi', TTS_CONFIG.get("vietnamese_voice", "nova"))
 
-# Log configuration source
-logger.info("=" * 80)
-logger.info("📋 CONFIGURATION")
-logger.info("=" * 80)
+# ✅ LOG FULL CONFIGURATION
 config_source = "Home Assistant" if os.path.exists("/data/options.json") else "Environment"
+logger.info("=" * 80)
+logger.info("📋 FULL CONFIGURATION")
+logger.info("=" * 80)
 logger.info(f"📂 Config Source: {config_source}")
 logger.info(f"🤖 AI Provider: {AI_PROVIDER}")
 logger.info(f"🧠 AI Model: {AI_MODEL}")
-logger.info(f"💾 MySQL Logging: {'Enabled' if MYSQL_URL else 'Disabled'}")
+logger.info(f"💬 System Prompt: {FINAL_SYSTEM_PROMPT[:80]}...")
+logger.info(f"🌡️  Temperature: {CHAT_TEMPERATURE}")
+logger.info(f"📏 Max Tokens: {CHAT_MAX_TOKENS}")
+logger.info(f"💾 MySQL: {'✅' if MYSQL_URL else '❌'}")
 logger.info(f"📊 Log Level: {LOG_LEVEL}")
 logger.info("=" * 80)
+
 
 
 # ==============================================================================
