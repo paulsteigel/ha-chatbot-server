@@ -105,7 +105,7 @@ class AIService:
         conversation_logger=None,
         device_id: str = None,
         device_type: str = None
-    ) -> str:
+        ) -> str:
         """
         Send a chat message and get AI response
         
