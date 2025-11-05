@@ -22,6 +22,18 @@ class AIService:
         max_tokens: int = 500,
         max_context: int = 10
     ):
+        """
+        Initialize AI Service
+        
+        Args:
+            api_key: API key for the provider
+            base_url: Base URL for API (OpenAI or DeepSeek)
+            model: Model name
+            system_prompt: System prompt for the AI
+            temperature: Sampling temperature (0.0 to 2.0)
+            max_tokens: Maximum tokens in response
+            max_context: Maximum conversation history to keep
+        """
         self.logger = logging.getLogger('AIService')
         
         self.api_key = api_key
@@ -53,13 +65,18 @@ class AIService:
                 base_url=base_url
             )
             self.logger.info("✅ AI Service initialized")
+            
+            # Test the service
             self._test_service()
+            
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize AI client: {e}")
             raise
     
     def _test_service(self):
+        """Test AI service with a simple query"""
         import asyncio
+        
         self.logger.info("🧪 Testing AI service...")
         
         async def test():
@@ -69,19 +86,43 @@ class AIService:
             return response
         
         try:
+            # Run test in event loop
             loop = asyncio.get_event_loop()
             if loop.is_running():
+                # If loop is already running, create a task
                 asyncio.create_task(test())
             else:
+                # If no loop is running, run it
                 asyncio.run(test())
+            
             self.logger.info("✅ AI test successful")
         except Exception as e:
             self.logger.warning(f"⚠️ AI test skipped: {e}")
     
-    async def chat(self, user_message: str, conversation_logger=None, device_id: str = None, device_type: str = None) -> str:
+    async def chat(
+        self, 
+        user_message: str,
+        conversation_logger=None,
+        device_id: str = None,
+        device_type: str = None
+    ) -> str:
+        """
+        Send a chat message and get AI response
+        
+        Args:
+            user_message: User's message
+            conversation_logger: Optional MySQL logger instance
+            device_id: Optional device ID for logging
+            device_type: Optional device type for logging
+        
+        Returns:
+            AI's response text
+        """
+        # Start total timer
         start_time = time.time()
         
         try:
+            # Log user message
             self.logger.info(f"💬 User: {user_message}")
             
             # Add user message to history
@@ -103,8 +144,9 @@ class AIService:
             request_start = time.time()
             self.logger.info(f"⏱️  Sending request to {self.provider.upper()}...")
             
-            # USE STREAMING FOR FASTER FIRST TOKEN
+            # ✅ USE STREAMING FOR FASTER FIRST TOKEN
             if self.provider == 'deepseek':
+                # Streaming response (faster perceived speed)
                 stream = await self.client.chat.completions.create(
                     model=self.model,
                     messages=messages,
@@ -121,10 +163,13 @@ class AIService:
                         content = chunk.choices[0].delta.content
                         ai_response += content
                         
+                        # Log first token time
                         if first_token_time is None:
                             first_token_time = time.time() - request_start
                             self.logger.info(f"⚡ First token: {first_token_time:.2f}s")
+                
             else:
+                # Non-streaming (OpenAI/Groq)
                 response = await self.client.chat.completions.create(
                     model=self.model,
                     messages=messages,
@@ -133,6 +178,7 @@ class AIService:
                 )
                 ai_response = response.choices[0].message.content
             
+            # Calculate request time
             request_time = time.time() - request_start
             
             # Add AI response to history
@@ -141,11 +187,14 @@ class AIService:
                 "content": ai_response
             })
             
+            # Calculate total time
             total_time = time.time() - start_time
             
+            # Enhanced logging with timing
             self.logger.info(f"🤖 AI: {ai_response}")
             self.logger.info(f"⏱️  AI Response Time: {request_time:.2f}s (Total: {total_time:.2f}s)")
             
+            # Warning if slow
             if request_time > 5.0:
                 self.logger.warning(f"⚠️  Slow AI response detected! ({request_time:.2f}s)")
             
@@ -173,11 +222,14 @@ class AIService:
             return "Xin lỗi, chị gặp lỗi khi xử lý câu hỏi của em."
     
     def clear_history(self):
+        """Clear conversation history"""
         self.conversation_history = []
         self.logger.info("🗑️ Conversation history cleared")
     
     def get_history(self) -> List[Dict[str, str]]:
+        """Get conversation history"""
         return self.conversation_history.copy()
     
     def get_context_size(self) -> int:
+        """Get current context size"""
         return len(self.conversation_history)
