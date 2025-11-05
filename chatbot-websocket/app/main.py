@@ -61,17 +61,16 @@ ws_handler = None
 # ==============================================================================
 
 @asynccontextmanager
+@asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Lifespan context manager for FastAPI
-    Handles startup and shutdown events
+    Lifespan context manager for application startup and shutdown
     """
-    # STARTUP
+    global device_manager, ota_manager, ai_service, tts_service, stt_service, ws_handler
+    
     logger.info("=" * 80)
     logger.info("🚀 SCHOOL CHATBOT WEBSOCKET SERVER")
     logger.info("=" * 80)
-    
-    global ai_service, tts_service, stt_service, device_manager, ota_manager, ws_handler
     
     try:
         # Initialize Device Manager
@@ -80,49 +79,35 @@ async def lifespan(app: FastAPI):
         
         # Initialize OTA Manager
         logger.info("📦 Initializing OTA Manager...")
-        ota_manager = OTAManager(firmware_version="1.0.0")
+        ota_manager = OTAManager()
         
         # Initialize AI Service
         logger.info(f"🤖 Initializing AI Service ({AI_PROVIDER})...")
-        ai_service = AIService(provider=AI_PROVIDER, model=AI_MODEL)
-        await ai_service.initialize()
+        ai_service = AIService(
+            api_key=DEEPSEEK_API_KEY if AI_PROVIDER == 'deepseek' else OPENAI_API_KEY,
+            base_url=DEEPSEEK_BASE_URL if AI_PROVIDER == 'deepseek' else OPENAI_BASE_URL,
+            model=AI_MODEL,
+            system_prompt=SYSTEM_PROMPT,
+            temperature=CHAT_TEMPERATURE,
+            max_tokens=CHAT_MAX_TOKENS,
+            max_context=CHAT_MAX_CONTEXT
+        )
         
         # Initialize TTS Service
         logger.info("🔊 Initializing TTS Service...")
-        if AI_PROVIDER == 'openai':
-            tts_service = TTSService(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
-        else:
-            # For DeepSeek, we still use OpenAI for TTS (if available)
-            if OPENAI_API_KEY:
-                tts_service = TTSService()
-            else:
-                logger.warning("⚠️ No OpenAI key for TTS, using DeepSeek key (may not work)")
-                tts_service = TTSService(api_key=DEEPSEEK_API_KEY, base_url=OPENAI_BASE_URL)
-        
-        await tts_service.initialize()
+        tts_service = TTSService()
         
         # Initialize STT Service
         logger.info("🎤 Initializing STT Service...")
-        if AI_PROVIDER == 'openai':
-            stt_service = STTService()
-        else:
-            # For DeepSeek, we still use OpenAI for STT (if available)
-            if OPENAI_API_KEY:
-                stt_service = STTService()
-            else:
-                logger.warning("⚠️ No OpenAI key for STT, using DeepSeek key (may not work)")
-                stt_service = STTService(api_key=DEEPSEEK_API_KEY, base_url=OPENAI_BASE_URL)
-        
-        await stt_service.initialize()
+        stt_service = STTService()
         
         # Initialize WebSocket Handler
         logger.info("🔌 Initializing WebSocket Handler...")
         ws_handler = WebSocketHandler(
+            device_manager=device_manager,
             ai_service=ai_service,
             tts_service=tts_service,
-            stt_service=stt_service,
-            device_manager=device_manager,
-            ota_manager=ota_manager
+            stt_service=stt_service
         )
         
         logger.info("=" * 80)
@@ -133,25 +118,16 @@ async def lifespan(app: FastAPI):
         logger.info(f"🌍 Web interface: http://{HOST}:{PORT}/")
         logger.info("=" * 80)
         
+        yield
+        
     except Exception as e:
         logger.error(f"❌ STARTUP FAILED: {e}", exc_info=True)
         raise
     
-    yield  # Server is running
-    
-    # SHUTDOWN
-    logger.info("=" * 80)
-    logger.info("🛑 SHUTTING DOWN SERVER...")
-    logger.info("=" * 80)
-    
-    # Cleanup resources
-    if device_manager:
-        active_devices = device_manager.get_device_count()
-        logger.info(f"📊 Active devices at shutdown: {active_devices}")
-    
-    logger.info("✅ Server shutdown complete")
-    logger.info("=" * 80)
-
+    finally:
+        logger.info("🛑 Shutting down services...")
+        # Cleanup if needed
+        logger.info("✅ Shutdown complete")
 
 # ==============================================================================
 # FastAPI Application
