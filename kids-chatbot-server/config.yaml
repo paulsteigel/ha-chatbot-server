@@ -1,7 +1,7 @@
-name: Kids ChatBot Server
-version: "1.1.0"
-slug: kids-chatbot-server
-description: OpenAI-powered voice chatbot with context memory for kids
+name: School Chatbot WebSocket
+version: "1.1.0"  # ← Bump version
+slug: school-chatbot-websocket
+description: WebSocket server for ESP32 school chatbot - Yên Hoà (with Groq STT)
 url: https://github.com/paulsteigel/ha-chatbot-server
 arch:
   - aarch64
