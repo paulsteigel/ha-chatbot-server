@@ -1,15 +1,25 @@
 """
-STT (Speech-to-Text) Service - Handles audio transcription using OpenAI Whisper API
+STT Service - Groq Whisper (Fast) with OpenAI fallback
 """
 
 import os
 import logging
+import time
 from typing import Optional
+from io import BytesIO
+
+# Try Groq first, fallback to OpenAI
+try:
+    from groq import Groq
+    GROQ_AVAILABLE = True
+except ImportError:
+    GROQ_AVAILABLE = False
+
 from openai import AsyncOpenAI
 
 
 class STTService:
-    """Speech-to-Text Service using OpenAI Whisper API"""
+    """Speech-to-Text Service"""
     
     def __init__(
         self,
@@ -17,91 +27,124 @@ class STTService:
         base_url: str = "https://api.openai.com/v1",
         model: str = "whisper-1"
     ):
-        """
-        Initialize STT Service
-        
-        Args:
-            api_key: OpenAI API key
-            base_url: API base URL (default: OpenAI)
-            model: Whisper model name (default: whisper-1)
-        """
+        """Initialize STT Service"""
         self.logger = logging.getLogger('STTService')
         
-        self.api_key = api_key
-        self.base_url = base_url
-        self.model = model
+        # Check for Groq API key
+        groq_key = os.getenv("GROQ_API_KEY")
         
-        self.logger.info("🎤 Initializing STT Service...")
-        self.logger.info(f"   Base URL: {base_url}")
-        self.logger.info(f"   Model: {model}")
-        
-        # Initialize OpenAI client
-        try:
+        # Decide which provider to use
+        if GROQ_AVAILABLE and groq_key and groq_key.startswith("gsk_"):
+            # Use Groq (FAST!)
+            self.use_groq = True
+            self.client = Groq(api_key=groq_key)
+            self.model = "whisper-large-v3"
+            self.provider = "Groq"
+            
+            self.logger.info("🎤 Initializing STT Service...")
+            self.logger.info(f"   Provider: Groq Whisper (FAST! ⚡)")
+            self.logger.info(f"   Model: {self.model}")
+            self.logger.info(f"   Expected latency: ~0.2s")
+        else:
+            # Fallback to OpenAI
+            self.use_groq = False
+            self.api_key = api_key
+            self.base_url = base_url
+            self.model = model
+            self.provider = "OpenAI"
+            
+            self.logger.info("🎤 Initializing STT Service...")
+            self.logger.info(f"   Provider: OpenAI Whisper")
+            self.logger.info(f"   Base URL: {base_url}")
+            self.logger.info(f"   Model: {model}")
+            
             self.client = AsyncOpenAI(
                 api_key=api_key,
                 base_url=base_url
             )
-            self.logger.info("✅ STT Service initialized")
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to initialize STT client: {e}")
-            raise
+        
+        self.logger.info("✅ STT Service initialized")
     
     async def transcribe(self, audio_data: bytes, language: str = "auto") -> str:
-        """
-        Transcribe audio to text
+        """Transcribe audio to text"""
+        start_time = time.time()
         
-        Args:
-            audio_data: Audio data in bytes (WAV/MP3/OGG format)
-            language: Language code (e.g., "vi" for Vietnamese, "en" for English, "auto" for auto-detect)
-        
-        Returns:
-            Transcribed text
-        """
         try:
-            self.logger.info(f"🎤 Transcribing audio ({len(audio_data)} bytes, language: {language})...")
+            self.logger.info(
+                f"🎤 Transcribing audio ({len(audio_data)} bytes, "
+                f"language: {language})..."
+            )
             
-            # Prepare audio file-like object
-            from io import BytesIO
-            audio_file = BytesIO(audio_data)
-            audio_file.name = "audio.wav"  # OpenAI requires a filename
+            # Use appropriate provider
+            if self.use_groq:
+                text = await self._transcribe_groq(audio_data, language)
+            else:
+                text = await self._transcribe_openai(audio_data, language)
             
-            # Call Whisper API
-            kwargs = {
-                "model": self.model,
-                "file": audio_file
-            }
+            elapsed = time.time() - start_time
             
-            # Add language parameter if not auto-detect
-            if language != "auto":
-                kwargs["language"] = language
+            self.logger.info(
+                f"✅ Transcription ({self.provider}): {text}"
+            )
+            self.logger.info(f"⏱️  Completed in {elapsed:.2f}s")
             
-            response = await self.client.audio.transcriptions.create(**kwargs)
-            
-            # Extract transcribed text
-            transcribed_text = response.text
-            
-            self.logger.info(f"✅ Transcription: {transcribed_text}")
-            
-            return transcribed_text
+            return text
             
         except Exception as e:
             self.logger.error(f"❌ Transcription error: {e}", exc_info=True)
             return ""
     
-    async def transcribe_file(self, file_path: str, language: str = "auto") -> str:
-        """
-        Transcribe audio file to text
+    async def _transcribe_groq(self, audio_data: bytes, language: str) -> str:
+        """Transcribe using Groq (fast!)"""
+        import asyncio
         
-        Args:
-            file_path: Path to audio file
-            language: Language code (default: auto-detect)
+        # Save to temp file
+        temp_file = f"/tmp/audio_{int(time.time() * 1000)}.webm"
         
-        Returns:
-            Transcribed text
-        """
         try:
-            # Read audio file
+            with open(temp_file, "wb") as f:
+                f.write(audio_data)
+            
+            # Groq is sync, run in executor
+            def _sync_call():
+                with open(temp_file, "rb") as audio_file:
+                    transcription = self.client.audio.transcriptions.create(
+                        file=audio_file,
+                        model=self.model,
+                        language=language if language != "auto" else None,
+                        response_format="text",
+                        temperature=0.0
+                    )
+                return transcription
+            
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, _sync_call)
+            
+            return result.strip()
+            
+        finally:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+    
+    async def _transcribe_openai(self, audio_data: bytes, language: str) -> str:
+        """Transcribe using OpenAI (fallback)"""
+        audio_file = BytesIO(audio_data)
+        audio_file.name = "audio.wav"
+        
+        kwargs = {
+            "model": self.model,
+            "file": audio_file
+        }
+        
+        if language != "auto":
+            kwargs["language"] = language
+        
+        response = await self.client.audio.transcriptions.create(**kwargs)
+        return response.text
+    
+    async def transcribe_file(self, file_path: str, language: str = "auto") -> str:
+        """Transcribe audio file to text"""
+        try:
             with open(file_path, 'rb') as f:
                 audio_data = f.read()
             

@@ -33,6 +33,10 @@ RUN mkdir -p /app/models && chmod 777 /app/models
 # Copy rootfs (S6 overlay scripts)
 COPY rootfs /
 
+# Install Python dependencies
+COPY requirements.txt /tmp/
+RUN pip3 install --no-cache-dir -r /tmp/requirements.txt
+
 # Set executable permissions for service scripts
 RUN chmod +x /etc/services.d/chatbot/run && \
     chmod +x /etc/services.d/chatbot/finish

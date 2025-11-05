@@ -1,5 +1,5 @@
 name: School Chatbot WebSocket
-version: "1.0.35"
+version: "1.0.36"
 slug: school-chatbot-websocket
 description: WebSocket server for ESP32 school chatbot - Yên Hoà
 url: https://github.com/paulsteigel/ha-chatbot-server
@@ -26,7 +26,8 @@ options:
   openai_api_key: ""
   openai_base_url: "https://api.openai.com/v1"
   deepseek_api_key: ""
-  
+  groq_api_key: "gsk_your_actual_groq_api_key_here"
+
   # TTS Configuration
   tts_voice_vi: "nova"        # Giọng nữ, dễ nghe (thay vì vi-VN-HoaiMyNeural)
   tts_voice_en: "alloy"       # Giọng trung tính (đã đúng)
