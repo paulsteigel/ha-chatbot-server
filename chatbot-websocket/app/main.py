@@ -37,11 +37,18 @@ PORT = int(os.getenv('PORT', '5000'))
 # AI configuration
 AI_PROVIDER = os.getenv('AI_PROVIDER', 'openai')
 AI_MODEL = os.getenv('AI_MODEL', 'gpt-4o-mini')
+SYSTEM_PROMPT = os.getenv('SYSTEM_PROMPT', 'You are a helpful AI assistant.')
+
+# Chat configuration
+CHAT_TEMPERATURE = float(os.getenv('CHAT_TEMPERATURE', '0.7'))
+CHAT_MAX_TOKENS = int(os.getenv('CHAT_MAX_TOKENS', '500'))
+CHAT_MAX_CONTEXT = int(os.getenv('CHAT_MAX_CONTEXT', '10'))
 
 # API Keys
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
 OPENAI_BASE_URL = os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1')
 DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY', '')
+DEEPSEEK_BASE_URL = os.getenv('DEEPSEEK_BASE_URL', 'https://api.deepseek.com/v1')
 
 
 # ==============================================================================
@@ -60,7 +67,6 @@ ws_handler = None
 # Lifespan Context Manager
 # ==============================================================================
 
-@asynccontextmanager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -126,8 +132,8 @@ async def lifespan(app: FastAPI):
     
     finally:
         logger.info("🛑 Shutting down services...")
-        # Cleanup if needed
         logger.info("✅ Shutdown complete")
+
 
 # ==============================================================================
 # FastAPI Application
@@ -178,6 +184,20 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
+    # Get device count safely
+    device_count = 0
+    if device_manager and hasattr(device_manager, 'get_device_count'):
+        device_count = device_manager.get_device_count()
+    elif device_manager and hasattr(device_manager, 'devices'):
+        device_count = len(device_manager.devices)
+    
+    # Get active connections count safely
+    active_connections = 0
+    if ws_handler and hasattr(ws_handler, 'get_active_connections_count'):
+        active_connections = ws_handler.get_active_connections_count()
+    elif ws_handler and hasattr(ws_handler, 'active_connections'):
+        active_connections = len(ws_handler.active_connections)
+    
     return JSONResponse({
         "status": "healthy",
         "services": {
@@ -188,8 +208,8 @@ async def health_check():
             "ota_manager": ota_manager is not None,
             "websocket_handler": ws_handler is not None
         },
-        "devices": device_manager.get_device_count() if device_manager else 0,
-        "active_connections": ws_handler.get_active_connections_count() if ws_handler else 0
+        "devices": device_count,
+        "active_connections": active_connections
     })
 
 
@@ -199,7 +219,29 @@ async def get_status():
     if not device_manager:
         return JSONResponse({"error": "Device manager not initialized"}, status_code=503)
     
-    stats = device_manager.get_statistics()
+    # Get statistics safely
+    stats = {}
+    if hasattr(device_manager, 'get_statistics'):
+        stats = device_manager.get_statistics()
+    elif hasattr(device_manager, 'devices'):
+        stats = {
+            "total_devices": len(device_manager.devices),
+            "devices": list(device_manager.devices.keys())
+        }
+    
+    # Get active connections
+    active_connections = 0
+    active_devices = []
+    if ws_handler:
+        if hasattr(ws_handler, 'get_active_connections_count'):
+            active_connections = ws_handler.get_active_connections_count()
+        elif hasattr(ws_handler, 'active_connections'):
+            active_connections = len(ws_handler.active_connections)
+        
+        if hasattr(ws_handler, 'get_active_devices'):
+            active_devices = ws_handler.get_active_devices()
+        elif hasattr(ws_handler, 'active_connections'):
+            active_devices = list(ws_handler.active_connections.keys())
     
     return JSONResponse({
         "server": {
@@ -208,8 +250,8 @@ async def get_status():
             "ai_model": AI_MODEL,
         },
         "devices": stats,
-        "active_connections": ws_handler.get_active_connections_count() if ws_handler else 0,
-        "active_device_ids": ws_handler.get_active_devices() if ws_handler else []
+        "active_connections": active_connections,
+        "active_device_ids": active_devices
     })
 
 
