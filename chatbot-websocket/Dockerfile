@@ -1,40 +1,47 @@
 ARG BUILD_FROM
 FROM $BUILD_FROM
 
-# Install dependencies
+# Set shell
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# Install Python and required system packages
 RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    py3-setuptools \
+    py3-wheel \
     ffmpeg \
     && rm -rf /var/cache/apk/*
 
+# Set working directory
 WORKDIR /app
 
-# Copy requirements and install
+# Copy requirements first (for better caching)
 COPY requirements.txt .
+
+# Install Python dependencies
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Copy application
-COPY app/ ./app/
+# Copy application code
+COPY app/ /app/app/
 
 # Copy static files
-COPY static/ /static/
+COPY static/ /app/static/
 
-# Copy s6-overlay service
+# Copy rootfs (S6 overlay scripts)
 COPY rootfs /
 
-# Make run script executable
-RUN chmod a+x /etc/services.d/chatbot/run
+# Set executable permissions for service scripts
+RUN chmod +x /etc/services.d/chatbot/run && \
+    chmod +x /etc/services.d/chatbot/finish
 
+# Expose port
 EXPOSE 5000
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:5000/health || exit 1
-# Install dependencies with fixed versions
-RUN pip3 install --no-cache-dir \
-    websockets==12.0 \
-    aiohttp==3.9.1 \
-    python-dotenv==1.0.0 \
-    gTTS==2.5.0 \
-    openai==1.54.0 \
-    httpx==0.27.0 \
-    pydantic==2.9.0 \
-    typing-extensions==4.12.2
+# Labels
+LABEL \
+    io.hass.name="School Chatbot WebSocket Server" \
+    io.hass.description="WebSocket server for ESP32-based school chatbot with AI integration" \
+    io.hass.version="1.0.0" \
+    io.hass.type="addon" \
+    io.hass.arch="armhf|aarch64|amd64"
