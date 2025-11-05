@@ -8,6 +8,7 @@ import time
 from typing import Optional
 from io import BytesIO
 
+
 # Try Groq first, fallback to OpenAI
 try:
     from groq import Groq
@@ -65,7 +66,7 @@ class STTService:
         
         self.logger.info("✅ STT Service initialized")
     
-    def _prepare_audio(self, audio_data: bytes) -> io.BytesIO:
+    def _prepare_audio(self, audio_data: bytes) -> BytesIO:
         """
         Prepare audio data for transcription
         
@@ -75,11 +76,11 @@ class STTService:
         Returns:
             BytesIO object ready for upload
         """
-        audio_file = io.BytesIO(audio_data)
-        audio_file.name = "audio.webm"  # Fake filename for API
+        audio_file = BytesIO(audio_data)
+        audio_file.name = "audio.webm"
         audio_file.seek(0)
         return audio_file
-        
+
     async def transcribe(self, audio_data: bytes, language: str = "auto") -> str:
         """
         Transcribe audio to text
