@@ -28,6 +28,8 @@ COPY app/ /app/app/
 # Copy static files
 COPY static/ /app/static/
 
+RUN mkdir -p /app/models && chmod 777 /app/models
+
 # Copy rootfs (S6 overlay scripts)
 COPY rootfs /
 
