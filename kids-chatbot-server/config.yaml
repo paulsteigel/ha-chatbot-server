@@ -1,7 +1,7 @@
-name: School Chatbot WebSocket
-version: "1.0.64"  # ← Bump version
-slug: school-chatbot-websocket
-description: WebSocket server for ESP32 school chatbot - Yên Hoà (with Groq STT)
+name: Kids ChatBot Server
+version: "1.0.47"
+slug: kids-chatbot-server
+description: OpenAI-powered voice chatbot with context memory for kids
 url: https://github.com/paulsteigel/ha-chatbot-server
 arch:
   - aarch64
@@ -12,103 +12,88 @@ arch:
 init: false
 startup: application
 boot: auto
+hassio_api: true
+hassio_role: default
 ports:
   5000/tcp: 5000
 ports_description:
-  5000/tcp: WebSocket server port
-
-# ============================================================================
-# DEFAULT OPTIONS
-# ============================================================================
+  5000/tcp: Web interface and API
 options:
-  # === AI PROVIDER CONFIGURATION ===
-  ai_provider: "deepseek"
-  ai_model: "deepseek-chat"
-  
-  # API Keys (giữ nguyên tên biến cũ)
   openai_api_key: ""
-  openai_base_url: "https://api.openai.com/v1"
-  deepseek_api_key: ""
-  groq_api_key: ""
-  
-  # === TTS CONFIGURATION ===
-  tts_provider: "openai"
-  
-  # OpenAI TTS (giữ tên biến cũ)
-  tts_voice_vi: "nova"
-  tts_voice_en: "alloy"
-  
-  # Piper TTS (mới - tương tự structure OpenAI)
-  piper_voice_vi: "vi_VN-vais-medium"
-  piper_voice_en: "en_US-lessac-medium"
-  
-  # === STT CONFIGURATION ===
-  # (đã có groq_api_key ở trên)
-  
-  # === PROMPT CUSTOMIZATION ===
-  system_prompt: |
-    Bạn là Yên Hoà - trợ lý AI thân thiện hỗ trợ học sinh tiểu học ở Đà Bắc, Hoà Bình.
-    
-    QUY TẮC:
-    1. Luôn trả lời bằng tiếng Việt trừ khi được yêu cầu khác
-    2. Xưng hô: Chị (AI) - Em (học sinh)
-    3. Thân thiện, vui vẻ, câu ngắn gọn (2-3 câu)
-    4. Dùng emoji phù hợp 😊 💕
-    
-    LƯU Ý: Em có thể ra lệnh điều khiển:
-    - "Tắt đèn" / "Bật đèn" 💡
-    - "Tăng âm lượng" / "Giảm âm lượng" 🔊
-    - "Dừng lại" / "Tiếp tục" ▶️
-    
-    Khi em ra lệnh, chị CHỈ XÁC NHẬN NGẮN GỌN.
-    HÃY GIÚP ĐỠ CÁC EM HẾT MÌNH!
-  
-  custom_prompt: ""
-  
-  # === MYSQL LOGGING (giữ nguyên format cũ) ===
-  mysql_url: ""
-  
-  # === GENERAL SETTINGS (giữ nguyên) ===
-  temperature: 0.7
+  openai_model: gpt-4o-mini
+  openai_voice: alloy
+  bot_language: "vi"
+  port: 5000
   max_tokens: 500
-  max_context_messages: 10
-  log_level: "INFO"
-
-# ============================================================================
-# SCHEMA (Validation + UI)
-# ============================================================================
+  temperature: 0.7
+  context_enabled: true
+  context_max_messages: 20
+  context_timeout_minutes: 30
+  custom_prompt_additions: ""
 schema:
-  # === AI PROVIDER ===
-  ai_provider: list(openai|deepseek)
-  ai_model: list(gpt-4o-mini|gpt-4o|gpt-4-turbo|gpt-3.5-turbo|deepseek-chat|deepseek-reasoner)
-  
-  # === API KEYS (giữ nguyên tên) ===
-  openai_api_key: password?
-  openai_base_url: url?
-  deepseek_api_key: password?
-  groq_api_key: password?
-  
-  # === TTS ===
-  tts_provider: list(openai|piper)
-  
-  # OpenAI TTS voices
-  tts_voice_vi: list(alloy|echo|fable|onyx|nova|shimmer)?
-  tts_voice_en: list(alloy|echo|fable|onyx|nova|shimmer)?
-  
-  # Piper TTS voices (Vietnamese + English)
-  piper_voice_vi: list(vi_VN-vais-low|vi_VN-vais-medium|vi_VN-vais-high|vi_VN-25hours-single)?
-  piper_voice_en: list(en_US-lessac-medium|en_US-amy-medium|en_GB-alan-medium|en_GB-southern_english_female-medium)?
-  
-  # === PROMPTS ===
-  system_prompt: text?
-  custom_prompt: text?
-  
-  # === MYSQL (giữ nguyên) ===
-  mysql_url: str?
-  
-  # === GENERAL (giữ nguyên) ===
-  temperature: float(0.0,2.0)?
-  max_tokens: int(50,4000)?
-  max_context_messages: int(1,50)?
-  log_level: list(DEBUG|INFO|WARNING|ERROR)?
+  openai_api_key: password
+  openai_model: list(gpt-4o-mini|gpt-4o|gpt-4-turbo|gpt-3.5-turbo)
+  openai_voice: list(alloy|echo|fable|onyx|nova|shimmer)
+  bot_language: list(vi|en|auto)
+  port: port
+  max_tokens: int(100,2000)
+  temperature: float(0.0,2.0)
+  context_enabled: bool
+  context_max_messages: int(5,50)
+  context_timeout_minutes: int(5,120)
+  custom_prompt_additions: str
 
+voice_vietnamese:
+  name: "Voice for Vietnamese"
+  description: "Choose voice for Vietnamese responses (alloy=neutral male, nova=female)"
+  type: list
+  default: alloy
+  options:
+    - alloy
+    - echo
+    - fable
+    - onyx
+    - nova
+    - shimmer
+
+voice_english:
+  name: "Voice for English"
+  description: "Choose voice for English responses (nova=female, alloy=neutral male)"
+  type: list
+  default: nova
+  options:
+    - alloy
+    - echo
+    - fable
+    - onyx
+    - nova
+    - shimmer
+db_host:
+  name: "Database Host"
+  description: "MySQL server hostname/IP"
+  type: str
+  default: "192.168.100.251"
+
+db_user:
+  name: "Database User"
+  description: "MySQL username"
+  type: str
+  default: "paulsteigel"
+
+db_password:
+  name: "Database Password"
+  description: "MySQL password"
+  type: password
+  default: ""
+
+db_name:
+  name: "Database Name"
+  description: "MySQL database name"
+  type: str
+  default: "homeassistant"
+
+context_persist:
+  name: "Persist Conversations"
+  description: "Save conversation history to MySQL for future summarization"
+  type: boolean
+  default: true
