@@ -18,7 +18,7 @@ from app.device_manager import DeviceManager
 from app.ota_manager import OTAManager
 from app.websocket_handler import WebSocketHandler
 from app.conversation_logger import ConversationLogger
-from app.config import SYSTEM_PROMPT, AI_CONFIG, TTS_CONFIG, STT_CONFIG
+from app.config import SYSTEM_PROMPT, AI_CONFIG, TTS_CONFIG, STT_CONFIG, AI_MODELS
 
 # ==============================================================================
 # Configuration Helper
