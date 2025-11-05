@@ -283,19 +283,19 @@ class WebSocketHandler:
             await self.send_error(data.get("device_id"), f"Clear history error: {e}")
     
     async def send_message(self, device_id: str, message: Dict):
-    """Send message to device"""
-    try:
-        websocket = self.device_manager.get_connection(device_id)
-        if websocket:
-            # ADD LOGGING HERE ↓
-            self.logger.info(f"📤 Sending '{message.get('type')}' to {device_id}")
-            await websocket.send_text(json.dumps(message))
-            self.logger.debug(f"✅ Message sent successfully")
-        else:
-            self.logger.warning(f"⚠️ No connection for device: {device_id}")
-            
-    except Exception as e:
-        self.logger.error(f"❌ Send message error: {e}", exc_info=True)
+        """Send message to device"""
+        try:
+            websocket = self.device_manager.get_connection(device_id)
+            if websocket:
+                # ADD LOGGING HERE ↓
+                self.logger.info(f"📤 Sending '{message.get('type')}' to {device_id}")
+                await websocket.send_text(json.dumps(message))
+                self.logger.debug(f"✅ Message sent successfully")
+            else:
+                self.logger.warning(f"⚠️ No connection for device: {device_id}")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Send message error: {e}", exc_info=True)
 
     
     async def send_error(self, device_id: str, error: str):
