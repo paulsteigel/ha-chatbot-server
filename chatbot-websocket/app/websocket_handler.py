@@ -70,6 +70,7 @@ class WebSocketHandler:
         handlers = {
             "register": self.handle_register,
             "text": self.handle_text,
+            "chat": self.handle_chat,  # ← THÊM HANDLER CHO "chat" TỪ WEB
             "voice": self.handle_voice,
             "ping": self.handle_ping,
             "get_devices": self.handle_get_devices,
@@ -114,8 +115,43 @@ class WebSocketHandler:
             self.logger.error(f"❌ Registration error: {e}", exc_info=True)
             await self.send_error(data.get("device_id"), f"Registration error: {e}")
     
+    async def handle_chat(self, data: Dict):
+        """Handle chat message from web interface"""
+        try:
+            device_id = data.get("device_id")
+            text = data.get("text", "")
+            language = data.get("language", "auto")
+            
+            if not text:
+                await self.send_error(device_id, "Empty text message")
+                return
+            
+            self.logger.info(f"💬 Chat from {device_id}: {text}")
+            
+            # Get AI response
+            ai_response = await self.ai_service.chat(text)
+            
+            if not ai_response:
+                await self.send_error(device_id, "AI service error")
+                return
+            
+            # Generate TTS audio
+            audio_base64 = await self.tts_service.synthesize(ai_response, language)
+            
+            # Send response
+            await self.send_message(device_id, {
+                "type": "chat_response",
+                "text": ai_response,
+                "audio": audio_base64,
+                "audio_format": "mp3"
+            })
+            
+        except Exception as e:
+            self.logger.error(f"❌ Chat error: {e}", exc_info=True)
+            await self.send_error(device_id, f"Chat error: {e}")
+    
     async def handle_text(self, data: Dict):
-        """Handle text message"""
+        """Handle text message from ESP32"""
         try:
             device_id = data.get("device_id")
             text = data.get("text", "")
@@ -126,7 +162,7 @@ class WebSocketHandler:
             
             self.logger.info(f"💬 Text from {device_id}: {text}")
             
-            # Get AI response - CHỈ TRUYỀN 1 THAM SỐ
+            # Get AI response
             ai_response = await self.ai_service.chat(text)
             
             if not ai_response:
@@ -140,11 +176,10 @@ class WebSocketHandler:
             })
             
             # Generate audio response
-            audio_data = await self.tts_service.text_to_speech(ai_response)
+            audio_base64 = await self.tts_service.synthesize(ai_response, "auto")
             
-            if audio_data:
+            if audio_base64:
                 # Send audio response
-                audio_base64 = base64.b64encode(audio_data).decode('utf-8')
                 await self.send_message(device_id, {
                     "type": "audio",
                     "audio": audio_base64,
@@ -152,26 +187,27 @@ class WebSocketHandler:
                 })
             
         except Exception as e:
-            self.logger.error(f"❌ Chat error: {e}", exc_info=True)
-            await self.send_error(device_id, f"Chat error: {e}")
+            self.logger.error(f"❌ Text error: {e}", exc_info=True)
+            await self.send_error(device_id, f"Text error: {e}")
     
     async def handle_voice(self, data: Dict):
         """Handle voice message"""
         try:
             device_id = data.get("device_id")
             audio_base64 = data.get("audio")
+            audio_format = data.get("format", "webm")
             language = data.get("language", "auto")
             
             if not audio_base64:
                 await self.send_error(device_id, "Missing audio data")
                 return
             
-            self.logger.info(f"🎤 Voice from {device_id} (language: {language})")
+            self.logger.info(f"🎤 Voice from {device_id} (format: {audio_format}, language: {language})")
             
             # Decode audio
             audio_data = base64.b64decode(audio_base64)
             
-            # Transcribe audio - CHỈ TRUYỀN 2 THAM SỐ
+            # Transcribe audio
             text = await self.stt_service.transcribe(audio_data, language)
             
             if not text:
@@ -180,14 +216,24 @@ class WebSocketHandler:
             
             self.logger.info(f"📝 Transcription: {text}")
             
-            # Send transcription
-            await self.send_message(device_id, {
-                "type": "transcription",
-                "text": text
-            })
+            # Get AI response
+            ai_response = await self.ai_service.chat(text)
             
-            # Process with AI
-            await self.handle_text({"device_id": device_id, "text": text})
+            if not ai_response:
+                await self.send_error(device_id, "AI service error")
+                return
+            
+            # Generate TTS audio
+            response_audio = await self.tts_service.synthesize(ai_response, language)
+            
+            # Send voice response
+            await self.send_message(device_id, {
+                "type": "voice_response",
+                "transcribed_text": text,
+                "text": ai_response,
+                "audio": response_audio,
+                "audio_format": "mp3"
+            })
             
         except Exception as e:
             self.logger.error(f"❌ Voice error: {e}", exc_info=True)
@@ -244,7 +290,7 @@ class WebSocketHandler:
         """Send error message to device"""
         await self.send_message(device_id, {
             "type": "error",
-            "error": error
+            "message": error
         })
     
     async def broadcast(self, message: Dict, exclude_device: Optional[str] = None):
