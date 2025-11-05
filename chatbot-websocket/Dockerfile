@@ -11,6 +11,9 @@ RUN apk add --no-cache \
     py3-setuptools \
     py3-wheel \
     ffmpeg \
+    gcc \
+    musl-dev \
+    mariadb-dev \
     && rm -rf /var/cache/apk/*
 
 # Set working directory
