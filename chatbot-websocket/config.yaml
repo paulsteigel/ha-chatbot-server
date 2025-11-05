@@ -38,80 +38,21 @@ options:
   log_level: INFO
 
 schema:
-  ai_provider:
-    type: list
-    options:
-      - openai
-      - deepseek
-  ai_model:
-    type: list
-    options:
-      - gpt-4o-mini
-      - gpt-4o
-      - gpt-4-turbo
-      - gpt-3.5-turbo
-      - deepseek-chat
-      - deepseek-reasoner
-  openai_api_key: password
-  openai_base_url: url
-  deepseek_api_key: password
-  groq_api_key: password
-  tts_provider:
-    type: list
-    options:
-      - openai
-      - piper
-  tts_voice_vi:
-    type: list
-    options:
-      - alloy
-      - echo
-      - fable
-      - onyx
-      - nova
-      - shimmer
-  tts_voice_en:
-    type: list
-    options:
-      - alloy
-      - echo
-      - fable
-      - onyx
-      - nova
-      - shimmer
-  piper_voice_vi:
-    type: list
-    options:
-      - vi_VN-vais-low
-      - vi_VN-vais-medium
-      - vi_VN-vais-high
-      - vi_VN-25hours-single
-  piper_voice_en:
-    type: list
-    options:
-      - en_US-lessac-medium
-      - en_US-amy-medium
-      - en_GB-alan-medium
-      - en_GB-southern_english_female-medium
-  system_prompt: str
-  custom_prompt: str
-  mysql_url: str
-  temperature:
-    type: float
-    min: 0.0
-    max: 2.0
-  max_tokens:
-    type: int
-    min: 50
-    max: 4000
-  max_context_messages:
-    type: int
-    min: 1
-    max: 50
-  log_level:
-    type: list
-    options:
-      - DEBUG
-      - INFO
-      - WARNING
-      - ERROR
+  ai_provider: list(openai|deepseek)
+  ai_model: list(gpt-4o-mini|gpt-4o|gpt-4-turbo|gpt-3.5-turbo|deepseek-chat|deepseek-reasoner)
+  openai_api_key: password?
+  openai_base_url: url?
+  deepseek_api_key: password?
+  groq_api_key: password?
+  tts_provider: list(openai|piper)
+  tts_voice_vi: list(alloy|echo|fable|onyx|nova|shimmer)
+  tts_voice_en: list(alloy|echo|fable|onyx|nova|shimmer)
+  piper_voice_vi: list(vi_VN-vais-low|vi_VN-vais-medium|vi_VN-vais-high|vi_VN-25hours-single)
+  piper_voice_en: list(en_US-lessac-medium|en_US-amy-medium|en_GB-alan-medium|en_GB-southern_english_female-medium)
+  system_prompt: str?
+  custom_prompt: str?
+  mysql_url: str?
+  temperature: float(0.0,2.0)?
+  max_tokens: int(50,4000)?
+  max_context_messages: int(1,50)?
+  log_level: list(DEBUG|INFO|WARNING|ERROR)?
