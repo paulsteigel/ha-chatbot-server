@@ -1,5 +1,5 @@
 name: School Chatbot WebSocket
-version: "1.0.44"  # ← Bump version
+version: "1.0.45"  # ← Bump version
 slug: school-chatbot-websocket
 description: WebSocket server for ESP32 school chatbot - Yên Hoà (with Groq STT)
 url: https://github.com/paulsteigel/ha-chatbot-server
