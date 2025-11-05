@@ -99,13 +99,7 @@ class AIService:
         except Exception as e:
             self.logger.warning(f"⚠️ AI test skipped: {e}")
     
-    async def chat(
-        self, 
-        user_message: str,
-        conversation_logger=None,
-        device_id: str = None,
-        device_type: str = None
-    ) -> str:
+    async def chat(self, user_message: str, conversation_logger=None, device_id: str = None, device_type: str = None) -> str:
         """
         Send a chat message and get AI response
         
