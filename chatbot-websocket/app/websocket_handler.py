@@ -207,7 +207,7 @@ class WebSocketHandler:
             # Decode audio
             audio_data = base64.b64decode(audio_base64)
             
-            # === STEP 1: TRANSCRIBE AUDIO ===
+            # STEP 1: TRANSCRIBE
             text = await self.stt_service.transcribe(audio_data, language)
             
             if not text:
@@ -216,23 +216,25 @@ class WebSocketHandler:
             
             self.logger.info(f"📝 Transcription: {text}")
             
-            # === STEP 2: SEND TRANSCRIPTION IMMEDIATELY! ===
+            # STEP 2: SEND TRANSCRIPTION IMMEDIATELY ← KIỂM TRA DÒNG NÀY
+            self.logger.info(f"📨 Sending transcription to frontend...")
             await self.send_message(device_id, {
                 "type": "transcription",
                 "text": text
             })
             
-            # === STEP 3: GET AI RESPONSE ===
+            # STEP 3: GET AI RESPONSE
             ai_response = await self.ai_service.chat(text)
             
             if not ai_response:
                 await self.send_error(device_id, "AI service error")
                 return
             
-            # === STEP 4: GENERATE TTS ===
+            # STEP 4: GENERATE TTS
             response_audio = await self.tts_service.synthesize(ai_response, language)
             
-            # === STEP 5: SEND AI RESPONSE + AUDIO ===
+            # STEP 5: SEND AI RESPONSE ← KIỂM TRA DÒNG NÀY
+            self.logger.info(f"📨 Sending AI response to frontend...")
             await self.send_message(device_id, {
                 "type": "ai_response",
                 "text": ai_response,
@@ -281,16 +283,20 @@ class WebSocketHandler:
             await self.send_error(data.get("device_id"), f"Clear history error: {e}")
     
     async def send_message(self, device_id: str, message: Dict):
-        """Send message to device"""
-        try:
-            websocket = self.device_manager.get_connection(device_id)
-            if websocket:
-                await websocket.send_text(json.dumps(message))
-            else:
-                self.logger.warning(f"⚠️ No connection for device: {device_id}")
-                
-        except Exception as e:
-            self.logger.error(f"❌ Send message error: {e}", exc_info=True)
+    """Send message to device"""
+    try:
+        websocket = self.device_manager.get_connection(device_id)
+        if websocket:
+            # ADD LOGGING HERE ↓
+            self.logger.info(f"📤 Sending '{message.get('type')}' to {device_id}")
+            await websocket.send_text(json.dumps(message))
+            self.logger.debug(f"✅ Message sent successfully")
+        else:
+            self.logger.warning(f"⚠️ No connection for device: {device_id}")
+            
+    except Exception as e:
+        self.logger.error(f"❌ Send message error: {e}", exc_info=True)
+
     
     async def send_error(self, device_id: str, error: str):
         """Send error message to device"""

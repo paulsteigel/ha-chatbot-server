@@ -490,7 +490,12 @@
                     showTypingIndicator();
                     break;
 
-                // === UPDATED: HANDLE AI RESPONSE ===
+                case 'ai_response':
+                    console.log('🤖 AI response received:', data.text);
+                    removeTypingIndicator();
+                    addMessage('bot', data.text);
+                    if (data.audio) playAudio(data.audio, data.audio_format || 'mp3');
+                    break;
                 
                 case 'chat_response':
                     addMessage('bot', data.text);
