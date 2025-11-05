@@ -18,6 +18,7 @@ from app.device_manager import DeviceManager
 from app.ota_manager import OTAManager
 from app.websocket_handler import WebSocketHandler
 from app.conversation_logger import ConversationLogger
+from app.config import SYSTEM_PROMPT, AI_CONFIG, TTS_CONFIG, STT_CONFIG
 
 # ==============================================================================
 # Configuration Helper
@@ -69,7 +70,15 @@ PORT = int(os.getenv('PORT', '5000'))
 # AI configuration
 AI_PROVIDER = get_config('ai_provider', 'openai')
 AI_MODEL = get_config('ai_model', 'gpt-4o-mini')
-SYSTEM_PROMPT = get_config('system_prompt', 'You are a helpful AI assistant.')
+
+SYSTEM_PROMPT_OVERRIDE = get_config('system_prompt', None)
+if SYSTEM_PROMPT_OVERRIDE:
+    SYSTEM_PROMPT = SYSTEM_PROMPT_OVERRIDE
+    logger.info("💬 Using custom system prompt from Home Assistant options")
+else:
+    logger.info("💬 Using default system prompt from config.py")
+
+logger.info(f"💬 System Prompt: {SYSTEM_PROMPT[:100]}...")
 
 # Chat configuration
 CHAT_TEMPERATURE = float(get_config('temperature', 0.7))

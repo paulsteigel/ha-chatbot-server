@@ -93,45 +93,55 @@ class STTService:
             Transcribed text
         """
         import time
+        import asyncio
         start_time = time.time()
         
         try:
             self.logger.info(f"🎤 Transcribing audio ({len(audio_data)} bytes, language: {language})...")
             
-            # Convert to format Whisper likes
+            # Prepare audio
             audio_file = self._prepare_audio(audio_data)
             
-            # GROQ API CALL WITH LANGUAGE HINT
+            # GROQ API CALL (SYNC - Need executor!)
             if self.use_groq:
                 # Map language codes
                 language_map = {
-                    "auto": None,  # Let Groq decide
-                    "vi": "vi",    # Vietnamese
-                    "en": "en",    # English
+                    "auto": None,
+                    "vi": "vi",
+                    "en": "en",
                 }
                 
                 groq_language = language_map.get(language, None)
                 
-                # Build request params
-                request_params = {
-                    "file": ("audio.webm", audio_file, "audio/webm"),
-                    "model": self.model,
-                    "response_format": "text"
-                }
+                # Groq is SYNC - run in thread executor
+                def _groq_sync_call():
+                    # Reset file pointer
+                    audio_file.seek(0)
+                    
+                    # Build params
+                    kwargs = {
+                        "file": ("audio.webm", audio_file, "audio/webm"),
+                        "model": self.model,
+                        "response_format": "text"
+                    }
+                    
+                    if groq_language:
+                        kwargs["language"] = groq_language
+                        self.logger.info(f"🌍 Using language hint: {groq_language}")
+                    
+                    if language == "vi" or language == "auto":
+                        kwargs["prompt"] = "Đây là tiếng Việt."
+                    
+                    # SYNC call (no await!)
+                    return self.client.audio.transcriptions.create(**kwargs)
                 
-                # Add language if specified
-                if groq_language:
-                    request_params["language"] = groq_language
-                    self.logger.info(f"🌍 Using language hint: {groq_language}")
-                
-                # Add prompt to help with Vietnamese
-                if language == "vi" or language == "auto":
-                    request_params["prompt"] = "Đây là tiếng Việt. This is Vietnamese language."
-                
-                response = await self.client.audio.transcriptions.create(**request_params)
+                # Run sync function in executor
+                loop = asyncio.get_event_loop()
+                response = await loop.run_in_executor(None, _groq_sync_call)
                 
             else:
-                # OpenAI API
+                # OpenAI API (ASYNC)
+                audio_file.seek(0)
                 response = await self.client.audio.transcriptions.create(
                     file=("audio.webm", audio_file, "audio/webm"),
                     model=self.model,
@@ -139,6 +149,7 @@ class STTService:
                     prompt="Đây là tiếng Việt." if language == "vi" else None
                 )
             
+            # Extract text
             text = response.strip() if isinstance(response, str) else response.text.strip()
             
             elapsed = time.time() - start_time
