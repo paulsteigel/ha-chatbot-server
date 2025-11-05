@@ -16,7 +16,37 @@ from app.stt_service import STTService
 from app.device_manager import DeviceManager
 from app.ota_manager import OTAManager
 from app.websocket_handler import WebSocketHandler
+from app.conversation_logger import ConversationLogger
 
+# ==============================================================================
+# Configuration Helper
+# ==============================================================================
+
+def get_config(key: str, default=None):
+    """
+    Get configuration value from Home Assistant options.json or environment
+    
+    Priority:
+    1. Home Assistant options.json (when running as HA add-on)
+    2. Environment variable
+    3. Default value
+    """
+    # Try Home Assistant options first
+    options_file = "/data/options.json"
+    if os.path.exists(options_file):
+        try:
+            with open(options_file, 'r') as f:
+                options = json.load(f)
+                if key in options:
+                    value = options[key]
+                    if value:  # Only return if not empty
+                        return value
+        except Exception as e:
+            pass  # Silently fail, will try environment
+    
+    # Fallback to environment variable
+    env_key = key.upper()
+    return os.getenv(env_key, default)
 
 # ==============================================================================
 # Configuration
@@ -35,7 +65,7 @@ HOST = os.getenv('HOST', '0.0.0.0')
 PORT = int(os.getenv('PORT', '5000'))
 
 # AI configuration
-AI_PROVIDER = os.getenv('AI_PROVIDER', 'openai')
+AI_PROVIDER = get_config('ai_provider', 'openai')
 AI_MODEL = os.getenv('AI_MODEL', 'gpt-4o-mini')
 SYSTEM_PROMPT = os.getenv('SYSTEM_PROMPT', 'You are a helpful AI assistant.')
 
@@ -50,7 +80,8 @@ OPENAI_BASE_URL = os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1')
 DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY', '')
 DEEPSEEK_BASE_URL = os.getenv('DEEPSEEK_BASE_URL', 'https://api.deepseek.com/v1')
 
-
+# MySQL configuration
+MYSQL_URL = get_config('mysql_url', '')
 # ==============================================================================
 # Service Instances (Global)
 # ==============================================================================
@@ -61,6 +92,7 @@ stt_service = None
 device_manager = None
 ota_manager = None
 ws_handler = None
+conversation_logger = None  # ← NEW: Conversation logger
 
 
 # ==============================================================================
@@ -72,18 +104,8 @@ async def lifespan(app: FastAPI):
     """
     Lifespan context manager for application startup and shutdown
     """
-    global device_manager, ota_manager, ai_service, tts_service, stt_service, ws_handler
+    global device_manager, ota_manager, ai_service, tts_service, stt_service, ws_handler, conversation_logger
     
-    # Initialize WebSocket handler
-    ws_handler = WebSocketHandler(
-        device_manager=device_manager,
-        ai_service=ai_service,
-        tts_service=tts_service,
-        stt_service=stt_service,
-        ota_manager=ota_manager
-    )
-    # Command detector đã khởi tạo trong WebSocketHandler.__init__()
-
     logger.info("=" * 80)
     logger.info("🚀 SCHOOL CHATBOT WEBSOCKET SERVER")
     logger.info("=" * 80)
@@ -120,7 +142,18 @@ async def lifespan(app: FastAPI):
             base_url=OPENAI_BASE_URL,
             model="whisper-1"
         )
-
+        
+        # Initialize Conversation Logger (MySQL)
+        if MYSQL_URL:
+            try:
+                logger.info("💾 Initializing Conversation Logger...")
+                conversation_logger = ConversationLogger(MYSQL_URL)
+                await conversation_logger.connect()
+            except Exception as e:
+                logger.warning(f"⚠️ MySQL logger disabled: {e}")
+                conversation_logger = None
+        else:
+            logger.info("⚠️ MYSQL_URL not set, conversation logging disabled")
         
         # Initialize WebSocket Handler
         logger.info("🔌 Initializing WebSocket Handler...")
@@ -129,9 +162,9 @@ async def lifespan(app: FastAPI):
             ota_manager=ota_manager,
             ai_service=ai_service,
             tts_service=tts_service,
-            stt_service=stt_service
+            stt_service=stt_service,
+            conversation_logger=conversation_logger  # ← Pass logger
         )
-
         
         logger.info("=" * 80)
         logger.info("✅ ALL SERVICES INITIALIZED SUCCESSFULLY")
@@ -149,6 +182,15 @@ async def lifespan(app: FastAPI):
     
     finally:
         logger.info("🛑 Shutting down services...")
+        
+        # Close MySQL connection
+        if conversation_logger:
+            try:
+                await conversation_logger.close()
+                logger.info("💾 MySQL connection closed")
+            except Exception as e:
+                logger.error(f"❌ MySQL close error: {e}")
+        
         logger.info("✅ Shutdown complete")
 
 
@@ -223,7 +265,8 @@ async def health_check():
             "stt": stt_service is not None,
             "device_manager": device_manager is not None,
             "ota_manager": ota_manager is not None,
-            "websocket_handler": ws_handler is not None
+            "websocket_handler": ws_handler is not None,
+            "conversation_logger": conversation_logger is not None
         },
         "devices": device_count,
         "active_connections": active_connections
@@ -265,11 +308,33 @@ async def get_status():
             "version": "1.0.0",
             "ai_provider": AI_PROVIDER,
             "ai_model": AI_MODEL,
+            "mysql_logging": conversation_logger is not None
         },
         "devices": stats,
         "active_connections": active_connections,
         "active_device_ids": active_devices
     })
+
+
+@app.get("/api/conversations")
+async def get_conversations(device_id: str = None, limit: int = 50):
+    """Get conversation history from MySQL"""
+    if not conversation_logger:
+        return JSONResponse({
+            "error": "Conversation logging not enabled"
+        }, status_code=503)
+    
+    try:
+        history = await conversation_logger.get_history(device_id, limit)
+        return JSONResponse({
+            "conversations": history,
+            "count": len(history)
+        })
+    except Exception as e:
+        logger.error(f"❌ Get conversations error: {e}")
+        return JSONResponse({
+            "error": str(e)
+        }, status_code=500)
 
 
 # ==============================================================================
@@ -278,8 +343,8 @@ async def get_status():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for device connections"""
     # Generate unique device ID
-    import uuid
     device_id = f"web-{id(websocket)}"
     await ws_handler.handle_connection(websocket, device_id)
 

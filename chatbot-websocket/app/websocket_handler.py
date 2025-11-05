@@ -5,6 +5,7 @@ WebSocket Handler - Handles WebSocket connections and messages
 import logging
 import json
 import base64
+import asyncio
 from typing import Dict, Optional
 from fastapi import WebSocket, WebSocketDisconnect
 from app.command_detector import CommandDetector
@@ -13,7 +14,15 @@ from app.command_detector import CommandDetector
 class WebSocketHandler:
     """WebSocket handler for managing device connections and messages"""
     
-    def __init__(self, device_manager, ota_manager, ai_service, tts_service, stt_service):
+    def __init__(
+        self, 
+        device_manager, 
+        ota_manager, 
+        ai_service, 
+        tts_service, 
+        stt_service,
+        conversation_logger=None  # ← THÊM PARAMETER
+    ):
         """Initialize WebSocket Handler"""
         self.logger = logging.getLogger('WebSocketHandler')
         self.device_manager = device_manager
@@ -21,23 +30,40 @@ class WebSocketHandler:
         self.ai_service = ai_service
         self.tts_service = tts_service
         self.stt_service = stt_service
+        self.conversation_logger = conversation_logger  # ← LƯU LOGGER
         self.command_detector = CommandDetector()
         self.logger.info("🔌 WebSocket Handler initialized")
     
     async def handle_connection(self, websocket: WebSocket, device_id: str):
         """Handle WebSocket connection"""
         try:
+            # STEP 1: Accept connection first
             await websocket.accept()
             self.logger.info(f"📱 New WebSocket connection: {device_id}")
             
-            # Store connection
+            # STEP 2: Store connection
             await self.device_manager.add_connection(device_id, websocket)
             
-            # Handle messages
+            # STEP 3: Handle messages
             while True:
                 try:
-                    # Receive message
-                    data = await websocket.receive_text()
+                    # Check if websocket is still connected
+                    if websocket.client_state.name != "CONNECTED":
+                        self.logger.warning(f"⚠️ WebSocket not connected: {device_id}")
+                        break
+                    
+                    # Receive message with timeout
+                    try:
+                        data = await asyncio.wait_for(
+                            websocket.receive_text(),
+                            timeout=300.0  # 5 minutes timeout
+                        )
+                    except asyncio.TimeoutError:
+                        self.logger.warning(f"⏱️ Timeout waiting for message from {device_id}")
+                        # Send ping to check if still alive
+                        await self.send_message(device_id, {"type": "ping"})
+                        continue
+                    
                     message = json.loads(data)
                     
                     self.logger.info(f"📨 Message from {device_id}: {message.get('type', 'unknown')}")
@@ -55,16 +81,26 @@ class WebSocketHandler:
                     
                 except Exception as e:
                     self.logger.error(f"❌ Message handling error: {e}", exc_info=True)
-                    await self.send_error(device_id, str(e))
+                    # Don't send error if connection is already closed
+                    if websocket.client_state.name == "CONNECTED":
+                        await self.send_error(device_id, str(e))
+                    else:
+                        break
                     
+        except RuntimeError as e:
+            if "WebSocket is not connected" in str(e):
+                self.logger.warning(f"⚠️ WebSocket connection failed for {device_id}")
+            else:
+                self.logger.error(f"❌ Connection error: {e}", exc_info=True)
+                
         except Exception as e:
             self.logger.error(f"❌ Connection error: {e}", exc_info=True)
             
         finally:
-            # Remove connection
+            # STEP 4: Cleanup
             await self.device_manager.remove_connection(device_id)
             self.logger.info(f"📱 Connection closed: {device_id}")
-    
+  
     async def route_message(self, device_id: str, message: Dict):
         """Route message to appropriate handler"""
         message_type = message.get("type")
@@ -72,7 +108,7 @@ class WebSocketHandler:
         handlers = {
             "register": self.handle_register,
             "text": self.handle_text,
-            "chat": self.handle_chat,  # ← THÊM HANDLER CHO "chat" TỪ WEB
+            "chat": self.handle_chat,
             "voice": self.handle_voice,
             "ping": self.handle_ping,
             "get_devices": self.handle_get_devices,
@@ -130,8 +166,17 @@ class WebSocketHandler:
             
             self.logger.info(f"💬 Chat from {device_id}: {text}")
             
-            # Get AI response
-            ai_response = await self.ai_service.chat(text)
+            # Get device info
+            device_info = self.device_manager.devices.get(device_id, {})
+            device_type = device_info.get('type', 'unknown')
+            
+            # Get AI response WITH MYSQL LOGGING
+            ai_response = await self.ai_service.chat(
+                user_message=text,
+                conversation_logger=self.conversation_logger,
+                device_id=device_id,
+                device_type=device_type
+            )
             
             if not ai_response:
                 await self.send_error(device_id, "AI service error")
@@ -164,8 +209,17 @@ class WebSocketHandler:
             
             self.logger.info(f"💬 Text from {device_id}: {text}")
             
-            # Get AI response
-            ai_response = await self.ai_service.chat(text)
+            # Get device info
+            device_info = self.device_manager.devices.get(device_id, {})
+            device_type = device_info.get('type', 'unknown')
+            
+            # Get AI response WITH MYSQL LOGGING
+            ai_response = await self.ai_service.chat(
+                user_message=text,
+                conversation_logger=self.conversation_logger,
+                device_id=device_id,
+                device_type=device_type
+            )
             
             if not ai_response:
                 await self.send_error(device_id, "AI service error")
@@ -198,7 +252,7 @@ class WebSocketHandler:
             device_id = data.get("device_id")
             audio_base64 = data.get("audio")
             audio_format = data.get("format", "webm")
-            language = data.get("language", "auto")
+            language = data.get("language", "vi")  # ← DEFAULT VI
             
             if not audio_base64:
                 await self.send_error(device_id, "Missing audio data")
@@ -218,27 +272,70 @@ class WebSocketHandler:
             
             self.logger.info(f"📝 Transcription: {text}")
             
-            # STEP 2: SEND TRANSCRIPTION IMMEDIATELY ← KIỂM TRA DÒNG NÀY
+            # STEP 2: SEND TRANSCRIPTION
             self.logger.info(f"📨 Sending transcription to frontend...")
             await self.send_message(device_id, {
                 "type": "transcription",
                 "text": text
             })
 
-            # STEP 2.1: COMMAND CONTROL IF ANY
+            # STEP 3: CHECK FOR COMMANDS
             command = self.command_detector.detect(text)
 
-            # STEP 3: GET AI RESPONSE
-            ai_response = await self.ai_service.chat(text)
+            if command:
+                self.logger.info(f"🎯 Command detected: {command['command']} -> {command['action']}")
+                
+                # Send command to device
+                await self.send_message(device_id, {
+                    "type": "command",
+                    "command": command["command"],
+                    "action": command["action"],
+                    "value": command["value"]
+                })
+                
+                # Quick responses (no AI needed!)
+                quick_responses = {
+                    "volume_up": "Đã tăng âm lượng! 🔊",
+                    "volume_down": "Đã giảm âm lượng! 🔉",
+                    "light_on": "Đã bật đèn! 💡",
+                    "light_off": "Đã tắt đèn! 🌙",
+                    "stop": "Dừng lại! 🛑",
+                    "continue": "Tiếp tục! ▶️",
+                    "fan_on": "Đã bật quạt! 🌀",
+                    "fan_off": "Đã tắt quạt! ⭕",
+                }
+                
+                response_text = quick_responses.get(command["command"], "Đã thực hiện!")
+                
+                # Send response (no TTS, no AI!)
+                await self.send_message(device_id, {
+                    "type": "command_response",
+                    "text": response_text
+                })
+                
+                self.logger.info(f"✅ Command executed: {response_text}")
+                
+                return  # ← STOP HERE!
+
+            # STEP 4: GET AI RESPONSE WITH MYSQL LOGGING
+            device_info = self.device_manager.devices.get(device_id, {})
+            device_type = device_info.get('type', 'unknown')
+            
+            ai_response = await self.ai_service.chat(
+                user_message=text,
+                conversation_logger=self.conversation_logger,
+                device_id=device_id,
+                device_type=device_type
+            )
             
             if not ai_response:
                 await self.send_error(device_id, "AI service error")
                 return
             
-            # STEP 4: GENERATE TTS
+            # STEP 5: GENERATE TTS
             response_audio = await self.tts_service.synthesize(ai_response, language)
             
-            # STEP 5: SEND AI RESPONSE ← KIỂM TRA DÒNG NÀY
+            # STEP 6: SEND AI RESPONSE
             self.logger.info(f"📨 Sending AI response to frontend...")
             await self.send_message(device_id, {
                 "type": "ai_response",
@@ -250,7 +347,6 @@ class WebSocketHandler:
         except Exception as e:
             self.logger.error(f"❌ Voice error: {e}", exc_info=True)
             await self.send_error(device_id, f"Voice error: {e}")
-
     
     async def handle_ping(self, data: Dict):
         """Handle ping message"""
@@ -287,12 +383,11 @@ class WebSocketHandler:
             self.logger.error(f"❌ Clear history error: {e}", exc_info=True)
             await self.send_error(data.get("device_id"), f"Clear history error: {e}")
     
-    async def send_message(self, device_id: str, message: Dict):
+    async def old_send_message(self, device_id: str, message: Dict):
         """Send message to device"""
         try:
             websocket = self.device_manager.get_connection(device_id)
             if websocket:
-                # ADD LOGGING HERE ↓
                 self.logger.info(f"📤 Sending '{message.get('type')}' to {device_id}")
                 await websocket.send_text(json.dumps(message))
                 self.logger.debug(f"✅ Message sent successfully")
@@ -301,8 +396,38 @@ class WebSocketHandler:
                 
         except Exception as e:
             self.logger.error(f"❌ Send message error: {e}", exc_info=True)
-
     
+    async def send_message(self, device_id: str, message: Dict):
+        """Send message to device with connection check"""
+        try:
+            websocket = self.device_manager.get_connection(device_id)
+            
+            if not websocket:
+                self.logger.warning(f"⚠️ No connection for device: {device_id}")
+                return False
+            
+            # Check if websocket is still connected
+            if websocket.client_state.name != "CONNECTED":
+                self.logger.warning(f"⚠️ WebSocket not connected for {device_id}")
+                return False
+            
+            # Send message
+            self.logger.info(f"📤 Sending '{message.get('type')}' to {device_id}")
+            await websocket.send_text(json.dumps(message))
+            self.logger.debug(f"✅ Message sent successfully")
+            return True
+            
+        except RuntimeError as e:
+            if "Cannot call" in str(e) or "close message" in str(e):
+                self.logger.warning(f"⚠️ Connection closed for {device_id}")
+            else:
+                self.logger.error(f"❌ Send message error: {e}")
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"❌ Send message error: {e}", exc_info=True)
+            return False
+
     async def send_error(self, device_id: str, error: str):
         """Send error message to device"""
         await self.send_message(device_id, {

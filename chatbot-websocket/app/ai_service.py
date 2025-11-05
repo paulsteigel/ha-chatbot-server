@@ -4,6 +4,7 @@ AI Service - Handles chat with AI providers (OpenAI/DeepSeek)
 
 import os
 import logging
+import time
 from typing import List, Dict, Optional
 from openai import AsyncOpenAI
 
@@ -43,11 +44,14 @@ class AIService:
         self.max_tokens = max_tokens
         self.max_context = max_context
         
+        # Detect provider
+        self.provider = 'deepseek' if 'deepseek' in base_url.lower() else 'openai'
+        
         # Conversation history
         self.conversation_history: List[Dict[str, str]] = []
         
         self.logger.info("🤖 Initializing AI Service...")
-        self.logger.info(f"   Provider: {'deepseek' if 'deepseek' in base_url else 'openai'}")
+        self.logger.info(f"   Provider: {self.provider}")
         self.logger.info(f"   Model: {model}")
         self.logger.info(f"   Base URL: {base_url}")
         self.logger.info(f"   Temperature: {temperature}")
@@ -95,17 +99,32 @@ class AIService:
         except Exception as e:
             self.logger.warning(f"⚠️ AI test skipped: {e}")
     
-    async def chat(self, user_message: str) -> str:
+    async def chat(
+        self, 
+        user_message: str,
+        conversation_logger=None,
+        device_id: str = None,
+        device_type: str = None
+    ) -> str:
         """
         Send a chat message and get AI response
         
         Args:
             user_message: User's message
+            conversation_logger: Optional MySQL logger instance
+            device_id: Optional device ID for logging
+            device_type: Optional device type for logging
         
         Returns:
             AI's response text
         """
+        # Start total timer
+        start_time = time.time()
+        
         try:
+            # Log user message
+            self.logger.info(f"💬 User: {user_message}")
+            
             # Add user message to history
             self.conversation_history.append({
                 "role": "user",
@@ -122,7 +141,9 @@ class AIService:
                 {"role": "system", "content": self.system_prompt}
             ] + self.conversation_history
             
-            self.logger.info(f"💬 User: {user_message}")
+            # Start API request timer
+            request_start = time.time()
+            self.logger.info(f"⏱️  Sending request to {self.provider.upper()}...")
             
             # Call AI API
             response = await self.client.chat.completions.create(
@@ -131,6 +152,9 @@ class AIService:
                 temperature=self.temperature,
                 max_tokens=self.max_tokens
             )
+            
+            # Calculate request time
+            request_time = time.time() - request_start
             
             # Extract response
             ai_response = response.choices[0].message.content
@@ -141,12 +165,38 @@ class AIService:
                 "content": ai_response
             })
             
+            # Calculate total time
+            total_time = time.time() - start_time
+            
+            # Enhanced logging with timing
             self.logger.info(f"🤖 AI: {ai_response}")
+            self.logger.info(f"⏱️  AI Response Time: {request_time:.2f}s (Total: {total_time:.2f}s)")
+            
+            # Warning if slow
+            if request_time > 5.0:
+                self.logger.warning(f"⚠️  Slow AI response detected! ({request_time:.2f}s)")
+            
+            # Save to MySQL if logger provided
+            if conversation_logger and device_id:
+                try:
+                    await conversation_logger.log_conversation(
+                        device_id=device_id,
+                        device_type=device_type or "unknown",
+                        user_message=user_message,
+                        ai_response=ai_response,
+                        model=self.model,
+                        provider=self.provider,
+                        response_time=request_time
+                    )
+                except Exception as log_error:
+                    self.logger.error(f"❌ MySQL log error: {log_error}")
             
             return ai_response
             
         except Exception as e:
             self.logger.error(f"❌ Chat error: {e}", exc_info=True)
+            error_time = time.time() - start_time
+            self.logger.error(f"⏱️  Failed after {error_time:.2f}s")
             return "Xin lỗi, tôi gặp lỗi khi xử lý câu hỏi của bạn. / Sorry, I encountered an error processing your question."
     
     def clear_history(self):
