@@ -65,6 +65,21 @@ class STTService:
         
         self.logger.info("✅ STT Service initialized")
     
+    def _prepare_audio(self, audio_data: bytes) -> io.BytesIO:
+        """
+        Prepare audio data for transcription
+        
+        Args:
+            audio_data: Raw audio bytes
+            
+        Returns:
+            BytesIO object ready for upload
+        """
+        audio_file = io.BytesIO(audio_data)
+        audio_file.name = "audio.webm"  # Fake filename for API
+        audio_file.seek(0)
+        return audio_file
+        
     async def transcribe(self, audio_data: bytes, language: str = "auto") -> str:
         """
         Transcribe audio to text
