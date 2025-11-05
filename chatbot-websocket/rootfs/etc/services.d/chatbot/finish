@@ -1,5 +1,15 @@
 #!/usr/bin/execlineb -S0
+# ==============================================================================
+# School Chatbot WebSocket Server - S6 Finish Script
+# Handles service termination and cleanup
+# ==============================================================================
+
+# Check exit code
+# ${1} contains the exit code of the run script
+
 if { s6-test ${1} -ne 0 }
 if { s6-test ${1} -ne 256 }
 
+# If exit code is not 0 and not 256 (normal termination)
+# then terminate all services
 s6-svscanctl -t /var/run/s6/services
