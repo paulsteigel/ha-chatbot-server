@@ -27,9 +27,9 @@ options:
   openai_base_url: "https://api.openai.com/v1"
   deepseek_api_key: ""
   
-  # TTS Settings
-  tts_voice_vi: "vi-VN-HoaiMyNeural"
-  tts_voice_en: "en-US-AriaNeural"
+  # TTS Configuration
+  tts_voice_vi: "nova"        # Giọng nữ, dễ nghe (thay vì vi-VN-HoaiMyNeural)
+  tts_voice_en: "alloy"       # Giọng trung tính (đã đúng)
   
   # Chat Settings
   system_prompt: "Bạn là trợ lý AI thân thiện tên Yên Hoà, hỗ trợ các em học sinh tiểu học ở Đà Bắc, Hoà Bình. Bạn có thể trả lời cả tiếng Việt và tiếng Anh."
