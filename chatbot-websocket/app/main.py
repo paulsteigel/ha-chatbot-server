@@ -21,7 +21,7 @@ from app.conversation_logger import ConversationLogger
 from app.config import SYSTEM_PROMPT, AI_CONFIG, TTS_CONFIG, STT_CONFIG, AI_MODELS
 
 # ==============================================================================
-# Configuration Helper
+# Configuration Helper - WITH NULL HANDLING
 # ==============================================================================
 
 def get_config(key: str, default=None):
@@ -41,14 +41,40 @@ def get_config(key: str, default=None):
                 options = json.load(f)
                 if key in options:
                     value = options[key]
-                    if value not in [None, ""]:  # Only return if not empty
+                    # ✅ FIX: Handle "null" string and None
+                    if value not in [None, "", "null", "None"]:
                         return value
         except Exception:
             pass  # Silently fail, will try environment
     
     # Fallback to environment variable
     env_key = key.upper()
-    return os.getenv(env_key, default)
+    env_value = os.getenv(env_key)
+    # ✅ FIX: Handle "null" string from env
+    if env_value not in [None, "", "null", "None"]:
+        return env_value
+    
+    return default
+
+
+def safe_int(value, default: int) -> int:
+    """Safely convert value to int, handle null/None."""
+    if value is None or value == "" or value == "null" or value == "None":
+        return default
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return default
+
+
+def safe_float(value, default: float) -> float:
+    """Safely convert value to float, handle null/None."""
+    if value is None or value == "" or value == "null" or value == "None":
+        return default
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return default
 
 
 # ==============================================================================
@@ -100,10 +126,19 @@ else:
     FINAL_SYSTEM_PROMPT = SYSTEM_PROMPT
     logger.info("💬 Using DEFAULT system prompt from config.py")
 
-# Chat configuration
-CHAT_TEMPERATURE = float(get_config('temperature', AI_CONFIG.get("temperature", 0.7)))
-CHAT_MAX_TOKENS = int(get_config('max_tokens', AI_CONFIG.get("max_tokens", 300)))
-CHAT_MAX_CONTEXT = int(get_config('max_context_messages', AI_CONFIG.get("max_context_messages", 10)))
+# ✅ FIX: Chat configuration with safe parsing
+CHAT_TEMPERATURE = safe_float(
+    get_config('temperature', AI_CONFIG.get("temperature", 0.7)),
+    0.7
+)
+CHAT_MAX_TOKENS = safe_int(
+    get_config('max_tokens', AI_CONFIG.get("max_tokens", 300)),
+    300
+)
+CHAT_MAX_CONTEXT = safe_int(
+    get_config('max_context_messages', AI_CONFIG.get("max_context_messages", 10)),
+    10
+)
 
 # API Keys
 OPENAI_API_KEY = get_config('openai_api_key', '')
@@ -129,6 +164,7 @@ logger.info(f"🧠 AI Model: {AI_MODEL}")
 logger.info(f"💬 System Prompt: {FINAL_SYSTEM_PROMPT[:80]}...")
 logger.info(f"🌡️  Temperature: {CHAT_TEMPERATURE}")
 logger.info(f"📏 Max Tokens: {CHAT_MAX_TOKENS}")
+logger.info(f"💬 Max Context: {CHAT_MAX_CONTEXT}")
 logger.info(f"💾 MySQL: {'✅' if MYSQL_URL else '❌'}")
 logger.info(f"📊 Log Level: {LOG_LEVEL}")
 logger.info("=" * 80)
