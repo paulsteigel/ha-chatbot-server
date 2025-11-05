@@ -99,121 +99,121 @@ class AIService:
         except Exception as e:
             self.logger.warning(f"⚠️ AI test skipped: {e}")
     
-    async def chat(self, user_message: str, conversation_logger=None, device_id: str = None, device_type: str = None) -> str:
-        """
-        Send a chat message and get AI response
-        
-        Args:
-            user_message: User's message
-            conversation_logger: Optional MySQL logger instance
-            device_id: Optional device ID for logging
-            device_type: Optional device type for logging
-        
-        Returns:
-            AI's response text
-        """
-        # Start total timer
-        start_time = time.time()
-        
-        try:
-            # Log user message
-            self.logger.info(f"💬 User: {user_message}")
+        async def chat(self, user_message: str, conversation_logger=None, device_id: str = None, device_type: str = None) -> str:
+            """
+            Send a chat message and get AI response
             
-            # Add user message to history
-            self.conversation_history.append({
-                "role": "user",
-                "content": user_message
-            })
+            Args:
+                user_message: User's message
+                conversation_logger: Optional MySQL logger instance
+                device_id: Optional device ID for logging
+                device_type: Optional device type for logging
             
-            # Limit conversation history
-            if len(self.conversation_history) > self.max_context * 2:
-                self.conversation_history = self.conversation_history[-(self.max_context * 2):]
+            Returns:
+                AI's response text
+            """
+            # Start total timer
+            start_time = time.time()
             
-            # Prepare messages
-            messages = [
-                {"role": "system", "content": self.system_prompt}
-            ] + self.conversation_history
-            
-            # Start API request timer
-            request_start = time.time()
-            self.logger.info(f"⏱️  Sending request to {self.provider.upper()}...")
-            
-            # ✅ USE STREAMING FOR FASTER FIRST TOKEN
-            if self.provider == 'deepseek':
-                # Streaming response (faster perceived speed)
-                stream = await self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
-                    stream=True
-                )
+            try:
+                # Log user message
+                self.logger.info(f"💬 User: {user_message}")
                 
-                ai_response = ""
-                first_token_time = None
+                # Add user message to history
+                self.conversation_history.append({
+                    "role": "user",
+                    "content": user_message
+                })
                 
-                async for chunk in stream:
-                    if chunk.choices[0].delta.content:
-                        content = chunk.choices[0].delta.content
-                        ai_response += content
-                        
-                        # Log first token time
-                        if first_token_time is None:
-                            first_token_time = time.time() - request_start
-                            self.logger.info(f"⚡ First token: {first_token_time:.2f}s")
+                # Limit conversation history
+                if len(self.conversation_history) > self.max_context * 2:
+                    self.conversation_history = self.conversation_history[-(self.max_context * 2):]
                 
-            else:
-                # Non-streaming (OpenAI/Groq)
-                response = await self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens
-                )
-                ai_response = response.choices[0].message.content
-            
-            # Calculate request time
-            request_time = time.time() - request_start
-            
-            # Add AI response to history
-            self.conversation_history.append({
-                "role": "assistant",
-                "content": ai_response
-            })
-            
-            # Calculate total time
-            total_time = time.time() - start_time
-            
-            # Enhanced logging with timing
-            self.logger.info(f"🤖 AI: {ai_response}")
-            self.logger.info(f"⏱️  AI Response Time: {request_time:.2f}s (Total: {total_time:.2f}s)")
-            
-            # Warning if slow
-            if request_time > 5.0:
-                self.logger.warning(f"⚠️  Slow AI response detected! ({request_time:.2f}s)")
-            
-            # Save to MySQL if logger provided
-            if conversation_logger and device_id:
-                try:
-                    await conversation_logger.log_conversation(
-                        device_id=device_id,
-                        device_type=device_type or "unknown",
-                        user_message=user_message,
-                        ai_response=ai_response,
+                # Prepare messages
+                messages = [
+                    {"role": "system", "content": self.system_prompt}
+                ] + self.conversation_history
+                
+                # Start API request timer
+                request_start = time.time()
+                self.logger.info(f"⏱️  Sending request to {self.provider.upper()}...")
+                
+                # ✅ USE STREAMING FOR FASTER FIRST TOKEN
+                if self.provider == 'deepseek':
+                    # Streaming response (faster perceived speed)
+                    stream = await self.client.chat.completions.create(
                         model=self.model,
-                        provider=self.provider,
-                        response_time=request_time
+                        messages=messages,
+                        temperature=self.temperature,
+                        max_tokens=self.max_tokens,
+                        stream=True
                     )
-                except Exception as log_error:
-                    self.logger.error(f"❌ MySQL log error: {log_error}")
-            
-            return ai_response
-            
-        except Exception as e:
-            self.logger.error(f"❌ Chat error: {e}", exc_info=True)
-            error_time = time.time() - start_time
-            self.logger.error(f"⏱️  Failed after {error_time:.2f}s")
-            return "Xin lỗi, chị gặp lỗi khi xử lý câu hỏi của em."
+                    
+                    ai_response = ""
+                    first_token_time = None
+                    
+                    async for chunk in stream:
+                        if chunk.choices[0].delta.content:
+                            content = chunk.choices[0].delta.content
+                            ai_response += content
+                            
+                            # Log first token time
+                            if first_token_time is None:
+                                first_token_time = time.time() - request_start
+                                self.logger.info(f"⚡ First token: {first_token_time:.2f}s")
+                    
+                else:
+                    # Non-streaming (OpenAI/Groq)
+                    response = await self.client.chat.completions.create(
+                        model=self.model,
+                        messages=messages,
+                        temperature=self.temperature,
+                        max_tokens=self.max_tokens
+                    )
+                    ai_response = response.choices[0].message.content
+                
+                # Calculate request time
+                request_time = time.time() - request_start
+                
+                # Add AI response to history
+                self.conversation_history.append({
+                    "role": "assistant",
+                    "content": ai_response
+                })
+                
+                # Calculate total time
+                total_time = time.time() - start_time
+                
+                # Enhanced logging with timing
+                self.logger.info(f"🤖 AI: {ai_response}")
+                self.logger.info(f"⏱️  AI Response Time: {request_time:.2f}s (Total: {total_time:.2f}s)")
+                
+                # Warning if slow
+                if request_time > 5.0:
+                    self.logger.warning(f"⚠️  Slow AI response detected! ({request_time:.2f}s)")
+                
+                # Save to MySQL if logger provided
+                if conversation_logger and device_id:
+                    try:
+                        await conversation_logger.log_conversation(
+                            device_id=device_id,
+                            device_type=device_type or "unknown",
+                            user_message=user_message,
+                            ai_response=ai_response,
+                            model=self.model,
+                            provider=self.provider,
+                            response_time=request_time
+                        )
+                    except Exception as log_error:
+                        self.logger.error(f"❌ MySQL log error: {log_error}")
+                
+                return ai_response
+                
+            except Exception as e:
+                self.logger.error(f"❌ Chat error: {e}", exc_info=True)
+                error_time = time.time() - start_time
+                self.logger.error(f"⏱️  Failed after {error_time:.2f}s")
+                return "Xin lỗi, chị gặp lỗi khi xử lý câu hỏi của em."
     
     def clear_history(self):
         """Clear conversation history"""
