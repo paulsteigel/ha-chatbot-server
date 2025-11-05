@@ -126,7 +126,7 @@ log_info "🔧 Setting up environment..."
 
 # Set Python environment
 export PYTHONUNBUFFERED=1
-export PYTHONPATH=/app:${PYTHONPATH}
+export PYTHONPATH="/app${PYTHONPATH:+:$PYTHONPATH}"
 
 # Change to app directory
 cd /app || {
