@@ -1,32 +1,170 @@
 #!/usr/bin/with-contenv bashio
+# ==============================================================================
+# School Chatbot WebSocket Server - S6 Run Script
+# Starts the chatbot service with proper configuration
+# ==============================================================================
 
-# Get config from options
+# Enable strict error handling
+set -e
+
+# Function to log messages
+log_info() {
+    bashio::log.info "$1"
+}
+
+log_error() {
+    bashio::log.error "$1"
+}
+
+log_warning() {
+    bashio::log.warning "$1"
+}
+
+# ==============================================================================
+# Configuration Loading
+# ==============================================================================
+
+log_info "🚀 Starting School Chatbot WebSocket Server..."
+log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# AI Provider Configuration
 export AI_PROVIDER=$(bashio::config 'ai_provider')
 export AI_MODEL=$(bashio::config 'ai_model')
+
+log_info "📋 AI Configuration:"
+log_info "   Provider: ${AI_PROVIDER}"
+log_info "   Model: ${AI_MODEL}"
+
+# TTS Configuration
 export TTS_VOICE_VI=$(bashio::config 'tts_voice_vi')
 export TTS_VOICE_EN=$(bashio::config 'tts_voice_en')
+
+log_info "🔊 TTS Configuration:"
+log_info "   Vietnamese Voice: ${TTS_VOICE_VI}"
+log_info "   English Voice: ${TTS_VOICE_EN}"
+
+# System Prompt
 export SYSTEM_PROMPT=$(bashio::config 'system_prompt')
+log_info "💭 System Prompt: ${SYSTEM_PROMPT:0:50}..."
+
+# Chat Configuration
 export MAX_CONTEXT_MESSAGES=$(bashio::config 'max_context_messages')
 export TEMPERATURE=$(bashio::config 'temperature')
 export MAX_TOKENS=$(bashio::config 'max_tokens')
+
+log_info "⚙️ Chat Settings:"
+log_info "   Max Context: ${MAX_CONTEXT_MESSAGES}"
+log_info "   Temperature: ${TEMPERATURE}"
+log_info "   Max Tokens: ${MAX_TOKENS}"
+
+# Logging
 export LOG_LEVEL=$(bashio::config 'log_level')
+log_info "📊 Log Level: ${LOG_LEVEL}"
 
-# API Keys
-export OPENAI_API_KEY=$(bashio::config 'openai_api_key')
-export OPENAI_BASE_URL=$(bashio::config 'openai_base_url')
-export DEEPSEEK_API_KEY=$(bashio::config 'deepseek_api_key')
+# ==============================================================================
+# API Keys Configuration
+# ==============================================================================
 
-# Display config
-bashio::log.info "🚀 Starting School Chatbot WebSocket Server..."
-bashio::log.info "📋 Configuration:"
-bashio::log.info "   AI Provider: ${AI_PROVIDER}"
-bashio::log.info "   AI Model: ${AI_MODEL}"
-bashio::log.info "   TTS Voice (VI): ${TTS_VOICE_VI}"
-bashio::log.info "   TTS Voice (EN): ${TTS_VOICE_EN}"
-bashio::log.info "   Max Context: ${MAX_CONTEXT_MESSAGES}"
+log_info "🔑 Configuring API Keys..."
 
-bashio::log.info "🌐 Starting server on port 5000..."
+# OpenAI Configuration
+if bashio::config.has_value 'openai_api_key'; then
+    export OPENAI_API_KEY=$(bashio::config 'openai_api_key')
+    log_info "   ✅ OpenAI API Key: ${OPENAI_API_KEY:0:8}..."
+else
+    log_warning "   ⚠️ OpenAI API Key not configured"
+    export OPENAI_API_KEY=""
+fi
 
-# Run application
-cd /app
+if bashio::config.has_value 'openai_base_url'; then
+    export OPENAI_BASE_URL=$(bashio::config 'openai_base_url')
+    log_info "   ✅ OpenAI Base URL: ${OPENAI_BASE_URL}"
+else
+    export OPENAI_BASE_URL="https://api.openai.com/v1"
+    log_info "   ℹ️ Using default OpenAI Base URL"
+fi
+
+# DeepSeek Configuration
+if bashio::config.has_value 'deepseek_api_key'; then
+    export DEEPSEEK_API_KEY=$(bashio::config 'deepseek_api_key')
+    log_info "   ✅ DeepSeek API Key: ${DEEPSEEK_API_KEY:0:8}..."
+else
+    log_warning "   ⚠️ DeepSeek API Key not configured"
+    export DEEPSEEK_API_KEY=""
+fi
+
+# ==============================================================================
+# Validation
+# ==============================================================================
+
+log_info "🔍 Validating Configuration..."
+
+# Check if at least one API key is configured
+if [[ -z "${OPENAI_API_KEY}" ]] && [[ -z "${DEEPSEEK_API_KEY}" ]]; then
+    log_error "❌ No API keys configured! Please configure at least one API key."
+    exit 1
+fi
+
+# Validate AI provider
+if [[ "${AI_PROVIDER}" == "openai" ]] && [[ -z "${OPENAI_API_KEY}" ]]; then
+    log_error "❌ OpenAI provider selected but no API key configured!"
+    exit 1
+fi
+
+if [[ "${AI_PROVIDER}" == "deepseek" ]] && [[ -z "${DEEPSEEK_API_KEY}" ]]; then
+    log_error "❌ DeepSeek provider selected but no API key configured!"
+    exit 1
+fi
+
+log_info "✅ Configuration validated successfully"
+
+# ==============================================================================
+# Environment Setup
+# ==============================================================================
+
+log_info "🔧 Setting up environment..."
+
+# Set Python environment
+export PYTHONUNBUFFERED=1
+export PYTHONPATH=/app:${PYTHONPATH}
+
+# Change to app directory
+cd /app || {
+    log_error "❌ Failed to change to /app directory"
+    exit 1
+}
+
+log_info "   Working directory: $(pwd)"
+log_info "   Python version: $(python3 --version)"
+
+# Check if main.py exists
+if [[ ! -f "app/main.py" ]]; then
+    log_error "❌ app/main.py not found!"
+    exit 1
+fi
+
+log_info "   ✅ Application files found"
+
+# ==============================================================================
+# Network Configuration
+# ==============================================================================
+
+export HOST="0.0.0.0"
+export PORT="5000"
+
+log_info "🌐 Network Configuration:"
+log_info "   Host: ${HOST}"
+log_info "   Port: ${PORT}"
+log_info "   WebSocket endpoint: ws://<host>:${PORT}/ws"
+log_info "   Static files: http://<host>:${PORT}/"
+
+# ==============================================================================
+# Start Application
+# ==============================================================================
+
+log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+log_info "🚀 Starting WebSocket Server..."
+log_info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Execute the application
 exec python3 -m app.main
