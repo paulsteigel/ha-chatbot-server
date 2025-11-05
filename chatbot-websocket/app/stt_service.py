@@ -1,140 +1,112 @@
 """
-Speech-to-Text Service using OpenAI Whisper API
-Supports audio transcription from various formats
+STT (Speech-to-Text) Service - Handles audio transcription using OpenAI Whisper API
 """
-import logging
-import base64
-import tempfile
+
 import os
+import logging
 from typing import Optional
 from openai import AsyncOpenAI
-import httpx
 
 
 class STTService:
-    """Speech-to-Text service using OpenAI Whisper API"""
+    """Speech-to-Text Service using OpenAI Whisper API"""
     
-    def __init__(self, api_key: str, base_url: str = "https://api.openai.com/v1"):
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = "https://api.openai.com/v1",
+        model: str = "whisper-1"
+    ):
         """
-        Initialize STT service
+        Initialize STT Service
         
         Args:
-            api_key: API key for OpenAI or compatible service
-            base_url: Base URL for API (default: OpenAI)
+            api_key: OpenAI API key
+            base_url: API base URL (default: OpenAI)
+            model: Whisper model name (default: whisper-1)
         """
         self.logger = logging.getLogger('STTService')
+        
         self.api_key = api_key
         self.base_url = base_url
-        self.client = None
+        self.model = model
         
         self.logger.info("🎤 Initializing STT Service...")
         self.logger.info(f"   Base URL: {base_url}")
-    
-    async def initialize(self):
-        """Initialize the STT client"""
+        self.logger.info(f"   Model: {model}")
+        
+        # Initialize OpenAI client
         try:
-            # Create httpx client
-            http_client = httpx.AsyncClient(
-                timeout=httpx.Timeout(60.0, connect=10.0),
-                limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
-            )
-            
-            # Initialize OpenAI client
             self.client = AsyncOpenAI(
-                api_key=self.api_key,
-                base_url=self.base_url,
-                http_client=http_client,
-                max_retries=2
+                api_key=api_key,
+                base_url=base_url
             )
-            
             self.logger.info("✅ STT Service initialized")
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to initialize STT: {e}")
+            self.logger.error(f"❌ Failed to initialize STT client: {e}")
             raise
     
-    async def transcribe(self, audio_data: bytes, language: str = 'vi', 
-                        audio_format: str = 'wav') -> Optional[str]:
+    async def transcribe(self, audio_data: bytes, language: str = "auto") -> str:
         """
         Transcribe audio to text
         
         Args:
-            audio_data: Raw audio bytes (NOT base64 encoded)
-            language: Language code ('vi' or 'en')
-            audio_format: Audio format (wav, mp3, webm, etc.)
+            audio_data: Audio data in bytes (WAV/MP3/OGG format)
+            language: Language code (e.g., "vi" for Vietnamese, "en" for English, "auto" for auto-detect)
         
         Returns:
-            Transcribed text or None if failed
+            Transcribed text
         """
-        if not self.client:
-            self.logger.error("❌ STT client not initialized")
-            return None
-        
-        temp_path = None
-        
         try:
-            # Detect if audio_data is base64 encoded (for backward compatibility)
-            if isinstance(audio_data, str):
-                self.logger.warning("⚠️ Received base64 string, decoding...")
-                audio_data = base64.b64decode(audio_data)
+            self.logger.info(f"🎤 Transcribing audio ({len(audio_data)} bytes, language: {language})...")
             
-            self.logger.info(f"🎤 Transcribing audio: {len(audio_data)} bytes, format: {audio_format}")
+            # Prepare audio file-like object
+            from io import BytesIO
+            audio_file = BytesIO(audio_data)
+            audio_file.name = "audio.wav"  # OpenAI requires a filename
             
-            # Create temporary file with appropriate extension
-            suffix = f'.{audio_format}' if not audio_format.startswith('.') else audio_format
-            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp_file:
-                temp_file.write(audio_data)
-                temp_path = temp_file.name
+            # Call Whisper API
+            kwargs = {
+                "model": self.model,
+                "file": audio_file
+            }
             
-            self.logger.info(f"   Temp file: {temp_path}")
+            # Add language parameter if not auto-detect
+            if language != "auto":
+                kwargs["language"] = language
             
-            # Transcribe using Whisper API
-            with open(temp_path, 'rb') as audio_file:
-                transcript = await self.client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file,
-                    language=language if language in ['vi', 'en'] else None,
-                    response_format="text"
-                )
+            response = await self.client.audio.transcriptions.create(**kwargs)
             
-            # Get transcribed text
-            if isinstance(transcript, str):
-                text = transcript
-            else:
-                text = transcript.text if hasattr(transcript, 'text') else str(transcript)
+            # Extract transcribed text
+            transcribed_text = response.text
             
-            text = text.strip()
+            self.logger.info(f"✅ Transcription: {transcribed_text}")
             
-            if text:
-                self.logger.info(f"✅ Transcribed: {text}")
-                return text
-            else:
-                self.logger.warning("⚠️ Empty transcription result")
-                return None
+            return transcribed_text
             
         except Exception as e:
-            self.logger.error(f"❌ STT Error: {e}", exc_info=True)
-            return None
-            
-        finally:
-            # Cleanup temporary file
-            if temp_path and os.path.exists(temp_path):
-                try:
-                    os.unlink(temp_path)
-                    self.logger.debug(f"🗑️ Deleted temp file: {temp_path}")
-                except Exception as e:
-                    self.logger.warning(f"⚠️ Failed to delete temp file: {e}")
+            self.logger.error(f"❌ Transcription error: {e}", exc_info=True)
+            return ""
     
-    async def test(self):
-        """Test STT service"""
-        self.logger.info("🧪 Testing STT service...")
+    async def transcribe_file(self, file_path: str, language: str = "auto") -> str:
+        """
+        Transcribe audio file to text
         
-        # Create a simple test audio (silence)
-        test_audio = b'\x00' * 16000  # 1 second of silence at 16kHz
+        Args:
+            file_path: Path to audio file
+            language: Language code (default: auto-detect)
         
-        result = await self.transcribe(test_audio, 'vi', 'wav')
-        
-        if result is not None:
-            self.logger.info(f"✅ STT test completed (result: '{result}')")
-        else:
-            self.logger.warning("⚠️ STT test returned None (this is expected for silence)")
+        Returns:
+            Transcribed text
+        """
+        try:
+            # Read audio file
+            with open(file_path, 'rb') as f:
+                audio_data = f.read()
+            
+            return await self.transcribe(audio_data, language)
+            
+        except Exception as e:
+            self.logger.error(f"❌ File transcription error: {e}", exc_info=True)
+            return ""
