@@ -1,58 +1,59 @@
-name: School Chatbot WebSocket
-version: "1.1.1"
+# File: config.yaml
+name: "School Chatbot WebSocket"
+version: "1.0.1"
 slug: school-chatbot-websocket
-description: AI Chatbot WebSocket Server - Multi-provider support
-url: https://github.com/paulsteigel/ha-chatbot-server
+description: "AI Chatbot for schools with WebSocket support"
 arch:
-  - aarch64
   - amd64
-  - armhf
   - armv7
-  - i386
+  - aarch64
 init: false
+hassio_api: false  # Không cần vì dùng Wyoming trực tiếp
 startup: application
 boot: auto
+
 ports:
-  5000/tcp: 5000
-ports_description:
-  5000/tcp: WebSocket server port
+  8765/tcp: 8765
 
 options:
+  # AI Provider
   ai_provider: deepseek
-  ai_model: deepseek-chat
+  
+  # API Keys
   openai_api_key: ""
   openai_base_url: "https://api.openai.com/v1"
   deepseek_api_key: ""
   groq_api_key: ""
-  tts_provider: openai
+  
+  # TTS Provider
+  tts_provider: openai  # "openai" or "piper"
   tts_voice_vi: nova
   tts_voice_en: alloy
+  
+  # Piper voices (nếu dùng piper)
   piper_voice_vi: vi_VN-vais-medium
   piper_voice_en: en_US-lessac-medium
-  system_prompt: "Bạn là Yên Hoà - trợ lý AI thân thiện hỗ trợ học sinh tiểu học.\nLuôn trả lời bằng tiếng Việt.\nXưng hô: Chị (AI) - Em (học sinh)."
-  custom_prompt: ""
-  mysql_url: ""
+  
+  # Chat settings
+  max_context: 10
   temperature: 0.7
   max_tokens: 500
-  max_context_messages: 10
+  
+  # System
   log_level: INFO
 
 schema:
-  ai_provider: list(openai|deepseek)
-  ai_model: list(gpt-4o-mini|gpt-4o|gpt-4-turbo|gpt-3.5-turbo|deepseek-chat|deepseek-reasoner)
+  ai_provider: list(openai|deepseek|groq)?
   openai_api_key: password?
-  openai_base_url: url?
+  openai_base_url: str?
   deepseek_api_key: password?
   groq_api_key: password?
-  tts_provider: list(openai|piper)
-  tts_voice_vi: list(alloy|echo|fable|onyx|nova|shimmer)
-  tts_voice_en: list(alloy|echo|fable|onyx|nova|shimmer)
-  piper_voice_vi: list(vi_VN-vais-low|vi_VN-vais-medium|vi_VN-vais-high|vi_VN-25hours-single)
-  piper_voice_en: list(en_US-lessac-medium|en_US-amy-medium|en_GB-alan-medium|en_GB-southern_english_female-medium)
-  system_prompt: str?
-  custom_prompt: str?
-  mysql_url: str?
-  temperature: float(0.0,2.0)?
-  max_tokens: int(50,4000)?
-  max_context_messages: int(1,50)?
+  tts_provider: list(openai|piper)?
+  tts_voice_vi: str?
+  tts_voice_en: str?
+  piper_voice_vi: str?
+  piper_voice_en: str?
+  max_context: int(1,50)?
+  temperature: float(0,2)?
+  max_tokens: int(100,4000)?
   log_level: list(DEBUG|INFO|WARNING|ERROR)?

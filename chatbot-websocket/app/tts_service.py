@@ -1,20 +1,12 @@
 # File: app/tts_service.py
 """
 TTS Service - Multi-provider with Wyoming protocol support
+Compatible with dict-based config
 """
 import logging
 import base64
+import os
 from openai import AsyncOpenAI
-from app.config import (
-    OPENAI_API_KEY,
-    OPENAI_BASE_URL,
-    TTS_PROVIDER,
-    TTS_VOICE_VI,
-    TTS_VOICE_EN,
-    PIPER_VOICE_VI,
-    PIPER_VOICE_EN,
-)
-from app.wyoming_client import WyomingTTSClient
 
 logger = logging.getLogger(__name__)
 
@@ -23,55 +15,68 @@ class TTSService:
     
     def __init__(self):
         """Initialize TTS service."""
-        self.provider = TTS_PROVIDER
+        # Read TTS provider from environment (not in config dict)
+        self.provider = os.getenv("TTS_PROVIDER", "openai")
         
-        # OpenAI client
+        # OpenAI config
+        openai_api_key = os.getenv("OPENAI_API_KEY", "")
+        openai_base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+        
         self.openai_client = AsyncOpenAI(
-            api_key=OPENAI_API_KEY,
-            base_url=OPENAI_BASE_URL
+            api_key=openai_api_key,
+            base_url=openai_base_url
         )
         
-        # Wyoming client for Piper
-        # Try multiple hostnames
-        piper_hosts = [
-            "addon_core_piper",           # Official addon hostname
-            "core-piper",                 # Container hostname
-            "172.30.33.6",                # Direct IP (from your inspect)
-        ]
+        # TTS voices - Try to import from config, fallback to env
+        try:
+            from app.config import TTS_CONFIG
+            self.tts_voice_vi = TTS_CONFIG.get("vietnamese_voice", "nova")
+            self.tts_voice_en = TTS_CONFIG.get("english_voice", "alloy")
+        except:
+            self.tts_voice_vi = os.getenv("TTS_VOICE_VI", "nova")
+            self.tts_voice_en = os.getenv("TTS_VOICE_EN", "alloy")
         
+        # Piper voices (from env only, not in config)
+        self.piper_voice_vi = os.getenv("PIPER_VOICE_VI", "vi_VN-vais-medium")
+        self.piper_voice_en = os.getenv("PIPER_VOICE_EN", "en_US-lessac-medium")
+        
+        # Wyoming client for Piper (lazy init)
         self.wyoming_client = None
-        self.piper_host = piper_hosts[0]  # Default
+        self.piper_hosts = [
+            "addon_core_piper",
+            "core-piper", 
+            "172.30.33.6",
+        ]
         
         logger.info(f"🔊 TTS Service initialized")
         logger.info(f"   Provider: {self.provider}")
-        logger.info(f"   OpenAI voices: VI={TTS_VOICE_VI}, EN={TTS_VOICE_EN}")
-        logger.info(f"   Piper voices: VI={PIPER_VOICE_VI}, EN={PIPER_VOICE_EN}")
-        logger.info(f"   Piper hosts to try: {piper_hosts}")
+        logger.info(f"   OpenAI voices: VI={self.tts_voice_vi}, EN={self.tts_voice_en}")
+        if self.provider == "piper":
+            logger.info(f"   Piper voices: VI={self.piper_voice_vi}, EN={self.piper_voice_en}")
     
     async def _init_wyoming_client(self):
         """Initialize Wyoming client (lazy load)."""
         if self.wyoming_client:
             return
         
-        # Auto-detect working Piper host
-        piper_hosts = [
-            "addon_core_piper",
-            "core-piper",
-            "172.30.33.6",
-        ]
+        # Import here to avoid circular import
+        from app.wyoming_client import WyomingTTSClient
         
-        for host in piper_hosts:
+        logger.info(f"🔍 Searching for Piper addon...")
+        
+        for host in self.piper_hosts:
             try:
+                logger.debug(f"   Trying {host}...")
                 client = WyomingTTSClient(host=host, port=10200)
                 if await client.test_connection():
                     self.wyoming_client = client
-                    self.piper_host = host
-                    logger.info(f"✅ Connected to Piper: {host}:10200")
+                    logger.info(f"   ✅ Connected to Piper: {host}:10200")
                     return
-            except:
+            except Exception as e:
+                logger.debug(f"   ❌ {host}: {e}")
                 continue
         
-        raise Exception("Cannot connect to Piper on any known host")
+        raise Exception("❌ Cannot connect to Piper on any known host")
     
     async def synthesize(self, text: str, language: str = "vi") -> str:
         """
@@ -106,9 +111,9 @@ class TTSService:
     async def _synthesize_openai(self, text: str, language: str) -> str:
         """Synthesize using OpenAI TTS."""
         try:
-            voice = TTS_VOICE_VI if language == "vi" else TTS_VOICE_EN
+            voice = self.tts_voice_vi if language == "vi" else self.tts_voice_en
             
-            logger.info(f"🔊 OpenAI TTS: voice={voice}")
+            logger.info(f"🔊 OpenAI TTS: voice={voice}, text='{text[:50]}...'")
             
             response = await self.openai_client.audio.speech.create(
                 model="tts-1",
@@ -120,7 +125,7 @@ class TTSService:
             audio_bytes = response.content
             audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
             
-            logger.info(f"✅ OpenAI TTS: {len(audio_bytes)} bytes")
+            logger.info(f"✅ OpenAI TTS: {len(audio_bytes)} bytes (MP3)")
             return audio_base64
             
         except Exception as e:
@@ -133,7 +138,9 @@ class TTSService:
             # Initialize Wyoming client if needed
             await self._init_wyoming_client()
             
-            voice = PIPER_VOICE_VI if language == "vi" else PIPER_VOICE_EN
+            voice = self.piper_voice_vi if language == "vi" else self.piper_voice_en
+            
+            logger.info(f"🔊 Piper TTS: voice={voice}, text='{text[:50]}...'")
             
             # Call Piper via Wyoming
             audio_bytes = await self.wyoming_client.synthesize(text, voice)
@@ -141,7 +148,7 @@ class TTSService:
             # Convert to base64
             audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
             
-            logger.info(f"✅ Piper TTS (Wyoming): {len(audio_bytes)} bytes")
+            logger.info(f"✅ Piper TTS (Wyoming): {len(audio_bytes)} bytes (WAV)")
             return audio_base64
             
         except Exception as e:
