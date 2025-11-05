@@ -116,10 +116,12 @@ async def lifespan(app: FastAPI):
         logger.info("🔌 Initializing WebSocket Handler...")
         ws_handler = WebSocketHandler(
             device_manager=device_manager,
+            ota_manager=ota_manager,
             ai_service=ai_service,
             tts_service=tts_service,
             stt_service=stt_service
         )
+
         
         logger.info("=" * 80)
         logger.info("✅ ALL SERVICES INITIALIZED SUCCESSFULLY")
