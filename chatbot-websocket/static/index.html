@@ -482,6 +482,16 @@
                     console.log('✅ Registered:', data.device_id);
                     break;
 
+                // === NEW: HANDLE TRANSCRIPTION SEPARATELY ===
+                case 'transcription':
+                    // Show user's transcribed text immediately
+                    addMessage('user', `🎤 "${data.text}"`, true);
+                    // Show typing indicator for AI response
+                    showTypingIndicator();
+                    break;
+
+                // === UPDATED: HANDLE AI RESPONSE ===
+                
                 case 'chat_response':
                     addMessage('bot', data.text);
                     if (data.audio) playAudio(data.audio, data.audio_format || 'mp3');

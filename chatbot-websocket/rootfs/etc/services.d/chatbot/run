@@ -93,6 +93,19 @@ else
     export DEEPSEEK_API_KEY=""
 fi
 
+# ============================================================================== 
+# 🆕 GROQ CONFIGURATION (ADDED)
+# ==============================================================================
+
+if bashio::config.has_value 'groq_api_key'; then
+    export GROQ_API_KEY=$(bashio::config 'groq_api_key')
+    log_info "   ✅ Groq API Key: ${GROQ_API_KEY:0:8}... ⚡"
+    log_info "   🚀 Groq Whisper enabled (7x faster STT!)"
+else
+    log_warning "   ⚠️ Groq API Key not configured (will use OpenAI STT)"
+    export GROQ_API_KEY=""
+fi
+
 # ==============================================================================
 # Validation
 # ==============================================================================
@@ -115,6 +128,8 @@ if [[ "${AI_PROVIDER}" == "deepseek" ]] && [[ -z "${DEEPSEEK_API_KEY}" ]]; then
     log_error "❌ DeepSeek provider selected but no API key configured!"
     exit 1
 fi
+
+# Note: Groq is optional, no validation needed (falls back to OpenAI STT)
 
 log_info "✅ Configuration validated successfully"
 

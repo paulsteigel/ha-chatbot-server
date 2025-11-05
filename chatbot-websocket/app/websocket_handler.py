@@ -191,53 +191,59 @@ class WebSocketHandler:
             await self.send_error(device_id, f"Text error: {e}")
     
     async def handle_voice(self, data: Dict):
-        """Handle voice message"""
-        try:
-            device_id = data.get("device_id")
-            audio_base64 = data.get("audio")
-            audio_format = data.get("format", "webm")
-            language = data.get("language", "auto")
-            
-            if not audio_base64:
-                await self.send_error(device_id, "Missing audio data")
-                return
-            
-            self.logger.info(f"🎤 Voice from {device_id} (format: {audio_format}, language: {language})")
-            
-            # Decode audio
-            audio_data = base64.b64decode(audio_base64)
-            
-            # Transcribe audio
-            text = await self.stt_service.transcribe(audio_data, language)
-            
-            if not text:
-                await self.send_error(device_id, "Could not transcribe audio")
-                return
-            
-            self.logger.info(f"📝 Transcription: {text}")
-            
-            # Get AI response
-            ai_response = await self.ai_service.chat(text)
-            
-            if not ai_response:
-                await self.send_error(device_id, "AI service error")
-                return
-            
-            # Generate TTS audio
-            response_audio = await self.tts_service.synthesize(ai_response, language)
-            
-            # Send voice response
-            await self.send_message(device_id, {
-                "type": "voice_response",
-                "transcribed_text": text,
-                "text": ai_response,
-                "audio": response_audio,
-                "audio_format": "mp3"
-            })
-            
-        except Exception as e:
-            self.logger.error(f"❌ Voice error: {e}", exc_info=True)
-            await self.send_error(device_id, f"Voice error: {e}")
+    """Handle voice message"""
+    try:
+        device_id = data.get("device_id")
+        audio_base64 = data.get("audio")
+        audio_format = data.get("format", "webm")
+        language = data.get("language", "auto")
+        
+        if not audio_base64:
+            await self.send_error(device_id, "Missing audio data")
+            return
+        
+        self.logger.info(f"🎤 Voice from {device_id} (format: {audio_format}, language: {language})")
+        
+        # Decode audio
+        audio_data = base64.b64decode(audio_base64)
+        
+        # === STEP 1: TRANSCRIBE AUDIO ===
+        text = await self.stt_service.transcribe(audio_data, language)
+        
+        if not text:
+            await self.send_error(device_id, "Could not transcribe audio")
+            return
+        
+        self.logger.info(f"📝 Transcription: {text}")
+        
+        # === STEP 2: SEND TRANSCRIPTION IMMEDIATELY! ===
+        await self.send_message(device_id, {
+            "type": "transcription",
+            "text": text
+        })
+        
+        # === STEP 3: GET AI RESPONSE ===
+        ai_response = await self.ai_service.chat(text)
+        
+        if not ai_response:
+            await self.send_error(device_id, "AI service error")
+            return
+        
+        # === STEP 4: GENERATE TTS ===
+        response_audio = await self.tts_service.synthesize(ai_response, language)
+        
+        # === STEP 5: SEND AI RESPONSE + AUDIO ===
+        await self.send_message(device_id, {
+            "type": "ai_response",
+            "text": ai_response,
+            "audio": response_audio,
+            "audio_format": "mp3"
+        })
+        
+    except Exception as e:
+        self.logger.error(f"❌ Voice error: {e}", exc_info=True)
+        await self.send_error(device_id, f"Voice error: {e}")
+
     
     async def handle_ping(self, data: Dict):
         """Handle ping message"""
