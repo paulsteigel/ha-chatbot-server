@@ -4,6 +4,7 @@ Main FastAPI application with WebSocket support for ESP32 devices
 """
 import logging
 import os
+import json  # ← ADD THIS
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket
 from fastapi.staticfiles import StaticFiles
@@ -39,21 +40,22 @@ def get_config(key: str, default=None):
                 options = json.load(f)
                 if key in options:
                     value = options[key]
-                    if value:  # Only return if not empty
+                    if value not in [None, ""]:  # Only return if not empty
                         return value
-        except Exception as e:
+        except Exception:
             pass  # Silently fail, will try environment
     
     # Fallback to environment variable
     env_key = key.upper()
     return os.getenv(env_key, default)
 
+
 # ==============================================================================
 # Configuration
 # ==============================================================================
 
-# Logging
-LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
+# Logging setup first
+LOG_LEVEL = get_config('log_level', 'INFO').upper()
 logging.basicConfig(
     level=LOG_LEVEL,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -66,22 +68,40 @@ PORT = int(os.getenv('PORT', '5000'))
 
 # AI configuration
 AI_PROVIDER = get_config('ai_provider', 'openai')
-AI_MODEL = os.getenv('AI_MODEL', 'gpt-4o-mini')
-SYSTEM_PROMPT = os.getenv('SYSTEM_PROMPT', 'You are a helpful AI assistant.')
+AI_MODEL = get_config('ai_model', 'gpt-4o-mini')
+SYSTEM_PROMPT = get_config('system_prompt', 'You are a helpful AI assistant.')
 
 # Chat configuration
-CHAT_TEMPERATURE = float(os.getenv('CHAT_TEMPERATURE', '0.7'))
-CHAT_MAX_TOKENS = int(os.getenv('CHAT_MAX_TOKENS', '500'))
-CHAT_MAX_CONTEXT = int(os.getenv('CHAT_MAX_CONTEXT', '10'))
+CHAT_TEMPERATURE = float(get_config('temperature', 0.7))
+CHAT_MAX_TOKENS = int(get_config('max_tokens', 500))
+CHAT_MAX_CONTEXT = int(get_config('max_context_messages', 10))
 
 # API Keys
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
-OPENAI_BASE_URL = os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1')
-DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY', '')
+OPENAI_API_KEY = get_config('openai_api_key', '')
+OPENAI_BASE_URL = get_config('openai_base_url', 'https://api.openai.com/v1')
+DEEPSEEK_API_KEY = get_config('deepseek_api_key', '')
 DEEPSEEK_BASE_URL = os.getenv('DEEPSEEK_BASE_URL', 'https://api.deepseek.com/v1')
+GROQ_API_KEY = get_config('groq_api_key', '')
 
 # MySQL configuration
 MYSQL_URL = get_config('mysql_url', '')
+
+# TTS configuration
+TTS_VOICE = get_config('tts_voice_vi', 'nova')
+
+# Log configuration source
+logger.info("=" * 80)
+logger.info("📋 CONFIGURATION")
+logger.info("=" * 80)
+config_source = "Home Assistant" if os.path.exists("/data/options.json") else "Environment"
+logger.info(f"📂 Config Source: {config_source}")
+logger.info(f"🤖 AI Provider: {AI_PROVIDER}")
+logger.info(f"🧠 AI Model: {AI_MODEL}")
+logger.info(f"💾 MySQL Logging: {'Enabled' if MYSQL_URL else 'Disabled'}")
+logger.info(f"📊 Log Level: {LOG_LEVEL}")
+logger.info("=" * 80)
+
+
 # ==============================================================================
 # Service Instances (Global)
 # ==============================================================================
@@ -92,7 +112,7 @@ stt_service = None
 device_manager = None
 ota_manager = None
 ws_handler = None
-conversation_logger = None  # ← NEW: Conversation logger
+conversation_logger = None
 
 
 # ==============================================================================
@@ -138,9 +158,9 @@ async def lifespan(app: FastAPI):
         # Initialize STT Service
         logger.info("🎤 Initializing STT Service...")
         stt_service = STTService(
-            api_key=OPENAI_API_KEY,
-            base_url=OPENAI_BASE_URL,
-            model="whisper-1"
+            api_key=GROQ_API_KEY if GROQ_API_KEY else OPENAI_API_KEY,
+            base_url="https://api.groq.com/openai/v1" if GROQ_API_KEY else OPENAI_BASE_URL,
+            model="whisper-large-v3" if GROQ_API_KEY else "whisper-1"
         )
         
         # Initialize Conversation Logger (MySQL)
@@ -163,7 +183,7 @@ async def lifespan(app: FastAPI):
             ai_service=ai_service,
             tts_service=tts_service,
             stt_service=stt_service,
-            conversation_logger=conversation_logger  # ← Pass logger
+            conversation_logger=conversation_logger
         )
         
         logger.info("=" * 80)
@@ -344,7 +364,6 @@ async def get_conversations(device_id: str = None, limit: int = 50):
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for device connections"""
-    # Generate unique device ID
     device_id = f"web-{id(websocket)}"
     await ws_handler.handle_connection(websocket, device_id)
 
