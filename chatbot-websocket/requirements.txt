@@ -1,17 +1,7 @@
-# WebSocket & HTTP
-websockets==12.0
-aiohttp==3.9.1
-
-# Environment & Config
-python-dotenv==1.0.0
-
-# Text-to-Speech (FREE)
-gTTS==2.5.0
-
-# AI Services - FIXED VERSIONS
-openai==1.54.0
-httpx==0.27.0
-
-# Additional dependencies
-pydantic==2.9.0
-typing-extensions==4.12.2
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+websockets==14.1
+openai==1.59.6
+httpx==0.28.1
+python-multipart==0.0.20
+aiofiles==24.1.0
