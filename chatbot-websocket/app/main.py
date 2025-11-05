@@ -1,188 +1,277 @@
 """
-Main application entry point
+School Chatbot WebSocket Server
+Main FastAPI application with WebSocket support for ESP32 devices
 """
 import logging
 import os
-import asyncio
-from aiohttp import web
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, WebSocket
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse, JSONResponse
 
-from app.device_manager import DeviceManager
+# Import services
 from app.ai_service import AIService
 from app.tts_service import TTSService
 from app.stt_service import STTService
+from app.device_manager import DeviceManager
 from app.ota_manager import OTAManager
 from app.websocket_handler import WebSocketHandler
 
 
-# Setup logging
+# ==============================================================================
+# Configuration
+# ==============================================================================
+
+# Logging
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
 logging.basicConfig(
-    level=logging.INFO,
+    level=LOG_LEVEL,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('Main')
+
+# Server configuration
+HOST = os.getenv('HOST', '0.0.0.0')
+PORT = int(os.getenv('PORT', '5000'))
+
+# AI configuration
+AI_PROVIDER = os.getenv('AI_PROVIDER', 'openai')
+AI_MODEL = os.getenv('AI_MODEL', 'gpt-4o-mini')
+
+# API Keys
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
+OPENAI_BASE_URL = os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1')
+DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY', '')
 
 
-async def health_handler(request):
-    """Health check endpoint"""
-    return web.Response(text='OK')
+# ==============================================================================
+# Service Instances (Global)
+# ==============================================================================
+
+ai_service = None
+tts_service = None
+stt_service = None
+device_manager = None
+ota_manager = None
+ws_handler = None
 
 
-async def status_handler(request):
-    """Status endpoint"""
-    device_manager = request.app['device_manager']
+# ==============================================================================
+# Lifespan Context Manager
+# ==============================================================================
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Lifespan context manager for FastAPI
+    Handles startup and shutdown events
+    """
+    # STARTUP
+    logger.info("=" * 80)
+    logger.info("🚀 SCHOOL CHATBOT WEBSOCKET SERVER")
+    logger.info("=" * 80)
     
-    status = {
-        'status': 'ok',
-        'devices': device_manager.get_device_count(),
-        'version': '1.0.0'
-    }
+    global ai_service, tts_service, stt_service, device_manager, ota_manager, ws_handler
     
-    return web.json_response(status)
-
-
-async def serve_index(request):
-    """Serve the web test interface"""
     try:
-        with open('/static/index.html', 'r', encoding='utf-8') as f:
-            return web.Response(text=f.read(), content_type='text/html')
-    except FileNotFoundError:
-        return web.Response(text="Test page not found", status=404)
-
-async def init_app():
-    """Initialize application"""
-    logger.info("🚀 Starting Yên Hoà WebSocket Server...")
-    logger.info("=" * 80)
-    logger.info("🤖 YÊN HOÀ CHATBOT - WEBSOCKET SERVER")
-    logger.info("=" * 80)
-    
-    # Get configuration from environment
-    ai_model = os.getenv('AI_MODEL', 'deepseek-chat')
-    ai_api_key = os.getenv('AI_API_KEY', '')
-    ai_base_url = os.getenv('AI_BASE_URL', 'https://api.deepseek.com/v1')
-    
-    # System prompt for AI
-    system_prompt = os.getenv('SYSTEM_PROMPT', 
-        "Bạn là Yên Hoà, trợ lý AI thông minh và thân thiện của trường học. "
-        "Hãy trả lời một cách ngắn gọn, rõ ràng và hữu ích."
-    )
-    
-    # STT configuration
-    stt_api_key = os.getenv('STT_API_KEY', ai_api_key)
-    stt_base_url = os.getenv('STT_BASE_URL', ai_base_url)
-    
-    logger.info("📋 Configuration:")
-    logger.info(f"   AI Model: {ai_model}")
-    logger.info(f"   AI Base URL: {ai_base_url}")
-    logger.info(f"   TTS: Google TTS (gTTS) 🆓 FREE")
-    logger.info(f"   STT: {'Enabled' if stt_api_key else 'Disabled (no API key)'}")
-    logger.info(f"   Log Level: INFO")
-    logger.info("=" * 80)
-    
-    # Initialize services
-    logger.info("🔧 Initializing services...")
-    
-    logger.info("   📝 Setting up Speech-to-Text...")
-    stt_service = STTService(
-        api_key=stt_api_key,
-        base_url=stt_base_url
-    )
-    
-    logger.info("   🔊 Setting up Text-to-Speech (Google TTS)...")
-    tts_service = TTSService()
-    
-    logger.info("   🤖 Setting up AI Service...")
-    ai_service = AIService(
-        model=ai_model,
-        api_key=ai_api_key,
-        base_url=ai_base_url,
-        system_prompt=system_prompt
-    )
-    
-    logger.info("   📱 Setting up Device Manager...")
-    device_manager = DeviceManager()
-    
-    logger.info("   🔄 Setting up OTA Manager...")
-    ota_manager = OTAManager()
-    
-    # Start services (only if they have start() method)
-    logger.info("🚀 Starting services...")
-    
-    # Check and start services
-    if hasattr(stt_service, 'start'):
-        await stt_service.start()
-    else:
-        logger.info("✅ STT Service ready (no start() needed)")
-    
-    if hasattr(tts_service, 'start'):
-        await tts_service.start()
-    else:
-        logger.info("✅ TTS Service ready (no start() needed)")
-    
-    if hasattr(ai_service, 'start'):
-        await ai_service.start()
-    else:
-        logger.info("✅ AI Service ready (no start() needed)")
-    
-    # Test TTS
-    logger.info("🧪 Testing TTS service...")
-    if hasattr(tts_service, 'test'):
-        await tts_service.test()
-    else:
-        logger.info("⚠️ TTS test() method not available")
-    
-    # Setup WebSocket handler
-    logger.info("🔌 Setting up WebSocket handler...")
-    ws_handler = WebSocketHandler(
-        device_manager=device_manager,
-        ai_service=ai_service,
-        tts_service=tts_service,
-        stt_service=stt_service
-    )
-    
-    # Create application
-    app = web.Application()
-    
-    # Store services in app
-    app['device_manager'] = device_manager
-    app['ai_service'] = ai_service
-    app['tts_service'] = tts_service
-    app['stt_service'] = stt_service
-    app['ota_manager'] = ota_manager
-    app['ws_handler'] = ws_handler
-    
-    # Setup routes
-    app.router.add_get('/ws', ws_handler.handle)
-    app.router.add_get('/health', health_handler)
-    app.router.add_get('/api/status', status_handler)
-    app.router.add_get('/', serve_index)
-    app.router.add_static('/static', '/static')
-    
-    logger.info("=" * 80)
-    logger.info("✅ Application initialized successfully!")
-    logger.info("=" * 80)
-    logger.info("📡 Server endpoints:")
-    logger.info("   WebSocket: ws://0.0.0.0:5000/ws")
-    logger.info("   Health: http://0.0.0.0:5000/health")
-    logger.info("   Status: http://0.0.0.0:5000/api/status")
-    logger.info("=" * 80)
-    
-    return app
-
-
-if __name__ == '__main__':
-    try:
-        logger.info("🔧 Initializing...")
+        # Initialize Device Manager
+        logger.info("📱 Initializing Device Manager...")
+        device_manager = DeviceManager()
         
-        # Run application
-        web.run_app(
-            init_app(),
-            host='0.0.0.0',
-            port=5000,
-            access_log=logger
+        # Initialize OTA Manager
+        logger.info("📦 Initializing OTA Manager...")
+        ota_manager = OTAManager(firmware_version="1.0.0")
+        
+        # Initialize AI Service
+        logger.info(f"🤖 Initializing AI Service ({AI_PROVIDER})...")
+        ai_service = AIService(provider=AI_PROVIDER, model=AI_MODEL)
+        await ai_service.initialize()
+        
+        # Initialize TTS Service
+        logger.info("🔊 Initializing TTS Service...")
+        if AI_PROVIDER == 'openai':
+            tts_service = TTSService(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
+        else:
+            # For DeepSeek, we still use OpenAI for TTS (if available)
+            if OPENAI_API_KEY:
+                tts_service = TTSService(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
+            else:
+                logger.warning("⚠️ No OpenAI key for TTS, using DeepSeek key (may not work)")
+                tts_service = TTSService(api_key=DEEPSEEK_API_KEY, base_url=OPENAI_BASE_URL)
+        
+        await tts_service.initialize()
+        
+        # Initialize STT Service
+        logger.info("🎤 Initializing STT Service...")
+        if AI_PROVIDER == 'openai':
+            stt_service = STTService(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
+        else:
+            # For DeepSeek, we still use OpenAI for STT (if available)
+            if OPENAI_API_KEY:
+                stt_service = STTService(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
+            else:
+                logger.warning("⚠️ No OpenAI key for STT, using DeepSeek key (may not work)")
+                stt_service = STTService(api_key=DEEPSEEK_API_KEY, base_url=OPENAI_BASE_URL)
+        
+        await stt_service.initialize()
+        
+        # Initialize WebSocket Handler
+        logger.info("🔌 Initializing WebSocket Handler...")
+        ws_handler = WebSocketHandler(
+            ai_service=ai_service,
+            tts_service=tts_service,
+            stt_service=stt_service,
+            device_manager=device_manager,
+            ota_manager=ota_manager
         )
         
-    except KeyboardInterrupt:
-        logger.info("⏹️ Shutting down...")
+        logger.info("=" * 80)
+        logger.info("✅ ALL SERVICES INITIALIZED SUCCESSFULLY")
+        logger.info("=" * 80)
+        logger.info(f"🌐 Server listening on: {HOST}:{PORT}")
+        logger.info(f"📡 WebSocket endpoint: ws://{HOST}:{PORT}/ws")
+        logger.info(f"🌍 Web interface: http://{HOST}:{PORT}/")
+        logger.info("=" * 80)
+        
     except Exception as e:
-        logger.error(f"❌ Fatal error: {e}", exc_info=True)
+        logger.error(f"❌ STARTUP FAILED: {e}", exc_info=True)
         raise
+    
+    yield  # Server is running
+    
+    # SHUTDOWN
+    logger.info("=" * 80)
+    logger.info("🛑 SHUTTING DOWN SERVER...")
+    logger.info("=" * 80)
+    
+    # Cleanup resources
+    if device_manager:
+        active_devices = device_manager.get_device_count()
+        logger.info(f"📊 Active devices at shutdown: {active_devices}")
+    
+    logger.info("✅ Server shutdown complete")
+    logger.info("=" * 80)
+
+
+# ==============================================================================
+# FastAPI Application
+# ==============================================================================
+
+app = FastAPI(
+    title="School Chatbot WebSocket Server",
+    description="WebSocket server for ESP32-based school chatbot",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# Mount static files
+if os.path.exists('/app/static'):
+    app.mount("/static", StaticFiles(directory="/app/static"), name="static")
+    logger.info("📁 Static files mounted at /static")
+
+
+# ==============================================================================
+# HTTP Endpoints
+# ==============================================================================
+
+@app.get("/", response_class=HTMLResponse)
+async def root():
+    """Serve the web interface"""
+    index_path = "/app/static/index.html"
+    
+    if os.path.exists(index_path):
+        with open(index_path, 'r', encoding='utf-8') as f:
+            return HTMLResponse(content=f.read())
+    else:
+        return HTMLResponse(
+            content="""
+            <html>
+                <head><title>School Chatbot Server</title></head>
+                <body style="font-family: Arial; padding: 50px; text-align: center;">
+                    <h1>🤖 School Chatbot WebSocket Server</h1>
+                    <p>WebSocket endpoint: <code>ws://&lt;host&gt;:5000/ws</code></p>
+                    <p>Status: <strong style="color: green;">Running ✅</strong></p>
+                    <hr>
+                    <p><em>Web interface not available (index.html not found)</em></p>
+                </body>
+            </html>
+            """
+        )
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return JSONResponse({
+        "status": "healthy",
+        "services": {
+            "ai": ai_service is not None,
+            "tts": tts_service is not None,
+            "stt": stt_service is not None,
+            "device_manager": device_manager is not None,
+            "ota_manager": ota_manager is not None,
+            "websocket_handler": ws_handler is not None
+        },
+        "devices": device_manager.get_device_count() if device_manager else 0,
+        "active_connections": ws_handler.get_active_connections_count() if ws_handler else 0
+    })
+
+
+@app.get("/status")
+async def get_status():
+    """Get detailed server status"""
+    if not device_manager:
+        return JSONResponse({"error": "Device manager not initialized"}, status_code=503)
+    
+    stats = device_manager.get_statistics()
+    
+    return JSONResponse({
+        "server": {
+            "version": "1.0.0",
+            "ai_provider": AI_PROVIDER,
+            "ai_model": AI_MODEL,
+        },
+        "devices": stats,
+        "active_connections": ws_handler.get_active_connections_count() if ws_handler else 0,
+        "active_device_ids": ws_handler.get_active_devices() if ws_handler else []
+    })
+
+
+# ==============================================================================
+# WebSocket Endpoint
+# ==============================================================================
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """
+    Main WebSocket endpoint for device connections
+    
+    Protocol:
+        - Client sends JSON messages
+        - Server responds with JSON messages
+        - Message types: register, chat, voice, ping, ota_check
+    """
+    if not ws_handler:
+        logger.error("❌ WebSocket handler not initialized")
+        await websocket.close(code=1011, reason="Server not ready")
+        return
+    
+    await ws_handler.handle_connection(websocket)
+
+
+# ==============================================================================
+# Main Entry Point
+# ==============================================================================
+
+if __name__ == "__main__":
+    import uvicorn
+    
+    logger.info("🚀 Starting Uvicorn server...")
+    
+    uvicorn.run(
+        app,
+        host=HOST,
+        port=PORT,
+        log_level=LOG_LEVEL.lower(),
+        access_log=True
+    )
