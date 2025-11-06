@@ -3,8 +3,9 @@ School Chatbot WebSocket Server
 Main FastAPI application with WebSocket support for ESP32 devices
 """
 import logging
+import asyncio
 import os
-import json  # ← ADD THIS
+import json
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket
 from fastapi.staticfiles import StaticFiles

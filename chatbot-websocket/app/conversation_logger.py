@@ -5,7 +5,7 @@ Conversation Logger - Save conversations to MySQL
 
 import logging
 import aiomysql
-import asyncio
+#import asyncio
 import time
 from datetime import datetime
 from typing import Optional, Dict, List
