@@ -62,11 +62,32 @@ class WebSocketHandler:
                             websocket.receive_text(),
                             timeout=300.0
                         )
+                        
+                        # ✅ THÊM LOG ĐỂ DEBUG
+                        data_len = len(data)
+                        self.logger.info(f"📦 Received {data_len} bytes from {temp_id if not device_id else device_id}")
+                        
+                        if data_len > 100000:  # > 100KB
+                            self.logger.warning(f"⚠️ Large message: {data_len / 1024:.1f} KB")
+                            
                     except asyncio.TimeoutError:
                         self.logger.warning(f"⏱️ Timeout waiting for message from {temp_id}")
                         await self.send_message(temp_id, {"type": "ping"})
                         continue
                     
+                    # ✅ THÊM LOG TRƯỚC KHI PARSE JSON
+                    try:
+                        message = json.loads(data)
+                    except json.JSONDecodeError as e:
+                        self.logger.error(f"❌ JSON decode error: {e}")
+                        self.logger.error(f"📝 First 500 chars: {data[:500]}")
+                        await self.send_error(device_id or temp_id, "Invalid JSON format")
+                        continue
+                    
+                    message_type = message.get('type', 'unknown')
+                    
+                    self.logger.info(f"📨 Message from {temp_id if not device_id else device_id}: {message_type}")
+
                     message = json.loads(data)
                     message_type = message.get('type', 'unknown')
                     
