@@ -69,8 +69,8 @@ schema:
   piper_voice_en: list(en_US-lessac-medium|en_US-amy-medium|en_GB-alan-medium|en_GB-southern_english_female-medium)?
   
   # === PROMPTS ===
-  system_prompt: text?
-  custom_prompt: text?
+  system_prompt: str?
+  custom_prompt: str?
   
   # === MYSQL (giữ nguyên) ===
   mysql_url: str?
