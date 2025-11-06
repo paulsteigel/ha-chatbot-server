@@ -389,7 +389,26 @@ class WebSocketHandler:
                     continue
             
             # ─────────────────────────────────────────────────────────
-            # STEP 7: SEND COMPLETION MESSAGE (← NEW!)
+            # STEP 7: LOG CONVERSATION TO MYSQL (← ADD THIS!)
+            # ─────────────────────────────────────────────────────────
+            if self.conversation_logger and full_original_text.strip():
+                try:
+                    import time
+                    await self.conversation_logger.log_conversation(
+                        device_id=device_id,
+                        device_type=device_type,
+                        user_message=text,  # ← User's voice transcription
+                        ai_response=full_original_text.strip(),  # ← Full AI response
+                        model=self.ai_service.model,
+                        provider=self.ai_service.provider,
+                        response_time=0.0,  # ← We don't track time in streaming
+                    )
+                    self.logger.info(f"💾 Conversation saved: {device_id}")
+                except Exception as log_error:
+                    self.logger.error(f"❌ MySQL log error: {log_error}")
+                    
+            # ─────────────────────────────────────────────────────────
+            # STEP 8: SEND COMPLETION MESSAGE (← NEW!)
             # ─────────────────────────────────────────────────────────
             self.logger.info(
                 f"✅ Voice response complete: {sentence_count} chunks, "
