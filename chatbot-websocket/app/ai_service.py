@@ -1,18 +1,17 @@
 """
 AI Service - Handles chat with AI providers (OpenAI/DeepSeek)
-Streaming support with sentence-level chunking
 """
 
 import os
 import logging
 import time
 import re
-from typing import List, Dict, Optional, AsyncGenerator
+from typing import List, Dict, Optional
 from openai import AsyncOpenAI
 
 
 class AIService:
-    """AI Chat Service with streaming support"""
+    """AI Chat Service supporting multiple providers"""
 
     def __init__(
         self,
@@ -24,7 +23,18 @@ class AIService:
         max_tokens: int = 500,
         max_context: int = 10,
     ):
-        """Initialize AI Service"""
+        """
+        Initialize AI Service
+
+        Args:
+            api_key: API key for the provider
+            base_url: Base URL for API (OpenAI or DeepSeek)
+            model: Model name
+            system_prompt: System prompt for the AI
+            temperature: Sampling temperature (0.0 to 2.0)
+            max_tokens: Maximum tokens in response
+            max_context: Maximum conversation history to keep
+        """
         self.logger = logging.getLogger("AIService")
 
         self.api_key = api_key
@@ -44,261 +54,81 @@ class AIService:
         self.logger.info("🤖 Initializing AI Service...")
         self.logger.info(f"   Provider: {self.provider}")
         self.logger.info(f"   Model: {model}")
-        self.logger.info(f"   Streaming: Enabled")
+        self.logger.info(f"   Base URL: {base_url}")
+        self.logger.info(f"   Temperature: {temperature}")
+        self.logger.info(f"   Max Tokens: {max_tokens}")
+        self.logger.info(f"   Max Context: {max_context}")
 
+        # Initialize OpenAI client
         try:
             self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
             self.logger.info("✅ AI Service initialized")
+
+            # Test the service
             self._test_service()
+
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize AI client: {e}")
             raise
 
     def _test_service(self):
-        """Test AI service"""
+        """Test AI service with a simple query"""
         import asyncio
 
+        self.logger.info("🧪 Testing AI service...")
+
         async def test():
-            response, _ = await self.chat("Hello")
+            response = await self.chat("Hello, can you hear me?")
+            self.logger.info(f"🤖 AI: {response}")
             self.clear_history()
+            return response
 
         try:
+            # Run test in event loop
             loop = asyncio.get_event_loop()
             if loop.is_running():
+                # If loop is already running, create a task
                 asyncio.create_task(test())
             else:
+                # If no loop is running, run it
                 asyncio.run(test())
+
             self.logger.info("✅ AI test successful")
         except Exception as e:
             self.logger.warning(f"⚠️ AI test skipped: {e}")
 
-    def clean_text_for_tts(self, text: str) -> str:
-        """
-        Clean text for TTS:
-        - Remove ALL emoji (including complex ones)
-        - Remove special symbols
-        - Normalize whitespace
-        - Keep Vietnamese diacritics
-        """
-        # Comprehensive emoji removal
-        emoji_pattern = re.compile(
-            "["
-            "\U0001F1E0-\U0001F1FF"  # flags (iOS)
-            "\U0001F300-\U0001F5FF"  # symbols & pictographs
-            "\U0001F600-\U0001F64F"  # emoticons
-            "\U0001F680-\U0001F6FF"  # transport & map symbols
-            "\U0001F700-\U0001F77F"  # alchemical symbols
-            "\U0001F780-\U0001F7FF"  # Geometric Shapes Extended
-            "\U0001F800-\U0001F8FF"  # Supplemental Arrows-C
-            "\U0001F900-\U0001F9FF"  # Supplemental Symbols and Pictographs
-            "\U0001FA00-\U0001FA6F"  # Chess Symbols
-            "\U0001FA70-\U0001FAFF"  # Symbols and Pictographs Extended-A
-            "\U00002702-\U000027B0"  # Dingbats
-            "\U000024C2-\U0001F251"
-            "\U0001f926-\U0001f937"
-            "\U00010000-\U0010ffff"
-            "\u2640-\u2642"
-            "\u2600-\u2B55"
-            "\u200d"
-            "\u23cf"
-            "\u23e9"
-            "\u231a"
-            "\ufe0f"  # dingbats
-            "\u3030"
-            "]+",
-            flags=re.UNICODE
-        )
-        
-        # Remove emoji
-        cleaned = emoji_pattern.sub('', text)
-        
-        # Remove extra punctuation (keep Vietnamese)
-        cleaned = re.sub(r'[^\w\s\.,!?;:\-àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđĐ]', '', cleaned)
-        
-        # Normalize whitespace
-        cleaned = ' '.join(cleaned.split())
-        
-        if text != cleaned:
-            removed = text.replace(cleaned, '').strip()
-            if removed:
-                self.logger.debug(f"🧹 Removed: {removed[:30]}")
-        
-        return cleaned.strip()
-
     def detect_language(self, text: str) -> str:
         """
         Detect language with Vietnamese priority.
-        Vietnamese voice can handle English, but not vice versa.
+        
+        Strategy:
+        - If ANY Vietnamese characters exist → use Vietnamese voice
+        - Vietnamese voice can pronounce English words
+        - English voice CANNOT pronounce Vietnamese
+        
+        Returns: "vi" or "en"
         """
+        # Vietnamese unicode pattern (all diacritics)
         vietnamese_pattern = r'[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđĐ]'
         
-        # Any Vietnamese char → use Vietnamese voice
-        if re.search(vietnamese_pattern, text):
+        # Check for Vietnamese characters
+        has_vietnamese = bool(re.search(vietnamese_pattern, text))
+        
+        if has_vietnamese:
+            self.logger.debug(f"🇻🇳 Vietnamese detected in: '{text[:50]}...'")
             return "vi"
         
-        # Pure English check
+        # No Vietnamese chars → check if mostly English
         ascii_letters = len(re.findall(r'[a-zA-Z]', text))
-        total_chars = len(re.sub(r'[\s\d\W]', '', text))
+        total_chars = len(re.sub(r'[\s\d\W]', '', text))  # Remove spaces, numbers, punctuation
         
-        if total_chars > 0 and ascii_letters / total_chars > 0.7:
+        if total_chars > 0 and ascii_letters / total_chars > 0.5:
+            self.logger.debug(f"🇺🇸 English detected in: '{text[:50]}...'")
             return "en"
         
-        # Default to Vietnamese (safe)
+        # Default to Vietnamese (safe choice)
+        self.logger.debug(f"🇻🇳 Default to Vietnamese: '{text[:50]}...'")
         return "vi"
-
-    async def chat_stream(
-        self,
-        user_message: str,
-        conversation_logger=None,
-        device_id: str = None,
-        device_type: str = None,
-    ) -> AsyncGenerator[tuple[str, str, str, bool], None]:
-        """
-        Stream chat response sentence by sentence for progressive TTS.
-        
-        Yields:
-            tuple[
-                original_text: str,    # For display (with emoji)
-                cleaned_text: str,     # For TTS (no emoji)
-                language: str,         # "vi" or "en"
-                is_last: bool          # Final chunk marker
-            ]
-        """
-        start_time = time.time()
-        
-        try:
-            self.logger.info(f"💬 User: {user_message}")
-            
-            # Add to history
-            self.conversation_history.append({"role": "user", "content": user_message})
-            
-            # Limit history
-            if len(self.conversation_history) > self.max_context * 2:
-                self.conversation_history = self.conversation_history[-(self.max_context * 2):]
-            
-            # Prepare messages
-            messages = [
-                {"role": "system", "content": self.system_prompt}
-            ] + self.conversation_history
-            
-            request_start = time.time()
-            self.logger.info(f"⏱️  Streaming from {self.provider.upper()}...")
-            
-            # ✅ CREATE STREAMING REQUEST
-            stream = await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-                stream=True,
-            )
-            
-            full_response = ""
-            current_sentence = ""
-            first_token_time = None
-            sentence_count = 0
-            
-            # ✅ PROCESS STREAM TOKEN BY TOKEN
-            async for chunk in stream:
-                if chunk.choices[0].delta.content:
-                    token = chunk.choices[0].delta.content
-                    full_response += token
-                    current_sentence += token
-                    
-                    # Log first token latency
-                    if first_token_time is None:
-                        first_token_time = time.time() - request_start
-                        self.logger.info(f"⚡ First token: {first_token_time:.2f}s")
-                    
-                    # ✅ DETECT SENTENCE BOUNDARY
-                    # Match: . ! ? and variants with optional space/newline
-                    if re.search(r'[.!?。！？]\s*$', current_sentence):
-                        original = current_sentence.strip()
-                        
-                        if original:
-                            sentence_count += 1
-                            
-                            # ✅ CLEAN FOR TTS
-                            cleaned = self.clean_text_for_tts(original)
-                            
-                            # Only yield if text remains after cleaning
-                            if cleaned:
-                                language = self.detect_language(cleaned)
-                                
-                                self.logger.info(
-                                    f"📤 Sentence {sentence_count} ({language}): "
-                                    f"'{original[:50]}{'...' if len(original) > 50 else ''}'"
-                                )
-                                
-                                # ✅ YIELD CHUNK
-                                yield (original, cleaned, language, False)
-                            
-                            # Reset for next sentence
-                            current_sentence = ""
-            
-            # ✅ HANDLE REMAINING TEXT (no ending punctuation)
-            if current_sentence.strip():
-                original = current_sentence.strip()
-                cleaned = self.clean_text_for_tts(original)
-                
-                if cleaned:
-                    sentence_count += 1
-                    language = self.detect_language(cleaned)
-                    
-                    self.logger.info(
-                        f"📤 Final sentence {sentence_count} ({language}): "
-                        f"'{original[:50]}{'...' if len(original) > 50 else ''}'"
-                    )
-                    
-                    yield (original, cleaned, language, True)
-                else:
-                    # Send end marker
-                    yield ("", "", "", True)
-            else:
-                # Send end marker
-                yield ("", "", "", True)
-            
-            # Add AI response to history
-            self.conversation_history.append({
-                "role": "assistant",
-                "content": full_response
-            })
-            
-            # Log performance
-            request_time = time.time() - request_start
-            total_time = time.time() - start_time
-            
-            self.logger.info(
-                f"🤖 Complete: {len(full_response)} chars, "
-                f"{sentence_count} sentences"
-            )
-            self.logger.info(
-                f"⏱️  Timing: First token {first_token_time:.2f}s, "
-                f"Total {request_time:.2f}s"
-            )
-            
-            # Save to database
-            if conversation_logger and device_id:
-                try:
-                    await conversation_logger.log_conversation(
-                        device_id=device_id,
-                        device_type=device_type or "unknown",
-                        user_message=user_message,
-                        ai_response=full_response,
-                        model=self.model,
-                        provider=self.provider,
-                        response_time=request_time,
-                    )
-                except Exception as log_error:
-                    self.logger.error(f"❌ MySQL log error: {log_error}")
-            
-        except Exception as e:
-            self.logger.error(f"❌ Chat stream error: {e}", exc_info=True)
-            # Yield error message
-            yield ("Xin lỗi, chị gặp lỗi khi xử lý.", 
-                   "Xin lỗi, chị gặp lỗi khi xử lý.", 
-                   "vi", 
-                   True)
 
     async def chat(
         self,
@@ -308,23 +138,127 @@ class AIService:
         device_type: str = None,
     ) -> tuple[str, str]:
         """
-        Non-streaming chat (backward compatible).
-        Collects all chunks and returns complete response.
-        
+        Send a chat message and get AI response
+
+        Args:
+            user_message: User's message
+            conversation_logger: Optional MySQL logger instance
+            device_id: Optional device ID for logging
+            device_type: Optional device type for logging
+
         Returns:
-            tuple[response_text, language]
+            Tuple of (AI's response text, detected language)
         """
-        full_response = ""
-        language = "vi"
-        
-        async for original, cleaned, lang, is_last in self.chat_stream(
-            user_message, conversation_logger, device_id, device_type
-        ):
-            if original:
-                full_response += original + " "
-                language = lang
-        
-        return full_response.strip(), language
+        # Start total timer
+        start_time = time.time()
+
+        try:
+            # Log user message
+            self.logger.info(f"💬 User: {user_message}")
+
+            # Add user message to history
+            self.conversation_history.append({"role": "user", "content": user_message})
+
+            # Limit conversation history
+            if len(self.conversation_history) > self.max_context * 2:
+                self.conversation_history = self.conversation_history[
+                    -(self.max_context * 2) :
+                ]
+
+            # Prepare messages
+            messages = [
+                {"role": "system", "content": self.system_prompt}
+            ] + self.conversation_history
+
+            # Start API request timer
+            request_start = time.time()
+            self.logger.info(f"⏱️  Sending request to {self.provider.upper()}...")
+
+            # ✅ USE STREAMING FOR FASTER FIRST TOKEN
+            if self.provider == "deepseek":
+                # Streaming response (faster perceived speed)
+                stream = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens,
+                    stream=True,
+                )
+
+                ai_response = ""
+                first_token_time = None
+
+                async for chunk in stream:
+                    if chunk.choices[0].delta.content:
+                        content = chunk.choices[0].delta.content
+                        ai_response += content
+
+                        # Log first token time
+                        if first_token_time is None:
+                            first_token_time = time.time() - request_start
+                            self.logger.info(f"⚡ First token: {first_token_time:.2f}s")
+
+            else:
+                # Non-streaming (OpenAI/Groq)
+                response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens,
+                )
+                ai_response = response.choices[0].message.content
+
+            # Calculate request time
+            request_time = time.time() - request_start
+
+            # Add AI response to history
+            self.conversation_history.append(
+                {"role": "assistant", "content": ai_response}
+            )
+
+            # ✅ DETECT LANGUAGE
+            language = self.detect_language(ai_response)
+
+            # Calculate total time
+            total_time = time.time() - start_time
+
+            # Enhanced logging with timing
+            self.logger.info(f"🤖 AI: {ai_response}")
+            self.logger.info(f"🌐 Language: {language} ({'Vietnamese' if language == 'vi' else 'English'})")
+            self.logger.info(
+                f"⏱️  AI Response Time: {request_time:.2f}s (Total: {total_time:.2f}s)"
+            )
+
+            # Warning if slow
+            if request_time > 5.0:
+                self.logger.warning(
+                    f"⚠️  Slow AI response detected! ({request_time:.2f}s)"
+                )
+
+            # Save to MySQL if logger provided
+            if conversation_logger and device_id:
+                try:
+                    await conversation_logger.log_conversation(
+                        device_id=device_id,
+                        device_type=device_type or "unknown",
+                        user_message=user_message,
+                        ai_response=ai_response,
+                        model=self.model,
+                        provider=self.provider,
+                        response_time=request_time,
+                    )
+                except Exception as log_error:
+                    self.logger.error(f"❌ MySQL log error: {log_error}")
+
+            # ✅ RETURN BOTH RESPONSE AND LANGUAGE
+            return ai_response, language
+
+        except Exception as e:
+            self.logger.error(f"❌ Chat error: {e}", exc_info=True)
+            error_time = time.time() - start_time
+            self.logger.error(f"⏱️  Failed after {error_time:.2f}s")
+            # Return error message with Vietnamese language (safe default)
+            return "Xin lỗi, chị gặp lỗi khi xử lý câu hỏi của em.", "vi"
 
     def clear_history(self):
         """Clear conversation history"""
