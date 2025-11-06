@@ -1,6 +1,6 @@
 # File: config.yaml
 name: "School Chatbot WebSocket"
-version: "1.0.13"
+version: "1.0.14"
 slug: school-chatbot-websocket
 description: "AI Chatbot for schools with WebSocket support"
 arch:
@@ -32,8 +32,12 @@ options:
   tts_voice_en: alloy
   
   # Piper voices (nếu dùng piper)
+  piper_host: "addon_core_piper"
+  piper_port: 10200
   piper_voice_vi: vi_VN-vais1000-medium
   piper_voice_en: en_US-lessac-medium
+  
+  # MySql
   mysql_url: connection string for mysql
 
   # Chat settings
@@ -64,6 +68,9 @@ schema:
   # OpenAI TTS voices
   tts_voice_vi: list(alloy|echo|fable|onyx|nova|shimmer)?
   tts_voice_en: list(alloy|echo|fable|onyx|nova|shimmer)?
+  
+  piper_host: str?
+  piper_port: int(1,65535)?
   
   # Piper TTS voices (Vietnamese + English)
   piper_voice_vi: list(vi-25hours-single-low|vi-vivos-x-low|vi_VN-25hours_single-low|vi_VN-vais1000-medium|vi_VN-vivos-x_low)?

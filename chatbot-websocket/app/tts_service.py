@@ -89,8 +89,8 @@ class TTSService:
         return {
             'tts': {
                 'piper': {
-                    'host': get_config('piper_host', '172.30.32.1'),
-                    'port': get_config('piper_port', 10200)
+                    'host': get_config('piper_host', 'addon_core_piper'),
+                    'port': int(get_config('piper_port', 10200))
                 }
             },
             'piper_voice_vi': get_config('piper_voice_vi', 'vi_VN-vais1000-medium'),
