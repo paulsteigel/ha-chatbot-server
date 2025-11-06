@@ -265,34 +265,6 @@ class WebSocketHandler:
             text = await self.stt_service.transcribe(audio_data, stt_language)
             
             if not text:
-                await self.
-    # ═══════════════════════════════════════════════════════════════════
-    # ← MODIFIED: handle_voice() - NEW STREAMING IMPLEMENTATION
-    # ═══════════════════════════════════════════════════════════════════
-    async def handle_voice(self, data: Dict):
-        """Handle voice message with streaming response"""
-        try:
-            device_id = data.get("device_id")
-            audio_base64 = data.get("audio")
-            audio_format = data.get("format", "webm")
-            stt_language = data.get("language", "vi")
-            
-            if not audio_base64:
-                await self.send_error(device_id, "Missing audio data")
-                return
-            
-            self.logger.info(
-                f"🎤 Voice from {device_id} "
-                f"(format: {audio_format}, STT language: {stt_language})"
-            )
-            
-            # ─────────────────────────────────────────────────────────
-            # STEP 1: TRANSCRIBE (← KEEP)
-            # ─────────────────────────────────────────────────────────
-            audio_data = base64.b64decode(audio_base64)
-            text = await self.stt_service.transcribe(audio_data, stt_language)
-            
-            if not text:
                 await self.send_error(device_id, "Could not transcribe audio")
                 return
             

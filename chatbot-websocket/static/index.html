@@ -331,17 +331,14 @@
             border-left: 4px solid #667eea;
         }
 
-        /* Responsive */
         @media (max-width: 640px) {
             .container {
                 border-radius: 0;
                 height: 100vh;
             }
-
             .header h1 {
                 font-size: 22px;
             }
-
             .chat-container {
                 height: calc(100vh - 250px);
             }
@@ -353,9 +350,7 @@
         <div class="header">
             <h1>🤖 Yên Hoà Chatbot</h1>
             <div class="subtitle">Trợ lý AI thông minh cho học sinh</div>
-            <div class="status disconnected" id="status">
-                ⏳ Đang kết nối...
-            </div>
+            <div class="status disconnected" id="status">⏳ Đang kết nối...</div>
         </div>
 
         <div class="chat-container" id="chatContainer">
@@ -378,24 +373,13 @@
 
         <div class="input-container">
             <button id="voiceBtn" title="Nhấn để ghi âm (hoặc giữ Space)">🎤</button>
-            <input 
-                type="text" 
-                id="messageInput" 
-                placeholder="Nhập tin nhắn hoặc nhấn mic để nói..."
-                autocomplete="off"
-            >
+            <input type="text" id="messageInput" placeholder="Nhập tin nhắn hoặc nhấn mic để nói..." autocomplete="off">
             <button id="sendBtn">Gửi ✈️</button>
         </div>
     </div>
 
     <script>
-        // Configuration
-        const CONFIG = {
-            reconnectDelay: 3000,
-            maxAudioDuration: 30000
-        };
-
-        // State
+        const CONFIG = { reconnectDelay: 3000, maxAudioDuration: 30000 };
         let ws = null;
         let deviceId = 'web-test-' + Date.now();
         let mediaRecorder = null;
@@ -403,8 +387,10 @@
         let isRecording = false;
         let recordingStartTime = null;
         let isTyping = false;
+        let audioQueue = [];
+        let isPlayingAudio = false;
+        let currentBotMessageDiv = null;
 
-        // DOM Elements
         const statusEl = document.getElementById('status');
         const chatContainer = document.getElementById('chatContainer');
         const messageInput = document.getElementById('messageInput');
@@ -412,34 +398,24 @@
         const voiceBtn = document.getElementById('voiceBtn');
         const voiceStatus = document.getElementById('voiceStatus');
 
-        // Initialize
         document.getElementById('welcomeTime').textContent = formatTime(new Date());
 
-        // ==================== WebSocket ====================
-        
         function connect() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsUrl = `${protocol}//${window.location.host}/ws`;
-            
             console.log('🔌 Connecting to:', wsUrl);
             ws = new WebSocket(wsUrl);
 
             ws.onopen = () => {
                 console.log('✅ WebSocket connected');
                 updateStatus('connected', '✅ Đã kết nối');
-                
-                sendWS({
-                    type: 'register',
-                    device_id: deviceId,
-                    device_type: 'web-browser',
-                    firmware_version: '1.0.0'
-                });
+                sendWS({ type: 'register', device_id: deviceId, device_type: 'web-browser', firmware_version: '1.0.0' });
             };
 
             ws.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
-                    console.log('📨 Received:', data.type, data);
+                    console.log('📨 Received:', data.type);
                     handleMessage(data);
                 } catch (err) {
                     console.error('❌ Parse error:', err);
@@ -472,48 +448,54 @@
             statusEl.textContent = text;
         }
 
-        // ==================== Message Handling ====================
-        
         function handleMessage(data) {
             removeTypingIndicator();
-
             switch (data.type) {
                 case 'registered':
                     console.log('✅ Registered:', data.device_id);
                     break;
-
-                // === NEW: HANDLE TRANSCRIPTION SEPARATELY ===
                 case 'transcription':
-                    // Show user's transcribed text immediately
                     addMessage('user', `🎤 "${data.text}"`, true);
-                    // Show typing indicator for AI response
                     showTypingIndicator();
+                    currentBotMessageDiv = null;
                     break;
-                
-                // NEW: Handle commands ← MỚI!
                 case 'command':
                     console.log('🎯 Command:', data.command);
-                    // Don't show typing indicator for commands
                     break;
-
                 case 'command_response':
                     console.log('✅ Command response:', data.text);
                     addMessage('bot', data.text);
-                    // No audio for command responses
                     break;
-
-                case 'ai_response':
-                    console.log('🤖 AI response received:', data.text);
+                case 'audio_chunk':
+                    console.log(`📦 Chunk ${data.chunk_index}: "${data.chunk_text}"`);
+                    if (!currentBotMessageDiv) {
+                        currentBotMessageDiv = addMessage('bot', data.chunk_text, false, true);
+                    } else {
+                        appendToMessage(currentBotMessageDiv, ' ' + data.chunk_text);
+                    }
+                    if (data.audio) {
+                        queueAudio(data.audio, data.format || 'wav');
+                    }
+                    if (data.is_last) {
+                        console.log('✅ Last chunk');
+                        currentBotMessageDiv = null;
+                    }
+                    break;
+                case 'ai_response_complete':
+                    console.log(`✅ Complete: ${data.total_chunks} chunks`);
                     removeTypingIndicator();
+                    voiceStatus.innerHTML = '';
+                    voiceStatus.classList.remove('active');
+                    currentBotMessageDiv = null;
+                    break;
+                case 'ai_response':
                     addMessage('bot', data.text);
                     if (data.audio) playAudio(data.audio, data.audio_format || 'mp3');
                     break;
-                
                 case 'chat_response':
                     addMessage('bot', data.text);
-                    if (data.audio) playAudio(data.audio, data.audio_format || 'mp3');
+                    if (data.audio) playAudio(data.audio, data.audio_format || 'wav');
                     break;
-
                 case 'voice_response':
                     if (data.transcribed_text) {
                         addMessage('user', `🎤 "${data.transcribed_text}"`, true);
@@ -521,40 +503,30 @@
                     addMessage('bot', data.text);
                     if (data.audio) playAudio(data.audio, data.audio_format || 'mp3');
                     break;
-
                 case 'error':
                     showError(data.message);
+                    currentBotMessageDiv = null;
                     break;
-
                 case 'pong':
                     console.log('🏓 Pong');
                     break;
             }
         }
-
-        // ==================== UI Functions ====================
-        
-        function addMessage(sender, text, isVoice = false) {
+        function addMessage(sender, text, isVoice = false, returnDiv = false) {
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${sender}`;
-            
             const icon = document.createElement('div');
             icon.className = 'message-icon';
             icon.textContent = sender === 'bot' ? '🤖' : (isVoice ? '🎤' : '👤');
-            
             const contentWrapper = document.createElement('div');
-            
             const content = document.createElement('div');
             content.className = 'message-content';
             content.textContent = text;
-            
             const timestamp = document.createElement('div');
             timestamp.className = 'timestamp';
             timestamp.textContent = formatTime(new Date());
-            
             contentWrapper.appendChild(content);
             contentWrapper.appendChild(timestamp);
-            
             if (sender === 'bot') {
                 messageDiv.appendChild(icon);
                 messageDiv.appendChild(contentWrapper);
@@ -562,24 +534,25 @@
                 messageDiv.appendChild(contentWrapper);
                 messageDiv.appendChild(icon);
             }
-            
             chatContainer.appendChild(messageDiv);
             scrollToBottom();
+            if (returnDiv) return messageDiv;
+        }
+
+        function appendToMessage(messageDiv, additionalText) {
+            const content = messageDiv.querySelector('.message-content');
+            if (content) {
+                content.textContent += additionalText;
+                scrollToBottom();
+            }
         }
 
         function showTypingIndicator() {
             if (isTyping) return;
             isTyping = true;
-            
             const typingDiv = document.createElement('div');
             typingDiv.className = 'message bot typing-message';
-            typingDiv.innerHTML = `
-                <div class="message-icon">🤖</div>
-                <div class="typing-indicator">
-                    <span></span><span></span><span></span>
-                </div>
-            `;
-            
+            typingDiv.innerHTML = `<div class="message-icon">🤖</div><div class="typing-indicator"><span></span><span></span><span></span></div>`;
             chatContainer.appendChild(typingDiv);
             scrollToBottom();
         }
@@ -604,26 +577,62 @@
         }
 
         function formatTime(date) {
-            return date.toLocaleTimeString('vi-VN', { 
-                hour: '2-digit', 
-                minute: '2-digit' 
+            return date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function queueAudio(base64Audio, format = 'wav') {
+            audioQueue.push({ base64Audio, format });
+            if (!isPlayingAudio) playNextAudio();
+        }
+
+        async function playNextAudio() {
+            if (audioQueue.length === 0) {
+                isPlayingAudio = false;
+                voiceStatus.innerHTML = '';
+                voiceStatus.classList.remove('active');
+                return;
+            }
+            isPlayingAudio = true;
+            const { base64Audio, format } = audioQueue.shift();
+            try {
+                voiceStatus.innerHTML = `🔊 Đang phát... (${audioQueue.length} trong hàng đợi)`;
+                voiceStatus.classList.add('active');
+                await playAudioAsync(base64Audio, format);
+                setTimeout(() => playNextAudio(), 100);
+            } catch (err) {
+                console.error('❌ Playback error:', err);
+                setTimeout(() => playNextAudio(), 100);
+            }
+        }
+
+        function playAudioAsync(base64Audio, format) {
+            return new Promise((resolve, reject) => {
+                try {
+                    const audio = new Audio(`data:audio/${format};base64,${base64Audio}`);
+                    audio.onended = () => {
+                        console.log('✅ Audio chunk finished');
+                        resolve();
+                    };
+                    audio.onerror = (err) => {
+                        console.error('❌ Audio error:', err);
+                        reject(err);
+                    };
+                    audio.play().catch(reject);
+                } catch (err) {
+                    reject(err);
+                }
             });
         }
 
-        // ==================== Audio ====================
-        
         function playAudio(base64Audio, format) {
             try {
                 const audio = new Audio(`data:audio/${format};base64,${base64Audio}`);
-                
                 voiceStatus.innerHTML = '🔊 Đang phát âm thanh...';
                 voiceStatus.classList.add('active');
-                
                 audio.play().catch(err => {
                     console.error('❌ Playback error:', err);
                     showError('Không thể phát âm thanh');
                 });
-                
                 audio.onended = () => {
                     voiceStatus.innerHTML = '';
                     voiceStatus.classList.remove('active');
@@ -633,8 +642,6 @@
             }
         }
 
-        // ==================== Text Chat ====================
-        
         function sendMessage() {
             const text = messageInput.value.trim();
             if (!text) return;
@@ -642,20 +649,12 @@
                 showError('Chưa kết nối đến server');
                 return;
             }
-
             addMessage('user', text);
             messageInput.value = '';
             showTypingIndicator();
-            
-            sendWS({
-                type: 'chat',
-                text: text,
-                language: 'auto'
-            });
+            sendWS({ type: 'chat', text: text, language: 'auto' });
         }
 
-        // ==================== Voice Recording ====================
-        
         async function toggleVoiceRecording() {
             if (isRecording) {
                 stopRecording();
@@ -667,17 +666,9 @@
         async function startRecording() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ 
-                    audio: {
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        sampleRate: 16000
-                    }
+                    audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 16000 }
                 });
-                
-                mediaRecorder = new MediaRecorder(stream, {
-                    mimeType: 'audio/webm'
-                });
-                
+                mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
                 audioChunks = [];
                 recordingStartTime = Date.now();
 
@@ -700,17 +691,12 @@
                 mediaRecorder.start();
                 isRecording = true;
                 voiceBtn.classList.add('recording');
-                
                 voiceStatus.innerHTML = '🎤 <strong>Đang ghi âm...</strong> Nhấn lại để dừng';
                 voiceStatus.classList.add('active');
-                
                 console.log('🎤 Recording started');
-                
-                // Auto-stop
                 setTimeout(() => {
                     if (isRecording) stopRecording();
                 }, CONFIG.maxAudioDuration);
-                
             } catch (err) {
                 console.error('❌ Mic error:', err);
                 showError('Không thể truy cập microphone');
@@ -721,11 +707,9 @@
             if (mediaRecorder && mediaRecorder.state !== 'inactive') {
                 const duration = Date.now() - recordingStartTime;
                 console.log(`🎤 Stopped (${(duration / 1000).toFixed(1)}s)`);
-                
                 mediaRecorder.stop();
                 isRecording = false;
                 voiceBtn.classList.remove('recording');
-                
                 voiceStatus.innerHTML = '⏳ Đang xử lý...';
                 voiceStatus.classList.remove('active');
             }
@@ -737,32 +721,21 @@
                 voiceStatus.innerHTML = '';
                 return;
             }
-
             try {
                 console.log('📤 Sending voice:', audioBlob.size, 'bytes');
                 showTypingIndicator();
-                
                 const reader = new FileReader();
                 reader.readAsDataURL(audioBlob);
                 reader.onloadend = () => {
                     const base64Audio = reader.result.split(',')[1];
-                    
-                    sendWS({
-                        type: 'voice',
-                        audio: base64Audio,
-                        format: 'webm',
-                        language: 'auto'
-                    });
-                    
+                    sendWS({ type: 'voice', audio: base64Audio, format: 'webm', language: 'auto' });
                     voiceStatus.innerHTML = '⏳ Chờ phản hồi...';
                 };
-                
                 reader.onerror = () => {
                     showError('Lỗi đọc file');
                     voiceStatus.innerHTML = '';
                     removeTypingIndicator();
                 };
-                
             } catch (err) {
                 console.error('❌ Send error:', err);
                 showError('Lỗi gửi voice');
@@ -771,8 +744,6 @@
             }
         }
 
-        // ==================== Event Listeners ====================
-        
         sendBtn.addEventListener('click', sendMessage);
         messageInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -782,31 +753,20 @@
         });
         voiceBtn.addEventListener('click', toggleVoiceRecording);
 
-        // Keyboard: Space to record
         document.addEventListener('keydown', (e) => {
-            if (e.code === 'Space' && e.target !== messageInput && !isRecording) {
+            if (e.code === 'Space' && document.activeElement !== messageInput) {
                 e.preventDefault();
-                startRecording();
+                if (!isRecording) startRecording();
             }
         });
 
         document.addEventListener('keyup', (e) => {
-            if (e.code === 'Space' && isRecording && e.target !== messageInput) {
+            if (e.code === 'Space' && document.activeElement !== messageInput) {
                 e.preventDefault();
-                stopRecording();
+                if (isRecording) stopRecording();
             }
         });
 
-        // Heartbeat
-        setInterval(() => {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                sendWS({ type: 'ping', timestamp: Date.now() });
-            }
-        }, 30000);
-
-        // Initialize
-        console.log('🚀 Yên Hoà Chatbot Test Interface');
-        console.log('📱 Device ID:', deviceId);
         connect();
     </script>
 </body>
