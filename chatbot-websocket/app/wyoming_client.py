@@ -8,7 +8,7 @@ import logging
 import io
 import wave
 from wyoming.audio import AudioChunk, AudioStart, AudioStop
-from wyoming.tts import Synthesize
+from wyoming.tts import Synthesize, SynthesizeVoice  # ← Import SynthesizeVoice
 from wyoming.event import async_write_event, async_read_event
 
 logger = logging.getLogger(__name__)
@@ -34,14 +34,17 @@ class WyomingTTSClient:
             )
             
             try:
-                # ✅ FIX: Create Synthesize event correctly for Wyoming 1.5.2
+                # ✅ CREATE PROPER SynthesizeVoice OBJECT
+                voice_obj = SynthesizeVoice(name=voice)
+                
+                # ✅ CREATE SYNTHESIZE EVENT
                 synthesize_event = Synthesize(
                     text=text,
-                    voice={"name": voice}  # ← FIX: voice must be a dict
+                    voice=voice_obj  # ← Use SynthesizeVoice object
                 )
                 
-                # ✅ FIX: Write event directly (no .event() method in 1.5.2)
-                await async_write_event(synthesize_event, writer)
+                # ✅ WRITE EVENT (with .event() method)
+                await async_write_event(synthesize_event.event(), writer)
                 await writer.drain()
                 
                 # Receive audio chunks
