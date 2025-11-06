@@ -5,6 +5,7 @@ AI Service - Handles chat with AI providers (OpenAI/DeepSeek)
 import os
 import logging
 import time
+import re
 from typing import List, Dict, Optional
 from openai import AsyncOpenAI
 
@@ -96,13 +97,46 @@ class AIService:
         except Exception as e:
             self.logger.warning(f"⚠️ AI test skipped: {e}")
 
+    def detect_language(self, text: str) -> str:
+        """
+        Detect language with Vietnamese priority.
+        
+        Strategy:
+        - If ANY Vietnamese characters exist → use Vietnamese voice
+        - Vietnamese voice can pronounce English words
+        - English voice CANNOT pronounce Vietnamese
+        
+        Returns: "vi" or "en"
+        """
+        # Vietnamese unicode pattern (all diacritics)
+        vietnamese_pattern = r'[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđĐ]'
+        
+        # Check for Vietnamese characters
+        has_vietnamese = bool(re.search(vietnamese_pattern, text))
+        
+        if has_vietnamese:
+            self.logger.debug(f"🇻🇳 Vietnamese detected in: '{text[:50]}...'")
+            return "vi"
+        
+        # No Vietnamese chars → check if mostly English
+        ascii_letters = len(re.findall(r'[a-zA-Z]', text))
+        total_chars = len(re.sub(r'[\s\d\W]', '', text))  # Remove spaces, numbers, punctuation
+        
+        if total_chars > 0 and ascii_letters / total_chars > 0.5:
+            self.logger.debug(f"🇺🇸 English detected in: '{text[:50]}...'")
+            return "en"
+        
+        # Default to Vietnamese (safe choice)
+        self.logger.debug(f"🇻🇳 Default to Vietnamese: '{text[:50]}...'")
+        return "vi"
+
     async def chat(
         self,
         user_message: str,
         conversation_logger=None,
         device_id: str = None,
         device_type: str = None,
-    ) -> str:
+    ) -> tuple[str, str]:
         """
         Send a chat message and get AI response
 
@@ -113,7 +147,7 @@ class AIService:
             device_type: Optional device type for logging
 
         Returns:
-            AI's response text
+            Tuple of (AI's response text, detected language)
         """
         # Start total timer
         start_time = time.time()
@@ -182,11 +216,15 @@ class AIService:
                 {"role": "assistant", "content": ai_response}
             )
 
+            # ✅ DETECT LANGUAGE
+            language = self.detect_language(ai_response)
+
             # Calculate total time
             total_time = time.time() - start_time
 
             # Enhanced logging with timing
             self.logger.info(f"🤖 AI: {ai_response}")
+            self.logger.info(f"🌐 Language: {language} ({'Vietnamese' if language == 'vi' else 'English'})")
             self.logger.info(
                 f"⏱️  AI Response Time: {request_time:.2f}s (Total: {total_time:.2f}s)"
             )
@@ -212,13 +250,15 @@ class AIService:
                 except Exception as log_error:
                     self.logger.error(f"❌ MySQL log error: {log_error}")
 
-            return ai_response
+            # ✅ RETURN BOTH RESPONSE AND LANGUAGE
+            return ai_response, language
 
         except Exception as e:
             self.logger.error(f"❌ Chat error: {e}", exc_info=True)
             error_time = time.time() - start_time
             self.logger.error(f"⏱️  Failed after {error_time:.2f}s")
-            return "Xin lỗi, chị gặp lỗi khi xử lý câu hỏi của em."
+            # Return error message with Vietnamese language (safe default)
+            return "Xin lỗi, chị gặp lỗi khi xử lý câu hỏi của em.", "vi"
 
     def clear_history(self):
         """Clear conversation history"""

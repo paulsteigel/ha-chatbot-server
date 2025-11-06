@@ -21,7 +21,7 @@ class WebSocketHandler:
         ai_service, 
         tts_service, 
         stt_service,
-        conversation_logger=None  # ← THÊM PARAMETER
+        conversation_logger=None
     ):
         """Initialize WebSocket Handler"""
         self.logger = logging.getLogger('WebSocketHandler')
@@ -30,7 +30,7 @@ class WebSocketHandler:
         self.ai_service = ai_service
         self.tts_service = tts_service
         self.stt_service = stt_service
-        self.conversation_logger = conversation_logger  # ← LƯU LOGGER
+        self.conversation_logger = conversation_logger
         self.command_detector = CommandDetector()
         self.logger.info("🔌 WebSocket Handler initialized")
     
@@ -158,7 +158,6 @@ class WebSocketHandler:
         try:
             device_id = data.get("device_id")
             text = data.get("text", "")
-            language = data.get("language", "auto")
             
             if not text:
                 await self.send_error(device_id, "Empty text message")
@@ -170,8 +169,8 @@ class WebSocketHandler:
             device_info = self.device_manager.devices.get(device_id, {})
             device_type = device_info.get('type', 'unknown')
             
-            # Get AI response WITH MYSQL LOGGING
-            ai_response = await self.ai_service.chat(
+            # ✅ GET AI RESPONSE WITH LANGUAGE
+            ai_response, language = await self.ai_service.chat(
                 user_message=text,
                 conversation_logger=self.conversation_logger,
                 device_id=device_id,
@@ -182,7 +181,7 @@ class WebSocketHandler:
                 await self.send_error(device_id, "AI service error")
                 return
             
-            # Generate TTS audio
+            # ✅ GENERATE TTS WITH DETECTED LANGUAGE
             audio_base64 = await self.tts_service.synthesize(ai_response, language)
             
             # Send response
@@ -190,7 +189,8 @@ class WebSocketHandler:
                 "type": "chat_response",
                 "text": ai_response,
                 "audio": audio_base64,
-                "audio_format": "mp3"
+                "audio_format": "mp3",
+                "language": language  # ← Send language to frontend
             })
             
         except Exception as e:
@@ -213,8 +213,8 @@ class WebSocketHandler:
             device_info = self.device_manager.devices.get(device_id, {})
             device_type = device_info.get('type', 'unknown')
             
-            # Get AI response WITH MYSQL LOGGING
-            ai_response = await self.ai_service.chat(
+            # ✅ GET AI RESPONSE WITH LANGUAGE
+            ai_response, language = await self.ai_service.chat(
                 user_message=text,
                 conversation_logger=self.conversation_logger,
                 device_id=device_id,
@@ -228,18 +228,20 @@ class WebSocketHandler:
             # Send text response
             await self.send_message(device_id, {
                 "type": "text",
-                "text": ai_response
+                "text": ai_response,
+                "language": language
             })
             
-            # Generate audio response
-            audio_base64 = await self.tts_service.synthesize(ai_response, "auto")
+            # ✅ GENERATE AUDIO WITH DETECTED LANGUAGE
+            audio_base64 = await self.tts_service.synthesize(ai_response, language)
             
             if audio_base64:
                 # Send audio response
                 await self.send_message(device_id, {
                     "type": "audio",
                     "audio": audio_base64,
-                    "format": "mp3"
+                    "format": "mp3",
+                    "language": language
                 })
             
         except Exception as e:
@@ -252,19 +254,19 @@ class WebSocketHandler:
             device_id = data.get("device_id")
             audio_base64 = data.get("audio")
             audio_format = data.get("format", "webm")
-            language = data.get("language", "vi")  # ← DEFAULT VI
+            stt_language = data.get("language", "vi")  # ← Language for STT
             
             if not audio_base64:
                 await self.send_error(device_id, "Missing audio data")
                 return
             
-            self.logger.info(f"🎤 Voice from {device_id} (format: {audio_format}, language: {language})")
+            self.logger.info(f"🎤 Voice from {device_id} (format: {audio_format}, STT language: {stt_language})")
             
             # Decode audio
             audio_data = base64.b64decode(audio_base64)
             
             # STEP 1: TRANSCRIBE
-            text = await self.stt_service.transcribe(audio_data, language)
+            text = await self.stt_service.transcribe(audio_data, stt_language)
             
             if not text:
                 await self.send_error(device_id, "Could not transcribe audio")
@@ -317,11 +319,12 @@ class WebSocketHandler:
                 
                 return  # ← STOP HERE!
 
-            # STEP 4: GET AI RESPONSE WITH MYSQL LOGGING
+            # STEP 4: GET AI RESPONSE WITH LANGUAGE
             device_info = self.device_manager.devices.get(device_id, {})
             device_type = device_info.get('type', 'unknown')
             
-            ai_response = await self.ai_service.chat(
+            # ✅ GET AI RESPONSE WITH LANGUAGE DETECTION
+            ai_response, tts_language = await self.ai_service.chat(
                 user_message=text,
                 conversation_logger=self.conversation_logger,
                 device_id=device_id,
@@ -332,8 +335,8 @@ class WebSocketHandler:
                 await self.send_error(device_id, "AI service error")
                 return
             
-            # STEP 5: GENERATE TTS
-            response_audio = await self.tts_service.synthesize(ai_response, language)
+            # STEP 5: GENERATE TTS WITH DETECTED LANGUAGE
+            response_audio = await self.tts_service.synthesize(ai_response, tts_language)
             
             # STEP 6: SEND AI RESPONSE
             self.logger.info(f"📨 Sending AI response to frontend...")
@@ -341,7 +344,8 @@ class WebSocketHandler:
                 "type": "ai_response",
                 "text": ai_response,
                 "audio": response_audio,
-                "audio_format": "mp3"
+                "audio_format": "mp3",
+                "language": tts_language  # ← Send detected language
             })
             
         except Exception as e:
@@ -383,20 +387,6 @@ class WebSocketHandler:
             self.logger.error(f"❌ Clear history error: {e}", exc_info=True)
             await self.send_error(data.get("device_id"), f"Clear history error: {e}")
     
-    async def old_send_message(self, device_id: str, message: Dict):
-        """Send message to device"""
-        try:
-            websocket = self.device_manager.get_connection(device_id)
-            if websocket:
-                self.logger.info(f"📤 Sending '{message.get('type')}' to {device_id}")
-                await websocket.send_text(json.dumps(message))
-                self.logger.debug(f"✅ Message sent successfully")
-            else:
-                self.logger.warning(f"⚠️ No connection for device: {device_id}")
-                
-        except Exception as e:
-            self.logger.error(f"❌ Send message error: {e}", exc_info=True)
-    
     async def send_message(self, device_id: str, message: Dict):
         """Send message to device with connection check"""
         try:
@@ -425,7 +415,6 @@ class WebSocketHandler:
             self.logger.error(f"❌ Send error: {e}")
             return False
 
-
     async def send_error(self, device_id: str, error: str):
         """Send error message (SAFE - no cascade)"""
         try:
@@ -441,7 +430,6 @@ class WebSocketHandler:
             
         except Exception:
             pass  # Silent fail, no logging to prevent cascade
-
     
     async def broadcast(self, message: Dict, exclude_device: Optional[str] = None):
         """Broadcast message to all connected devices"""
