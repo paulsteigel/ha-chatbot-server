@@ -523,8 +523,10 @@ async def get_conversations(device_id: str = None, limit: int = 50):
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for device connections"""
-    device_id = f"web-{id(websocket)}"
-    await ws_handler.handle_connection(websocket, device_id)
+    #device_id = f"web-{id(websocket)}"
+    #await ws_handler.handle_connection(websocket, device_id)
+    await ws_handler.handle_connection(websocket)
+
 
 
 # ==============================================================================

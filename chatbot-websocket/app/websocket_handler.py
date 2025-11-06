@@ -37,19 +37,24 @@ class WebSocketHandler:
         self.command_detector = CommandDetector()
         self.logger.info("🔌 WebSocket Handler initialized")
     
-    async def handle_connection(self, websocket: WebSocket, device_id: str):
+    async def handle_connection(self, websocket: WebSocket):  # ← BỎ device_id
         """Handle WebSocket connection"""
-        # ← KEEP: This entire method stays exactly the same
+        
+        # ✅ TẠO TEMP ID
+        temp_id = f"temp-{id(websocket)}"
+        device_id = None  # ← Chưa biết device_id thật
+        
         try:
             await websocket.accept()
-            self.logger.info(f"📱 New WebSocket connection: {device_id}")
+            self.logger.info(f"📱 New WebSocket connection: {temp_id}")
             
-            await self.device_manager.add_connection(device_id, websocket)
+            # ✅ ADD CONNECTION với temp_id
+            await self.device_manager.add_connection(temp_id, websocket)
             
             while True:
                 try:
                     if websocket.client_state.name != "CONNECTED":
-                        self.logger.warning(f"⚠️ WebSocket not connected: {device_id}")
+                        self.logger.warning(f"⚠️ WebSocket not connected: {temp_id}")
                         break
                     
                     try:
@@ -58,34 +63,58 @@ class WebSocketHandler:
                             timeout=300.0
                         )
                     except asyncio.TimeoutError:
-                        self.logger.warning(f"⏱️ Timeout waiting for message from {device_id}")
-                        await self.send_message(device_id, {"type": "ping"})
+                        self.logger.warning(f"⏱️ Timeout waiting for message from {temp_id}")
+                        await self.send_message(temp_id, {"type": "ping"})
                         continue
                     
                     message = json.loads(data)
+                    message_type = message.get('type', 'unknown')
                     
-                    self.logger.info(f"📨 Message from {device_id}: {message.get('type', 'unknown')}")
+                    self.logger.info(f"📨 Message from {temp_id if not device_id else device_id}: {message_type}")
                     
-                    await self.route_message(device_id, message)
+                    # ✅ NẾU LÀ REGISTER → UPDATE device_id
+                    if message_type == "register" and not device_id:
+                        device_id_from_msg = message.get("device_id")
+                        
+                        if device_id_from_msg:
+                            # Update device_id
+                            device_id = device_id_from_msg
+                            
+                            # Remove temp connection
+                            await self.device_manager.remove_connection(temp_id)
+                            
+                            # Add real connection
+                            await self.device_manager.add_connection(device_id, websocket)
+                            
+                            self.logger.info(f"✅ Device registered: {device_id}")
+                            
+                            # Handle registration
+                            await self.handle_register(message)
+                            continue
+                    
+                    # ✅ ROUTE MESSAGE với device_id ĐÚNG
+                    current_id = device_id if device_id else temp_id
+                    await self.route_message(current_id, message)
                     
                 except WebSocketDisconnect:
-                    self.logger.info(f"📱 WebSocket disconnected: {device_id}")
+                    self.logger.info(f"📱 WebSocket disconnected: {device_id or temp_id}")
                     break
                     
                 except json.JSONDecodeError as e:
                     self.logger.error(f"❌ JSON decode error: {e}")
-                    await self.send_error(device_id, "Invalid JSON format")
+                    await self.send_error(device_id or temp_id, "Invalid JSON format")
                     
                 except Exception as e:
                     self.logger.error(f"❌ Message handling error: {e}", exc_info=True)
+                    current_id = device_id if device_id else temp_id
                     if websocket.client_state.name == "CONNECTED":
-                        await self.send_error(device_id, str(e))
+                        await self.send_error(current_id, str(e))
                     else:
                         break
-                    
+                        
         except RuntimeError as e:
             if "WebSocket is not connected" in str(e):
-                self.logger.warning(f"⚠️ WebSocket connection failed for {device_id}")
+                self.logger.warning(f"⚠️ WebSocket connection failed for {device_id or temp_id}")
             else:
                 self.logger.error(f"❌ Connection error: {e}", exc_info=True)
                 
@@ -93,8 +122,10 @@ class WebSocketHandler:
             self.logger.error(f"❌ Connection error: {e}", exc_info=True)
             
         finally:
-            await self.device_manager.remove_connection(device_id)
-            self.logger.info(f"📱 Connection closed: {device_id}")
+            # ✅ CLEANUP với device_id ĐÚNG
+            final_id = device_id if device_id else temp_id
+            await self.device_manager.remove_connection(final_id)
+            self.logger.info(f"📱 Connection closed: {final_id}")
   
     async def route_message(self, device_id: str, message: Dict):
         """Route message to appropriate handler"""
