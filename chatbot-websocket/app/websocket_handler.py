@@ -4,6 +4,7 @@ WebSocket Handler - Handles WebSocket connections and messages
 
 import logging
 import json
+import time
 import base64
 import asyncio
 from typing import Dict, Optional
@@ -249,108 +250,103 @@ class WebSocketHandler:
             await self.send_error(device_id, f"Text error: {e}")
     
     async def handle_voice(self, data: Dict):
-        """Handle voice message"""
+        """Handle voice message with streaming TTS"""
         try:
             device_id = data.get("device_id")
             audio_base64 = data.get("audio")
-            audio_format = data.get("format", "webm")
-            stt_language = data.get("language", "vi")  # ← Language for STT
+            stt_language = data.get("language", "vi")
             
             if not audio_base64:
                 await self.send_error(device_id, "Missing audio data")
                 return
             
-            self.logger.info(f"🎤 Voice from {device_id} (format: {audio_format}, STT language: {stt_language})")
-            
-            # Decode audio
-            audio_data = base64.b64decode(audio_base64)
+            self.logger.info(f"🎤 Voice from {device_id}")
             
             # STEP 1: TRANSCRIBE
+            audio_data = base64.b64decode(audio_base64)
             text = await self.stt_service.transcribe(audio_data, stt_language)
             
             if not text:
-                await self.send_error(device_id, "Could not transcribe audio")
+                await self.send_error(device_id, "Transcription failed")
                 return
             
             self.logger.info(f"📝 Transcription: {text}")
             
             # STEP 2: SEND TRANSCRIPTION
-            self.logger.info(f"📨 Sending transcription to frontend...")
             await self.send_message(device_id, {
                 "type": "transcription",
                 "text": text
             })
 
-            # STEP 3: CHECK FOR COMMANDS
+            # STEP 3: CHECK COMMANDS
             command = self.command_detector.detect(text)
-
             if command:
-                self.logger.info(f"🎯 Command detected: {command['command']} -> {command['action']}")
-                
-                # Send command to device
-                await self.send_message(device_id, {
-                    "type": "command",
-                    "command": command["command"],
-                    "action": command["action"],
-                    "value": command["value"]
-                })
-                
-                # Quick responses (no AI needed!)
-                quick_responses = {
-                    "volume_up": "Đã tăng âm lượng! 🔊",
-                    "volume_down": "Đã giảm âm lượng! 🔉",
-                    "light_on": "Đã bật đèn! 💡",
-                    "light_off": "Đã tắt đèn! 🌙",
-                    "stop": "Dừng lại! 🛑",
-                    "continue": "Tiếp tục! ▶️",
-                    "fan_on": "Đã bật quạt! 🌀",
-                    "fan_off": "Đã tắt quạt! ⭕",
-                }
-                
-                response_text = quick_responses.get(command["command"], "Đã thực hiện!")
-                
-                # Send response (no TTS, no AI!)
-                await self.send_message(device_id, {
-                    "type": "command_response",
-                    "text": response_text
-                })
-                
-                self.logger.info(f"✅ Command executed: {response_text}")
-                
-                return  # ← STOP HERE!
+                await self._handle_command(device_id, command)
+                return
 
-            # STEP 4: GET AI RESPONSE WITH LANGUAGE
+            # STEP 4: STREAMING AI + TTS
             device_info = self.device_manager.devices.get(device_id, {})
             device_type = device_info.get('type', 'unknown')
             
-            # ✅ GET AI RESPONSE WITH LANGUAGE DETECTION
-            ai_response, tts_language = await self.ai_service.chat(
+            sentence_count = 0
+            total_audio_size = 0
+            stream_start = time.time()
+            
+            async for original, cleaned, language, is_last in self.ai_service.chat_stream(
                 user_message=text,
                 conversation_logger=self.conversation_logger,
                 device_id=device_id,
                 device_type=device_type
+            ):
+                if not cleaned:
+                    if is_last:
+                        await self.send_message(device_id, {
+                            "type": "ai_response_end",
+                            "total_chunks": sentence_count
+                        })
+                    continue
+                
+                sentence_count += 1
+                
+                self.logger.info(f"🔊 TTS #{sentence_count}: '{cleaned[:50]}...'")
+                
+                tts_start = time.time()
+                audio_base64 = await self.tts_service.synthesize(cleaned, language)
+                tts_time = time.time() - tts_start
+                
+                if not audio_base64:
+                    self.logger.warning(f"⚠️ TTS failed for chunk {sentence_count}")
+                    continue
+                
+                audio_size = len(audio_base64)
+                total_audio_size += audio_size
+                
+                await self.send_message(device_id, {
+                    "type": "ai_response_chunk",
+                    "text": original,
+                    "audio": audio_base64,
+                    "audio_format": "mp3",
+                    "language": language,
+                    "chunk_index": sentence_count,
+                    "chunk_size": audio_size,
+                    "is_last": is_last,
+                    "tts_time": round(tts_time, 2)
+                })
+                
+                self.logger.info(
+                    f"✅ Chunk {sentence_count}: {audio_size//1024}KB, {tts_time:.2f}s"
+                )
+            
+            stream_time = time.time() - stream_start
+            self.logger.info(
+                f"🎉 Done! {sentence_count} chunks, "
+                f"{total_audio_size//1024}KB, {stream_time:.2f}s"
             )
-            
-            if not ai_response:
-                await self.send_error(device_id, "AI service error")
-                return
-            
-            # STEP 5: GENERATE TTS WITH DETECTED LANGUAGE
-            response_audio = await self.tts_service.synthesize(ai_response, tts_language)
-            
-            # STEP 6: SEND AI RESPONSE
-            self.logger.info(f"📨 Sending AI response to frontend...")
-            await self.send_message(device_id, {
-                "type": "ai_response",
-                "text": ai_response,
-                "audio": response_audio,
-                "audio_format": "mp3",
-                "language": tts_language  # ← Send detected language
-            })
             
         except Exception as e:
             self.logger.error(f"❌ Voice error: {e}", exc_info=True)
-            await self.send_error(device_id, f"Voice error: {e}")
+            await self.send_error(device_id, f"Error: {str(e)}")
+
     
     async def handle_ping(self, data: Dict):
         """Handle ping message"""
