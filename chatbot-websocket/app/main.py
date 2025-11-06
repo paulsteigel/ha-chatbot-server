@@ -361,6 +361,95 @@ async def health_check():
         "active_connections": active_connections
     })
 
+# Thêm vào main.py sau endpoint /health
+
+@app.get("/api/mysql/status")
+async def mysql_status():
+    """
+    ✅ CHECK MYSQL LOGGING STATUS
+    Endpoint để monitor MySQL logging health
+    """
+    if not conversation_logger:
+        return JSONResponse({
+            "status": "disabled",
+            "message": "MySQL logging not configured",
+            "help": "Set MYSQL_URL in Home Assistant config"
+        })
+    
+    try:
+        # Get stats
+        stats = conversation_logger.get_stats()
+        
+        # Test connection
+        pool_info = {
+            "available": False,
+            "size": 0,
+            "freesize": 0,
+            "maxsize": 0
+        }
+        
+        if conversation_logger.pool:
+            try:
+                # Quick connection test
+                async with asyncio.timeout(3):
+                    async with conversation_logger.pool.acquire() as conn:
+                        async with conn.cursor() as cursor:
+                            await cursor.execute("SELECT 1")
+                            await cursor.fetchone()
+                
+                pool_info = {
+                    "available": True,
+                    "size": conversation_logger.pool.size,
+                    "freesize": conversation_logger.pool.freesize,
+                    "maxsize": conversation_logger.pool.maxsize
+                }
+            except Exception as e:
+                logger.error(f"MySQL status check failed: {e}")
+        
+        return JSONResponse({
+            "status": stats.get('health', 'unknown'),
+            "pool": pool_info,
+            "stats": {
+                "total_attempts": stats.get('total_attempts', 0),
+                "successful_logs": stats.get('successful_logs', 0),
+                "failed_logs": stats.get('failed_logs', 0),
+                "success_rate": f"{stats.get('success_rate', 0):.1f}%",
+                "consecutive_failures": stats.get('consecutive_failures', 0)
+            },
+            "last_success": stats.get('last_success'),
+            "last_error": stats.get('last_error'),
+            "last_error_time": stats.get('last_error_time'),
+            "recommendation": _get_recommendation(stats)
+        })
+    
+    except Exception as e:
+        logger.error(f"MySQL status endpoint error: {e}")
+        return JSONResponse({
+            "status": "error",
+            "message": str(e)
+        }, status_code=500)
+
+
+def _get_recommendation(stats: dict) -> str:
+    """Get recommendation based on stats"""
+    health = stats.get('health', 'unknown')
+    failures = stats.get('consecutive_failures', 0)
+    success_rate = stats.get('success_rate', 100)
+    
+    if health == 'disconnected':
+        return "❌ MySQL disconnected. Check MySQL addon is running."
+    
+    if health == 'critical':
+        return f"🚨 {failures} consecutive failures! MySQL may be down or overloaded."
+    
+    if health == 'degraded':
+        return f"⚠️ {failures} recent failures. Monitor closely."
+    
+    if success_rate < 95:
+        return f"⚠️ Low success rate ({success_rate:.1f}%). Check MySQL performance."
+    
+    return "✅ All systems operational."
+
 
 @app.get("/status")
 async def get_status():
