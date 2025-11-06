@@ -24,7 +24,7 @@ options:
   openai_base_url: "https://api.openai.com/v1"
   deepseek_api_key: ""
   groq_api_key: ""
-  ai_model:"deepseek-chat"
+  ai_model: "deepseek-chat"
   
   # TTS Provider
   tts_provider: openai  # "openai" or "piper"
