@@ -1,6 +1,6 @@
 # File: config.yaml
 name: "School Chatbot WebSocket"
-version: "1.0.4"
+version: "1.0.3"
 slug: school-chatbot-websocket
 description: "AI Chatbot for schools with WebSocket support"
 arch:
