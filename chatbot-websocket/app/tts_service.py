@@ -45,6 +45,9 @@ class TTSService:
     def __init__(self):
         """Initialize TTS service with dynamic config."""
         
+        # ✅ BUILD FULL CONFIG DICT
+        self.config = self._build_config()
+        
         # ✅ READ TTS PROVIDER FROM CONFIG (DYNAMIC)
         self.provider = get_config("tts_provider", "openai")
         
@@ -63,32 +66,36 @@ class TTSService:
             except Exception as e:
                 logger.warning(f"⚠️ OpenAI client init failed: {e}")
         
-        # ✅ READ VOICES FROM CONFIG (DYNAMIC)
-        self.tts_voice_vi = get_config("tts_voice_vi", "nova")
-        self.tts_voice_en = get_config("tts_voice_en", "alloy")
-        self.piper_voice_vi = get_config("piper_voice_vi", "vi_VN-vais-medium")
-        self.piper_voice_en = get_config("piper_voice_en", "en_US-lessac-medium")
-        
         # Wyoming client for Piper (lazy init)
         self.wyoming_client = None
-        
-        # Piper host discovery
-        self.piper_hosts = [
-            "addon_core_piper",   # Standard HA addon naming
-            "127.0.0.1",          # Localhost (if port forwarded)
-            "172.30.32.1",        # HA supervisor gateway
-        ]
         
         # ✅ LOG CONFIGURATION
         logger.info(f"🔊 TTS Service initialized")
         logger.info(f"   Provider: {self.provider}")
         if self.provider == "openai":
-            logger.info(f"   OpenAI voices: VI={self.tts_voice_vi}, EN={self.tts_voice_en}")
+            tts_voice_vi = get_config("tts_voice_vi", "nova")
+            tts_voice_en = get_config("tts_voice_en", "alloy")
+            logger.info(f"   OpenAI voices: VI={tts_voice_vi}, EN={tts_voice_en}")
             if not self.openai_client:
                 logger.error(f"   ❌ OpenAI client not initialized! Check OPENAI_API_KEY")
         elif self.provider == "piper":
-            logger.info(f"   Piper voices: VI={self.piper_voice_vi}, EN={self.piper_voice_en}")
+            piper_voice_vi = get_config("piper_voice_vi", "vi_VN-vais1000-medium")
+            piper_voice_en = get_config("piper_voice_en", "en_US-lessac-medium")
+            logger.info(f"   Piper voices: VI={piper_voice_vi}, EN={piper_voice_en}")
             logger.info(f"   Will auto-fallback to OpenAI if Piper fails")
+    
+    def _build_config(self) -> dict:
+        """Build full config dict for Wyoming client."""
+        return {
+            'tts': {
+                'piper': {
+                    'host': get_config('piper_host', '172.30.32.1'),
+                    'port': get_config('piper_port', 10200)
+                }
+            },
+            'piper_voice_vi': get_config('piper_voice_vi', 'vi_VN-vais1000-medium'),
+            'piper_voice_en': get_config('piper_voice_en', 'en_US-lessac-medium')
+        }
     
     async def _init_wyoming_client(self):
         """Initialize Wyoming client (lazy load)."""
@@ -97,21 +104,23 @@ class TTSService:
         
         from app.wyoming_client import WyomingTTSClient
         
-        logger.info(f"🔍 Searching for Piper addon...")
+        logger.info(f"🔍 Initializing Piper TTS (Wyoming)...")
         
-        for host in self.piper_hosts:
-            try:
-                logger.debug(f"   Trying {host}:10200...")
-                client = WyomingTTSClient(host=host, port=10200)
-                if await client.test_connection():
-                    self.wyoming_client = client
-                    logger.info(f"   ✅ Connected to Piper: {host}:10200")
-                    return
-            except Exception as e:
-                logger.debug(f"   ❌ {host}: {e}")
-                continue
-        
-        raise Exception("❌ Cannot connect to Piper. Is Piper addon running?")
+        try:
+            # ✅ PASS FULL CONFIG DICT
+            self.wyoming_client = WyomingTTSClient(self.config)
+            
+            # ✅ TEST CONNECTION
+            if await self.wyoming_client.test_connection():
+                host = self.config['tts']['piper']['host']
+                port = self.config['tts']['piper']['port']
+                logger.info(f"   ✅ Connected to Piper: {host}:{port}")
+            else:
+                raise Exception("Connection test failed")
+                
+        except Exception as e:
+            logger.error(f"   ❌ Piper connection error: {e}")
+            raise Exception("❌ Cannot connect to Piper. Is Piper addon running?")
     
     async def synthesize(self, text: str, language: str = "vi") -> str:
         """
@@ -160,8 +169,8 @@ class TTSService:
         
         try:
             # ✅ RE-READ VOICES FROM CONFIG
-            voice_vi = get_config("tts_voice_vi", self.tts_voice_vi)
-            voice_en = get_config("tts_voice_en", self.tts_voice_en)
+            voice_vi = get_config("tts_voice_vi", "nova")
+            voice_en = get_config("tts_voice_en", "alloy")
             voice = voice_vi if language == "vi" else voice_en
             
             logger.info(f"🔊 OpenAI TTS: voice={voice}, text='{text[:50]}...'")
@@ -189,15 +198,8 @@ class TTSService:
             # Initialize Wyoming client if needed
             await self._init_wyoming_client()
             
-            # ✅ RE-READ VOICES FROM CONFIG
-            voice_vi = get_config("piper_voice_vi", self.piper_voice_vi)
-            voice_en = get_config("piper_voice_en", self.piper_voice_en)
-            voice = voice_vi if language == "vi" else voice_en
-            
-            logger.info(f"🔊 Piper TTS: voice={voice}, text='{text[:50]}...'")
-            
-            # Call Piper via Wyoming
-            audio_bytes = await self.wyoming_client.synthesize(text, voice)
+            # ✅ CALL WITH LANGUAGE (wyoming_client tự chọn voice)
+            audio_bytes = await self.wyoming_client.synthesize(text, language)
             
             # Convert to base64
             audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
