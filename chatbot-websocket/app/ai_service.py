@@ -63,7 +63,8 @@ class AIService:
         import asyncio
 
         async def test():
-            response, _ = await self.chat("Hello")
+            # ✅ UNPACK 3 VALUES: original, cleaned, language
+            original, cleaned, language = await self.chat("Hello")
             self.clear_history()
 
         try:
