@@ -1,0 +1,36 @@
+---
+network:
+  5000/tcp: Listening port
+  ai_provider: AI service Provider
+  openai_api_key: OpenAI API key
+  openai_base_url: Base url for AI provider API server
+  deepseek_api_key: OpenAI API key
+  groq_api_key: Groq API key
+  tts_provider: Text to Speech provider
+  tts_voice_vi: Text to Speech voice - English
+  tts_voice_en: Text to Speech voice - Vietnamese
+  piper_voice_vi: Groq voice - Vietnamese
+  piper_voice_en: Groq voice - English
+  
+  # Chat settings
+  max_context: 10
+  temperature: 0.7
+  max_tokens: 500
+  
+  # System
+  log_level: INFO
+
+  
+  # === PROMPTS ===
+  system_prompt: System prompt at greeting
+  custom_prompt: Custom prompt to inject
+  
+  # === MYSQL (giữ nguyên) ===
+  mysql_url: Connection parammeter for MYSQL
+  
+  # === GENERAL (giữ nguyên) ===
+  #temperature: float(0.0,2.0)?
+  #max_tokens: int(50,4000)?
+  #max_context: int(1,50)?
+  #max_context_messages: int(1,50)?
+  #log_level: list(DEBUG|INFO|WARNING|ERROR)?
