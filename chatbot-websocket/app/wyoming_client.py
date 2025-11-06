@@ -8,7 +8,7 @@ import logging
 import io
 import wave
 from wyoming.audio import AudioChunk, AudioStart, AudioStop
-from wyoming.tts import Synthesize, SynthesizeVoice  # ← Import SynthesizeVoice
+from wyoming.tts import Synthesize, SynthesizeVoice
 from wyoming.event import async_write_event, async_read_event
 
 logger = logging.getLogger(__name__)
@@ -16,16 +16,43 @@ logger = logging.getLogger(__name__)
 class WyomingTTSClient:
     """Client for Wyoming TTS protocol (Piper)."""
     
-    def __init__(self, host: str = "addon_core_piper", port: int = 10200):
-        self.host = host
-        self.port = port
+    def __init__(self, config: dict):
+        """
+        Initialize Wyoming TTS client
+        
+        Args:
+            config: Configuration dict containing piper settings
+        """
+        piper_config = config.get('tts', {}).get('piper', {})
+        self.host = piper_config.get('host', 'addon_core_piper')
+        self.port = piper_config.get('port', 10200)
         self.timeout = 30
-        logger.info(f"🔊 Wyoming TTS Client: {host}:{port}")
+        
+        # ✅ ĐỌC VOICES TỪ CONFIG
+        self.voices = {
+            'vi': config.get('piper_voice_vi', 'vi_VN-vais1000-medium'),
+            'en': config.get('piper_voice_en', 'en_US-lessac-medium')
+        }
+        
+        logger.info(f"🔊 Wyoming TTS Client: {self.host}:{self.port}")
+        logger.info(f"🎤 Voices: VI={self.voices['vi']}, EN={self.voices['en']}")
     
-    async def synthesize(self, text: str, voice: str) -> bytes:
-        """Synthesize text to speech using Wyoming protocol."""
+    async def synthesize(self, text: str, language: str = 'vi') -> bytes:
+        """
+        Synthesize text to speech using Wyoming protocol.
+        
+        Args:
+            text: Text to synthesize
+            language: Language code ('vi' or 'en')
+            
+        Returns:
+            WAV audio bytes
+        """
+        # ✅ CHỌN VOICE ĐÚNG THEO NGÔN NGỮ
+        voice = self.voices.get(language, self.voices['vi'])
+        
         try:
-            logger.info(f"🔊 Wyoming TTS: voice={voice}, text='{text[:50]}...'")
+            logger.info(f"🔊 Wyoming TTS [{language}]: voice={voice}, text='{text[:50]}...'")
             
             # Connect to Piper
             reader, writer = await asyncio.wait_for(
@@ -40,10 +67,10 @@ class WyomingTTSClient:
                 # ✅ CREATE SYNTHESIZE EVENT
                 synthesize_event = Synthesize(
                     text=text,
-                    voice=voice_obj  # ← Use SynthesizeVoice object
+                    voice=voice_obj  # ← Voice object với name đúng
                 )
                 
-                # ✅ WRITE EVENT (with .event() method)
+                # ✅ WRITE EVENT
                 await async_write_event(synthesize_event.event(), writer)
                 await writer.drain()
                 
@@ -85,7 +112,7 @@ class WyomingTTSClient:
                 # ✅ CREATE PROPER WAV FILE
                 wav_bytes = self._create_wav(audio_bytes, sample_rate, sample_width, channels)
                 
-                logger.info(f"✅ Wyoming TTS: {len(wav_bytes)} bytes (WAV)")
+                logger.info(f"✅ Wyoming TTS [{language}]: {len(wav_bytes)} bytes (WAV)")
                 return wav_bytes
                 
             finally:
@@ -121,6 +148,8 @@ class WyomingTTSClient:
             )
             writer.close()
             await writer.wait_closed()
+            logger.info("✅ Wyoming connection OK")
             return True
-        except:
+        except Exception as e:
+            logger.error(f"❌ Wyoming connection failed: {e}")
             return False
