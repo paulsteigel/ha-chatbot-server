@@ -1,6 +1,6 @@
 # File: config.yaml
 name: "School Chatbot WebSocket"
-version: "1.0.15"
+version: "1.0.16"
 slug: school-chatbot-websocket
 description: "AI Chatbot for schools with WebSocket support"
 arch:
@@ -38,7 +38,7 @@ options:
   piper_voice_en: en_US-lessac-medium
   tts_remove_emoji: true  # Bật/tắt loại bỏ emoji
   tts_remove_markdown: true  # Bật/tắt loại bỏ markdown
-  
+
   # MySql
   mysql_url: connection string for mysql
 
@@ -77,6 +77,9 @@ schema:
   # Piper TTS voices (Vietnamese + English)
   piper_voice_vi: list(vi-25hours-single-low|vi-vivos-x-low|vi_VN-25hours_single-low|vi_VN-vais1000-medium|vi_VN-vivos-x_low)?
   piper_voice_en: list(en_US-lessac-medium|en_US-amy-medium|en_GB-alan-medium|en_GB-southern_english_female-medium)?
+
+  tts_remove_emoji: bool?  # Bật/tắt loại bỏ emoji
+  tts_remove_markdown: bool?  # Bật/tắt loại bỏ markdown
 
   # === PROMPTS ===
   system_prompt: str?
