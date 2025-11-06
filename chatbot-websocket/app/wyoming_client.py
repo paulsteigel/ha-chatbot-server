@@ -1,12 +1,12 @@
 # File: app/wyoming_client.py
 """
 Wyoming Protocol Client for Piper TTS
+Compatible with Wyoming 1.5.2
 """
 import asyncio
 import logging
 import io
 import wave
-from typing import Optional
 from wyoming.audio import AudioChunk, AudioStart, AudioStop
 from wyoming.tts import Synthesize
 from wyoming.event import async_write_event, async_read_event
@@ -34,9 +34,14 @@ class WyomingTTSClient:
             )
             
             try:
-                # Send synthesize request
-                synthesize_event = Synthesize(text=text, voice=voice)
-                await async_write_event(synthesize_event.event(), writer)
+                # ✅ FIX: Create Synthesize event correctly for Wyoming 1.5.2
+                synthesize_event = Synthesize(
+                    text=text,
+                    voice={"name": voice}  # ← FIX: voice must be a dict
+                )
+                
+                # ✅ FIX: Write event directly (no .event() method in 1.5.2)
+                await async_write_event(synthesize_event, writer)
                 await writer.drain()
                 
                 # Receive audio chunks
@@ -89,7 +94,7 @@ class WyomingTTSClient:
             raise Exception("TTS timeout")
             
         except Exception as e:
-            logger.error(f"❌ Wyoming TTS error: {e}")
+            logger.error(f"❌ Wyoming TTS error: {e}", exc_info=True)
             raise
     
     def _create_wav(self, pcm_data: bytes, sample_rate: int, sample_width: int, channels: int) -> bytes:
