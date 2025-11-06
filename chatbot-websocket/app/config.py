@@ -1,3 +1,4 @@
+# File: app/config.py
 """
 Configuration for School Chatbot
 """

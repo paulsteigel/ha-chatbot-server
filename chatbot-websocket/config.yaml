@@ -1,6 +1,6 @@
 # File: config.yaml
 name: "School Chatbot WebSocket"
-version: "1.0.4"
+version: "1.0.6"
 slug: school-chatbot-websocket
 description: "AI Chatbot for schools with WebSocket support"
 arch:
@@ -24,7 +24,7 @@ options:
   openai_base_url: "https://api.openai.com/v1"
   deepseek_api_key: ""
   groq_api_key: ""
-  
+  ai_model:"deepseek-chat"
   
   # TTS Provider
   tts_provider: openai  # "openai" or "piper"
