@@ -169,28 +169,28 @@ class WebSocketHandler:
             device_info = self.device_manager.devices.get(device_id, {})
             device_type = device_info.get('type', 'unknown')
             
-            # ✅ GET AI RESPONSE WITH LANGUAGE
-            ai_response, language = await self.ai_service.chat(
+            # ✅ GET 3 VALUES: original (display), cleaned (TTS), language
+            original_text, cleaned_text, language = await self.ai_service.chat(
                 user_message=text,
                 conversation_logger=self.conversation_logger,
                 device_id=device_id,
                 device_type=device_type
             )
-            
-            if not ai_response:
+
+            if not original_text:
                 await self.send_error(device_id, "AI service error")
                 return
-            
-            # ✅ GENERATE TTS WITH DETECTED LANGUAGE
-            audio_base64 = await self.tts_service.synthesize(ai_response, language)
-            
-            # Send response
+
+            # ✅ TTS DÙNG CLEANED (không emoji)
+            audio_base64 = await self.tts_service.synthesize(cleaned_text, language)
+
+            # ✅ DISPLAY DÙNG ORIGINAL (có emoji)
             await self.send_message(device_id, {
                 "type": "chat_response",
-                "text": ai_response,
+                "text": original_text,  # ← Display
                 "audio": audio_base64,
                 "audio_format": "mp3",
-                "language": language  # ← Send language to frontend
+                "language": language
             })
             
         except Exception as e:
@@ -213,30 +213,29 @@ class WebSocketHandler:
             device_info = self.device_manager.devices.get(device_id, {})
             device_type = device_info.get('type', 'unknown')
             
-            # ✅ GET AI RESPONSE WITH LANGUAGE
-            ai_response, language = await self.ai_service.chat(
+            # ✅ GET 3 VALUES
+            original_text, cleaned_text, language = await self.ai_service.chat(
                 user_message=text,
                 conversation_logger=self.conversation_logger,
                 device_id=device_id,
                 device_type=device_type
             )
-            
-            if not ai_response:
+
+            if not original_text:
                 await self.send_error(device_id, "AI service error")
                 return
-            
-            # Send text response
+
+            # Display original
             await self.send_message(device_id, {
                 "type": "text",
-                "text": ai_response,
+                "text": original_text,
                 "language": language
             })
-            
-            # ✅ GENERATE AUDIO WITH DETECTED LANGUAGE
-            audio_base64 = await self.tts_service.synthesize(ai_response, language)
-            
+
+            # ✅ TTS DÙNG CLEANED
+            audio_base64 = await self.tts_service.synthesize(cleaned_text, language)
+
             if audio_base64:
-                # Send audio response
                 await self.send_message(device_id, {
                     "type": "audio",
                     "audio": audio_base64,
@@ -323,30 +322,31 @@ class WebSocketHandler:
             device_info = self.device_manager.devices.get(device_id, {})
             device_type = device_info.get('type', 'unknown')
             
-            # ✅ GET AI RESPONSE WITH LANGUAGE DETECTION
-            ai_response, tts_language = await self.ai_service.chat(
+            # ✅ GET 3 VALUES
+            original_text, cleaned_text, tts_language = await self.ai_service.chat(
                 user_message=text,
                 conversation_logger=self.conversation_logger,
                 device_id=device_id,
                 device_type=device_type
             )
-            
-            if not ai_response:
+
+            if not original_text:
                 await self.send_error(device_id, "AI service error")
                 return
-            
-            # STEP 5: GENERATE TTS WITH DETECTED LANGUAGE
-            response_audio = await self.tts_service.synthesize(ai_response, tts_language)
-            
+
+            # ✅ TTS DÙNG CLEANED (không emoji)
+            response_audio = await self.tts_service.synthesize(cleaned_text, tts_language)
+
             # STEP 6: SEND AI RESPONSE
             self.logger.info(f"📨 Sending AI response to frontend...")
             await self.send_message(device_id, {
                 "type": "ai_response",
-                "text": ai_response,
+                "text": original_text,  # ← Display có emoji
                 "audio": response_audio,
                 "audio_format": "mp3",
-                "language": tts_language  # ← Send detected language
+                "language": tts_language
             })
+            
             
         except Exception as e:
             self.logger.error(f"❌ Voice error: {e}", exc_info=True)

@@ -420,26 +420,40 @@ class AIService:
         conversation_logger=None,
         device_id: str = None,
         device_type: str = None,
-    ) -> tuple[str, str]:
+    ) -> tuple[str, str, str]:
         """
         💬 NON-STREAMING CHAT (backward compatible)
         
         Collects all streaming chunks and returns complete response.
         
+        ✨ Returns BOTH original (display) and cleaned (TTS) text
+        
         Returns:
-            tuple[response_text, language]
+            tuple[
+                original_text: str,  # Có emoji/markdown - cho DISPLAY
+                cleaned_text: str,   # Không emoji - cho TTS  
+                language: str        # "vi" hoặc "en"
+            ]
         """
-        full_response = ""
+        full_original = ""
+        full_cleaned = ""
         language = "vi"
         
         async for original, cleaned, lang, is_last in self.chat_stream(
             user_message, conversation_logger, device_id, device_type
         ):
             if original:
-                full_response += original + " "
-                language = lang
+                full_original += original + " "
+            if cleaned:
+                full_cleaned += cleaned + " "
+            language = lang
         
-        return full_response.strip(), language
+        return (
+            full_original.strip(),
+            full_cleaned.strip(),
+            language
+        )
+
 
     def clear_history(self):
         """🗑️ Clear conversation history"""
