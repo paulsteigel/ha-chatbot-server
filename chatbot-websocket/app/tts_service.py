@@ -1,13 +1,14 @@
 # File: app/tts_service.py
 """
 TTS Service - Multi-provider with Wyoming protocol support
-Dynamically reads config from Home Assistant
+✅ UPDATED: Add synthesize_chunk() for streaming, always return WAV 16kHz
 """
 import logging
 import base64
 import os
 import json
 from openai import AsyncOpenAI
+from app.utils.audio_converter import convert_to_wav_16k  # ← NEW IMPORT
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,7 @@ def get_config(key: str, default=None):
     Get configuration from Home Assistant options.json or environment.
     Priority: HA options.json > Environment > Default
     """
-    # Try Home Assistant options first
+    # ← KEEP: This function stays exactly the same
     options_file = "/data/options.json"
     if os.path.exists(options_file):
         try:
@@ -24,13 +25,11 @@ def get_config(key: str, default=None):
                 options = json.load(f)
                 if key in options:
                     value = options[key]
-                    # Handle null/None/empty
                     if value not in [None, "", "null", "None"]:
                         return value
         except Exception:
             pass
     
-    # Fallback to environment variable
     env_key = key.upper()
     env_value = os.getenv(env_key)
     if env_value not in [None, "", "null", "None"]:
@@ -45,17 +44,13 @@ class TTSService:
     def __init__(self):
         """Initialize TTS service with dynamic config."""
         
-        # ✅ BUILD FULL CONFIG DICT
+        # ← KEEP: All __init__ code stays the same
         self.config = self._build_config()
-        
-        # ✅ READ TTS PROVIDER FROM CONFIG (DYNAMIC)
         self.provider = get_config("tts_provider", "openai")
         
-        # ✅ READ API KEYS FROM CONFIG
         openai_api_key = get_config("openai_api_key", "")
         openai_base_url = get_config("openai_base_url", "https://api.openai.com/v1")
         
-        # Initialize OpenAI client (for fallback even if using Piper)
         self.openai_client = None
         if openai_api_key:
             try:
@@ -66,10 +61,8 @@ class TTSService:
             except Exception as e:
                 logger.warning(f"⚠️ OpenAI client init failed: {e}")
         
-        # Wyoming client for Piper (lazy init)
         self.wyoming_client = None
         
-        # ✅ LOG CONFIGURATION
         logger.info(f"🔊 TTS Service initialized")
         logger.info(f"   Provider: {self.provider}")
         if self.provider == "openai":
@@ -83,9 +76,11 @@ class TTSService:
             piper_voice_en = get_config("piper_voice_en", "en_US-lessac-medium")
             logger.info(f"   Piper voices: VI={piper_voice_vi}, EN={piper_voice_en}")
             logger.info(f"   Will auto-fallback to OpenAI if Piper fails")
+        logger.info(f"   Output: WAV 16kHz mono for ESP32")  # ← NEW LOG
     
     def _build_config(self) -> dict:
         """Build full config dict for Wyoming client."""
+        # ← KEEP: This stays the same
         return {
             'tts': {
                 'piper': {
@@ -99,6 +94,7 @@ class TTSService:
     
     async def _init_wyoming_client(self):
         """Initialize Wyoming client (lazy load)."""
+        # ← KEEP: This stays exactly the same
         if self.wyoming_client:
             return
         
@@ -107,10 +103,8 @@ class TTSService:
         logger.info(f"🔍 Initializing Piper TTS (Wyoming)...")
         
         try:
-            # ✅ PASS FULL CONFIG DICT
             self.wyoming_client = WyomingTTSClient(self.config)
             
-            # ✅ TEST CONNECTION
             if await self.wyoming_client.test_connection():
                 host = self.config['tts']['piper']['host']
                 port = self.config['tts']['piper']['port']
@@ -122,24 +116,27 @@ class TTSService:
             logger.error(f"   ❌ Piper connection error: {e}")
             raise Exception("❌ Cannot connect to Piper. Is Piper addon running?")
     
+    # ═══════════════════════════════════════════════════════════════════
+    # ← KEEP: OLD synthesize() method for backward compatibility
+    # ═══════════════════════════════════════════════════════════════════
     async def synthesize(self, text: str, language: str = "vi") -> str:
         """
-        Convert text to speech audio.
+        Convert text to speech audio (backward compatible).
+        
+        ⚠️ DEPRECATED: Use synthesize_chunk() for streaming.
         
         Args:
             text: Text to synthesize
             language: "vi" or "en"
             
         Returns:
-            Base64 encoded audio (MP3 for OpenAI, WAV for Piper)
+            Base64 encoded WAV audio (16kHz mono)
         """
-        # ✅ RE-READ PROVIDER FROM CONFIG (FOR RUNTIME CHANGES)
         current_provider = get_config("tts_provider", self.provider)
         
         if current_provider != self.provider:
             logger.info(f"🔄 TTS provider changed: {self.provider} → {current_provider}")
             self.provider = current_provider
-            # Reset Wyoming client if switching away from Piper
             if current_provider != "piper":
                 self.wyoming_client = None
         
@@ -152,7 +149,6 @@ class TTSService:
         except Exception as e:
             logger.error(f"❌ TTS error with {self.provider}: {e}")
             
-            # ✅ SMART FALLBACK
             if self.provider == "piper" and self.openai_client:
                 logger.info("🔄 Falling back to OpenAI TTS...")
                 try:
@@ -162,13 +158,102 @@ class TTSService:
             
             return ""
     
+    # ═══════════════════════════════════════════════════════════════════
+    # ← NEW: synthesize_chunk() for streaming with fallback
+    # ═══════════════════════════════════════════════════════════════════
+    async def synthesize_chunk(
+        self,
+        original_text: str,
+        cleaned_text: str,
+        language: str = "vi"
+    ) -> tuple[bytes, str]:
+        """
+        Synthesize ONE chunk with fallback support.
+        Always returns WAV 16kHz mono 16-bit for ESP32.
+        
+        Args:
+            original_text: Original text with emoji (for OpenAI fallback)
+            cleaned_text: Cleaned text without emoji (for Piper)
+            language: "vi" or "en"
+            
+        Returns:
+            tuple[wav_bytes, provider_used]
+            - wav_bytes: WAV 16kHz audio
+            - provider_used: "piper", "openai", or "openai_fallback"
+        """
+        current_provider = get_config("tts_provider", self.provider)
+        
+        # ─────────────────────────────────────────────────────────
+        # TRY PRIMARY PROVIDER
+        # ─────────────────────────────────────────────────────────
+        try:
+            if current_provider == "piper":
+                # Use cleaned text (no emoji)
+                if not cleaned_text.strip():
+                    raise ValueError("Empty text after cleaning")
+                
+                wav_bytes = await self._synthesize_piper_chunk(cleaned_text, language)
+                return wav_bytes, "piper"
+                
+            else:  # openai
+                # Use original text (with emoji)
+                mp3_bytes = await self._synthesize_openai_chunk(original_text, language)
+                wav_bytes = convert_to_wav_16k(mp3_bytes, source_format="mp3")
+                return wav_bytes, "openai"
+        
+        except Exception as primary_error:
+            logger.warning(
+                f"⚠️ Primary TTS ({current_provider}) failed: {primary_error}"
+            )
+            
+            # ─────────────────────────────────────────────────────────
+            # FALLBACK TO SECONDARY PROVIDER
+            # ─────────────────────────────────────────────────────────
+            try:
+                if current_provider == "piper":
+                    # Piper failed → OpenAI (use ORIGINAL text with emoji!)
+                    logger.info("🔄 Fallback: Piper → OpenAI (with emoji)")
+                    
+                    if not self.openai_client:
+                        raise Exception("OpenAI not available for fallback")
+                    
+                    mp3_bytes = await self._synthesize_openai_chunk(
+                        original_text,  # ← Use original with emoji!
+                        language
+                    )
+                    wav_bytes = convert_to_wav_16k(mp3_bytes, source_format="mp3")
+                    return wav_bytes, "openai_fallback"
+                    
+                else:
+                    # OpenAI failed → Piper (use cleaned text)
+                    logger.info("🔄 Fallback: OpenAI → Piper (cleaned)")
+                    
+                    if not cleaned_text.strip():
+                        raise ValueError("Empty text after cleaning")
+                    
+                    await self._init_wyoming_client()
+                    wav_bytes = await self._synthesize_piper_chunk(
+                        cleaned_text,
+                        language
+                    )
+                    return wav_bytes, "piper_fallback"
+            
+            except Exception as fallback_error:
+                logger.error(f"❌ Fallback also failed: {fallback_error}")
+                raise Exception(
+                    f"All TTS failed - Primary: {primary_error}, "
+                    f"Fallback: {fallback_error}"
+                )
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # ← MODIFIED: Return base64 WAV (not MP3) for backward compatibility
+    # ═══════════════════════════════════════════════════════════════════
     async def _synthesize_openai(self, text: str, language: str) -> str:
-        """Synthesize using OpenAI TTS."""
+        """Synthesize using OpenAI TTS, return base64 WAV (not MP3)."""
         if not self.openai_client:
             raise Exception("OpenAI client not initialized. Check OPENAI_API_KEY")
         
         try:
-            # ✅ RE-READ VOICES FROM CONFIG
             voice_vi = get_config("tts_voice_vi", "nova")
             voice_en = get_config("tts_voice_en", "alloy")
             voice = voice_vi if language == "vi" else voice_en
@@ -182,31 +267,71 @@ class TTSService:
                 response_format="mp3"
             )
             
-            audio_bytes = response.content
-            audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
+            mp3_bytes = response.content
             
-            logger.info(f"✅ OpenAI TTS: {len(audio_bytes)} bytes (MP3)")
+            # ← NEW: Convert to WAV 16kHz
+            wav_bytes = convert_to_wav_16k(mp3_bytes, source_format="mp3")
+            audio_base64 = base64.b64encode(wav_bytes).decode("utf-8")
+            
+            logger.info(f"✅ OpenAI TTS: {len(wav_bytes)} bytes (WAV 16kHz)")
             return audio_base64
             
         except Exception as e:
             logger.error(f"❌ OpenAI TTS error: {e}")
             raise
     
+    # ═══════════════════════════════════════════════════════════════════
+    # ← MODIFIED: Convert to 16kHz if needed
+    # ═══════════════════════════════════════════════════════════════════
     async def _synthesize_piper(self, text: str, language: str) -> str:
-        """Synthesize using Piper via Wyoming protocol."""
+        """Synthesize using Piper via Wyoming protocol, return base64 WAV 16kHz."""
         try:
-            # Initialize Wyoming client if needed
             await self._init_wyoming_client()
             
-            # ✅ CALL WITH LANGUAGE (wyoming_client tự chọn voice)
-            audio_bytes = await self.wyoming_client.synthesize(text, language)
+            wav_bytes = await self.wyoming_client.synthesize(text, language)
             
-            # Convert to base64
-            audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
+            # ← NEW: Convert to 16kHz if Piper returns 22050Hz
+            wav_bytes = convert_to_wav_16k(wav_bytes, source_format="wav")
             
-            logger.info(f"✅ Piper TTS (Wyoming): {len(audio_bytes)} bytes (WAV)")
+            audio_base64 = base64.b64encode(wav_bytes).decode("utf-8")
+            
+            logger.info(f"✅ Piper TTS: {len(wav_bytes)} bytes (WAV 16kHz)")
             return audio_base64
             
         except Exception as e:
             logger.error(f"❌ Piper TTS (Wyoming) error: {e}")
             raise
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # ← NEW: Internal methods for chunk synthesis
+    # ═══════════════════════════════════════════════════════════════════
+    async def _synthesize_openai_chunk(self, text: str, language: str) -> bytes:
+        """Synthesize using OpenAI, return MP3 bytes (will be converted later)."""
+        if not self.openai_client:
+            raise Exception("OpenAI client not initialized")
+        
+        voice_vi = get_config("tts_voice_vi", "nova")
+        voice_en = get_config("tts_voice_en", "alloy")
+        voice = voice_vi if language == "vi" else voice_en
+        
+        logger.debug(f"🔊 OpenAI chunk: voice={voice}, text='{text[:50]}...'")
+        
+        response = await self.openai_client.audio.speech.create(
+            model="tts-1",
+            voice=voice,
+            input=text,
+            response_format="mp3"
+        )
+        
+        return response.content  # MP3 bytes
+    
+    async def _synthesize_piper_chunk(self, text: str, language: str) -> bytes:
+        """Synthesize using Piper, return WAV bytes."""
+        await self._init_wyoming_client()
+        
+        wav_bytes = await self.wyoming_client.synthesize(text, language)
+        
+        # Convert to 16kHz
+        wav_bytes = convert_to_wav_16k(wav_bytes, source_format="wav")
+        
+        return wav_bytes  # WAV 16kHz bytes

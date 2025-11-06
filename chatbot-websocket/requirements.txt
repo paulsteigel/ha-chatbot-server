@@ -11,3 +11,5 @@ aiomysql>=0.2.0
 PyMySQL>=1.1.0
 # Wyoming protocol library
 wyoming==1.5.2
+#audio converter
+pydub>=0.25.1

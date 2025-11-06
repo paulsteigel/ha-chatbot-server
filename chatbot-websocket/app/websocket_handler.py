@@ -1,5 +1,7 @@
+# File: app/websocket_handler.py
 """
 WebSocket Handler - Handles WebSocket connections and messages
+✅ UPDATED: handle_voice() now uses streaming chunks
 """
 
 import logging
@@ -24,6 +26,7 @@ class WebSocketHandler:
         conversation_logger=None
     ):
         """Initialize WebSocket Handler"""
+        # ← KEEP: All initialization stays the same
         self.logger = logging.getLogger('WebSocketHandler')
         self.device_manager = device_manager
         self.ota_manager = ota_manager
@@ -36,31 +39,26 @@ class WebSocketHandler:
     
     async def handle_connection(self, websocket: WebSocket, device_id: str):
         """Handle WebSocket connection"""
+        # ← KEEP: This entire method stays exactly the same
         try:
-            # STEP 1: Accept connection first
             await websocket.accept()
             self.logger.info(f"📱 New WebSocket connection: {device_id}")
             
-            # STEP 2: Store connection
             await self.device_manager.add_connection(device_id, websocket)
             
-            # STEP 3: Handle messages
             while True:
                 try:
-                    # Check if websocket is still connected
                     if websocket.client_state.name != "CONNECTED":
                         self.logger.warning(f"⚠️ WebSocket not connected: {device_id}")
                         break
                     
-                    # Receive message with timeout
                     try:
                         data = await asyncio.wait_for(
                             websocket.receive_text(),
-                            timeout=300.0  # 5 minutes timeout
+                            timeout=300.0
                         )
                     except asyncio.TimeoutError:
                         self.logger.warning(f"⏱️ Timeout waiting for message from {device_id}")
-                        # Send ping to check if still alive
                         await self.send_message(device_id, {"type": "ping"})
                         continue
                     
@@ -68,7 +66,6 @@ class WebSocketHandler:
                     
                     self.logger.info(f"📨 Message from {device_id}: {message.get('type', 'unknown')}")
                     
-                    # Route message to appropriate handler
                     await self.route_message(device_id, message)
                     
                 except WebSocketDisconnect:
@@ -81,7 +78,6 @@ class WebSocketHandler:
                     
                 except Exception as e:
                     self.logger.error(f"❌ Message handling error: {e}", exc_info=True)
-                    # Don't send error if connection is already closed
                     if websocket.client_state.name == "CONNECTED":
                         await self.send_error(device_id, str(e))
                     else:
@@ -97,12 +93,12 @@ class WebSocketHandler:
             self.logger.error(f"❌ Connection error: {e}", exc_info=True)
             
         finally:
-            # STEP 4: Cleanup
             await self.device_manager.remove_connection(device_id)
             self.logger.info(f"📱 Connection closed: {device_id}")
   
     async def route_message(self, device_id: str, message: Dict):
         """Route message to appropriate handler"""
+        # ← KEEP: This stays exactly the same
         message_type = message.get("type")
         
         handlers = {
@@ -124,6 +120,9 @@ class WebSocketHandler:
             self.logger.warning(f"⚠️ Unknown message type: {message_type}")
             await self.send_error(device_id, f"Unknown message type: {message_type}")
     
+    # ═══════════════════════════════════════════════════════════════════
+    # ← KEEP: These methods stay exactly the same
+    # ═══════════════════════════════════════════════════════════════════
     async def handle_register(self, data: Dict):
         """Handle device registration"""
         try:
@@ -135,14 +134,12 @@ class WebSocketHandler:
             self.logger.info(f"   Type: {device_type}")
             self.logger.info(f"   Firmware: {firmware_version}")
             
-            # Register device
             await self.device_manager.register_device(
                 device_id=device_id,
                 device_type=device_type,
                 firmware_version=firmware_version
             )
             
-            # Send registration confirmation
             await self.send_message(device_id, {
                 "type": "registered",
                 "device_id": device_id,
@@ -155,6 +152,7 @@ class WebSocketHandler:
     
     async def handle_chat(self, data: Dict):
         """Handle chat message from web interface"""
+        # ← KEEP: This stays exactly the same
         try:
             device_id = data.get("device_id")
             text = data.get("text", "")
@@ -165,11 +163,9 @@ class WebSocketHandler:
             
             self.logger.info(f"💬 Chat from {device_id}: {text}")
             
-            # Get device info
             device_info = self.device_manager.devices.get(device_id, {})
             device_type = device_info.get('type', 'unknown')
             
-            # ✅ GET 3 VALUES: original (display), cleaned (TTS), language
             original_text, cleaned_text, language = await self.ai_service.chat(
                 user_message=text,
                 conversation_logger=self.conversation_logger,
@@ -181,15 +177,13 @@ class WebSocketHandler:
                 await self.send_error(device_id, "AI service error")
                 return
 
-            # ✅ TTS DÙNG CLEANED (không emoji)
             audio_base64 = await self.tts_service.synthesize(cleaned_text, language)
 
-            # ✅ DISPLAY DÙNG ORIGINAL (có emoji)
             await self.send_message(device_id, {
                 "type": "chat_response",
-                "text": original_text,  # ← Display
+                "text": original_text,
                 "audio": audio_base64,
-                "audio_format": "mp3",
+                "audio_format": "wav",  # ← Changed from mp3
                 "language": language
             })
             
@@ -199,6 +193,7 @@ class WebSocketHandler:
     
     async def handle_text(self, data: Dict):
         """Handle text message from ESP32"""
+        # ← KEEP: This stays exactly the same
         try:
             device_id = data.get("device_id")
             text = data.get("text", "")
@@ -209,11 +204,9 @@ class WebSocketHandler:
             
             self.logger.info(f"💬 Text from {device_id}: {text}")
             
-            # Get device info
             device_info = self.device_manager.devices.get(device_id, {})
             device_type = device_info.get('type', 'unknown')
             
-            # ✅ GET 3 VALUES
             original_text, cleaned_text, language = await self.ai_service.chat(
                 user_message=text,
                 conversation_logger=self.conversation_logger,
@@ -225,21 +218,19 @@ class WebSocketHandler:
                 await self.send_error(device_id, "AI service error")
                 return
 
-            # Display original
             await self.send_message(device_id, {
                 "type": "text",
                 "text": original_text,
                 "language": language
             })
 
-            # ✅ TTS DÙNG CLEANED
             audio_base64 = await self.tts_service.synthesize(cleaned_text, language)
 
             if audio_base64:
                 await self.send_message(device_id, {
                     "type": "audio",
                     "audio": audio_base64,
-                    "format": "mp3",
+                    "format": "wav",  # ← Changed from mp3
                     "language": language
                 })
             
@@ -247,24 +238,58 @@ class WebSocketHandler:
             self.logger.error(f"❌ Text error: {e}", exc_info=True)
             await self.send_error(device_id, f"Text error: {e}")
     
+    # ═══════════════════════════════════════════════════════════════════
+    # ← MODIFIED: handle_voice() - NEW STREAMING IMPLEMENTATION
+    # ═══════════════════════════════════════════════════════════════════
     async def handle_voice(self, data: Dict):
-        """Handle voice message"""
+        """Handle voice message with streaming response"""
         try:
             device_id = data.get("device_id")
             audio_base64 = data.get("audio")
             audio_format = data.get("format", "webm")
-            stt_language = data.get("language", "vi")  # ← Language for STT
+            stt_language = data.get("language", "vi")
             
             if not audio_base64:
                 await self.send_error(device_id, "Missing audio data")
                 return
             
-            self.logger.info(f"🎤 Voice from {device_id} (format: {audio_format}, STT language: {stt_language})")
+            self.logger.info(
+                f"🎤 Voice from {device_id} "
+                f"(format: {audio_format}, STT language: {stt_language})"
+            )
             
-            # Decode audio
+            # ─────────────────────────────────────────────────────────
+            # STEP 1: TRANSCRIBE (← KEEP)
+            # ─────────────────────────────────────────────────────────
             audio_data = base64.b64decode(audio_base64)
+            text = await self.stt_service.transcribe(audio_data, stt_language)
             
-            # STEP 1: TRANSCRIBE
+            if not text:
+                await self.
+    # ═══════════════════════════════════════════════════════════════════
+    # ← MODIFIED: handle_voice() - NEW STREAMING IMPLEMENTATION
+    # ═══════════════════════════════════════════════════════════════════
+    async def handle_voice(self, data: Dict):
+        """Handle voice message with streaming response"""
+        try:
+            device_id = data.get("device_id")
+            audio_base64 = data.get("audio")
+            audio_format = data.get("format", "webm")
+            stt_language = data.get("language", "vi")
+            
+            if not audio_base64:
+                await self.send_error(device_id, "Missing audio data")
+                return
+            
+            self.logger.info(
+                f"🎤 Voice from {device_id} "
+                f"(format: {audio_format}, STT language: {stt_language})"
+            )
+            
+            # ─────────────────────────────────────────────────────────
+            # STEP 1: TRANSCRIBE (← KEEP)
+            # ─────────────────────────────────────────────────────────
+            audio_data = base64.b64decode(audio_base64)
             text = await self.stt_service.transcribe(audio_data, stt_language)
             
             if not text:
@@ -273,20 +298,25 @@ class WebSocketHandler:
             
             self.logger.info(f"📝 Transcription: {text}")
             
-            # STEP 2: SEND TRANSCRIPTION
+            # ─────────────────────────────────────────────────────────
+            # STEP 2: SEND TRANSCRIPTION (← KEEP)
+            # ─────────────────────────────────────────────────────────
             self.logger.info(f"📨 Sending transcription to frontend...")
             await self.send_message(device_id, {
                 "type": "transcription",
                 "text": text
             })
 
-            # STEP 3: CHECK FOR COMMANDS
+            # ─────────────────────────────────────────────────────────
+            # STEP 3: CHECK FOR COMMANDS (← KEEP)
+            # ─────────────────────────────────────────────────────────
             command = self.command_detector.detect(text)
 
             if command:
-                self.logger.info(f"🎯 Command detected: {command['command']} -> {command['action']}")
+                self.logger.info(
+                    f"🎯 Command detected: {command['command']} -> {command['action']}"
+                )
                 
-                # Send command to device
                 await self.send_message(device_id, {
                     "type": "command",
                     "command": command["command"],
@@ -294,7 +324,6 @@ class WebSocketHandler:
                     "value": command["value"]
                 })
                 
-                # Quick responses (no AI needed!)
                 quick_responses = {
                     "volume_up": "Đã tăng âm lượng! 🔊",
                     "volume_down": "Đã giảm âm lượng! 🔉",
@@ -306,52 +335,108 @@ class WebSocketHandler:
                     "fan_off": "Đã tắt quạt! ⭕",
                 }
                 
-                response_text = quick_responses.get(command["command"], "Đã thực hiện!")
+                response_text = quick_responses.get(
+                    command["command"], 
+                    "Đã thực hiện!"
+                )
                 
-                # Send response (no TTS, no AI!)
                 await self.send_message(device_id, {
                     "type": "command_response",
                     "text": response_text
                 })
                 
                 self.logger.info(f"✅ Command executed: {response_text}")
-                
                 return  # ← STOP HERE!
 
-            # STEP 4: GET AI RESPONSE WITH LANGUAGE
+            # ─────────────────────────────────────────────────────────
+            # STEP 4: GET AI STREAMING RESPONSE (← NEW!)
+            # ─────────────────────────────────────────────────────────
             device_info = self.device_manager.devices.get(device_id, {})
             device_type = device_info.get('type', 'unknown')
             
-            # ✅ GET 3 VALUES
-            original_text, cleaned_text, tts_language = await self.ai_service.chat(
+            # Collect all sentences for display
+            full_original_text = ""
+            sentence_count = 0
+            
+            # Stream AI response sentence by sentence
+            async for original, cleaned, language, is_last in self.ai_service.chat_stream(
                 user_message=text,
                 conversation_logger=self.conversation_logger,
                 device_id=device_id,
                 device_type=device_type
-            )
-
-            if not original_text:
-                await self.send_error(device_id, "AI service error")
-                return
-
-            # ✅ TTS DÙNG CLEANED (không emoji)
-            response_audio = await self.tts_service.synthesize(cleaned_text, tts_language)
-
-            # STEP 6: SEND AI RESPONSE
-            self.logger.info(f"📨 Sending AI response to frontend...")
-            await self.send_message(device_id, {
-                "type": "ai_response",
-                "text": original_text,  # ← Display có emoji
-                "audio": response_audio,
-                "audio_format": "mp3",
-                "language": tts_language
-            })
+            ):
+                # Skip empty chunks
+                if not original.strip():
+                    if is_last:
+                        # End of stream
+                        break
+                    continue
+                
+                sentence_count += 1
+                full_original_text += original + " "
+                
+                # ─────────────────────────────────────────────────────
+                # STEP 5: SYNTHESIZE CHUNK WITH FALLBACK (← NEW!)
+                # ─────────────────────────────────────────────────────
+                try:
+                    wav_bytes, tts_provider = await self.tts_service.synthesize_chunk(
+                        original_text=original,   # ← For OpenAI fallback (with emoji)
+                        cleaned_text=cleaned,     # ← For Piper (no emoji)
+                        language=language
+                    )
+                    
+                    # Convert to base64
+                    audio_base64 = base64.b64encode(wav_bytes).decode("utf-8")
+                    
+                    # ─────────────────────────────────────────────────
+                    # STEP 6: SEND AUDIO CHUNK (← NEW!)
+                    # ─────────────────────────────────────────────────
+                    await self.send_message(device_id, {
+                        "type": "audio_chunk",
+                        "chunk_index": sentence_count - 1,
+                        "chunk_text": original,      # Display text (with emoji)
+                        "audio": audio_base64,       # WAV 16kHz base64
+                        "format": "wav",
+                        "sample_rate": 16000,
+                        "tts_provider": tts_provider,
+                        "language": language,
+                        "is_last": is_last
+                    })
+                    
+                    self.logger.info(
+                        f"📤 Sent chunk {sentence_count}: "
+                        f"{len(wav_bytes)} bytes WAV ({tts_provider}) - "
+                        f"'{original[:40]}{'...' if len(original) > 40 else ''}'"
+                    )
+                    
+                except Exception as chunk_error:
+                    self.logger.error(
+                        f"❌ Failed to synthesize chunk {sentence_count}: {chunk_error}"
+                    )
+                    # Continue with next chunk instead of failing completely
+                    continue
             
+            # ─────────────────────────────────────────────────────────
+            # STEP 7: SEND COMPLETION MESSAGE (← NEW!)
+            # ─────────────────────────────────────────────────────────
+            self.logger.info(
+                f"✅ Voice response complete: {sentence_count} chunks, "
+                f"{len(full_original_text)} chars"
+            )
+            
+            await self.send_message(device_id, {
+                "type": "ai_response_complete",
+                "total_chunks": sentence_count,
+                "full_text": full_original_text.strip()
+            })
             
         except Exception as e:
             self.logger.error(f"❌ Voice error: {e}", exc_info=True)
             await self.send_error(device_id, f"Voice error: {e}")
     
+    # ═══════════════════════════════════════════════════════════════════
+    # ← KEEP: These methods stay exactly the same
+    # ═══════════════════════════════════════════════════════════════════
     async def handle_ping(self, data: Dict):
         """Handle ping message"""
         device_id = data.get("device_id")
@@ -400,7 +485,7 @@ class WebSocketHandler:
                 self.logger.warning(f"⚠️ WebSocket not connected for {device_id}")
                 return False
             
-            self.logger.info(f"📤 Sending '{message.get('type')}' to {device_id}")
+            self.logger.debug(f"📤 Sending '{message.get('type')}' to {device_id}")
             await websocket.send_text(json.dumps(message))
             return True
             
@@ -421,7 +506,7 @@ class WebSocketHandler:
             websocket = self.device_manager.get_connection(device_id)
             
             if not websocket or websocket.client_state.name != "CONNECTED":
-                return  # Silent fail
+                return
             
             await websocket.send_text(json.dumps({
                 "type": "error",
@@ -429,7 +514,7 @@ class WebSocketHandler:
             }))
             
         except Exception:
-            pass  # Silent fail, no logging to prevent cascade
+            pass
     
     async def broadcast(self, message: Dict, exclude_device: Optional[str] = None):
         """Broadcast message to all connected devices"""
