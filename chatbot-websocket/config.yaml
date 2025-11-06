@@ -1,6 +1,6 @@
 # File: config.yaml
 name: "School Chatbot WebSocket"
-version: "1.0.3"
+version: "1.0.4"
 slug: school-chatbot-websocket
 description: "AI Chatbot for schools with WebSocket support"
 arch:
@@ -34,7 +34,8 @@ options:
   # Piper voices (nếu dùng piper)
   piper_voice_vi: vi_VN-vais-medium
   piper_voice_en: en_US-lessac-medium
-  
+  mysql_url: connection string for mysql
+
   # Chat settings
   max_context: 10
   temperature: 0.7
