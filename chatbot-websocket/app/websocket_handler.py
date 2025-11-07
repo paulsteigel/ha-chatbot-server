@@ -152,8 +152,27 @@ class WebSocketHandler:
         """Route message to appropriate handler"""
         message_type = message.get("type")
         
+        # ✅ ALWAYS ALLOW "register" MESSAGE
+        if message_type == "register":
+            message["device_id"] = device_id
+            await self.handle_register(message)
+            return
+        
+        # ✅ CHECK IF DEVICE IS REGISTERED BEFORE HANDLING OTHER MESSAGES
+        device_info = self.device_manager.devices.get(device_id)
+        
+        if not device_info:
+            self.logger.warning(
+                f"⚠️ Message '{message_type}' from unregistered device: {device_id}"
+            )
+            await self.send_error(
+                device_id, 
+                "Device not registered. Please send 'register' message first."
+            )
+            return
+        
+        # ✅ NOW HANDLE OTHER MESSAGES
         handlers = {
-            "register": self.handle_register,
             "text": self.handle_text,
             "chat": self.handle_chat,
             "voice": self.handle_voice,
@@ -170,6 +189,7 @@ class WebSocketHandler:
         else:
             self.logger.warning(f"⚠️ Unknown message type: {message_type}")
             await self.send_error(device_id, f"Unknown message type: {message_type}")
+
     
     async def handle_register(self, data: Dict):
         """Handle device registration"""
@@ -182,6 +202,22 @@ class WebSocketHandler:
             self.logger.info(f"   Type: {device_type}")
             self.logger.info(f"   Firmware: {firmware_version}")
             
+            # ✅ FIX: CHECK & REMOVE OLD CONNECTION FIRST!
+            old_websocket = self.device_manager.get_connection(device_id)
+            if old_websocket:
+                self.logger.warning(f"⚠️ Found old connection for {device_id}, removing...")
+                try:
+                    # Try to close old connection gracefully
+                    if old_websocket.client_state.name == "CONNECTED":
+                        await old_websocket.close(code=1000, reason="New connection")
+                except Exception as e:
+                    self.logger.error(f"❌ Error closing old connection: {e}")
+                
+                # Remove from manager
+                await self.device_manager.remove_connection(device_id)
+                self.logger.info(f"✅ Old connection removed for {device_id}")
+            
+            # Now register with new connection
             await self.device_manager.register_device(
                 device_id=device_id,
                 device_type=device_type,
@@ -197,6 +233,7 @@ class WebSocketHandler:
         except Exception as e:
             self.logger.error(f"❌ Registration error: {e}", exc_info=True)
             await self.send_error(data.get("device_id"), f"Registration error: {e}")
+
     
     async def handle_chat(self, data: Dict):
         """Handle chat message from web interface"""
