@@ -1,0 +1,32 @@
+
+{
+  "name": "ZingMp3-proxy",
+  "version": "1.0.0",
+  "slug": "zingmp3-proxy",
+  "description": "Stream nhạc từ ZingMP3 cho ESP32S3 Chatbot - By Đặng Đình Ngọc",
+  "url": "https://github.com/paulsteigel/ha-chatbot-server",
+  "arch": ["armhf", "armv7", "aarch64", "amd64", "i386"],
+  "startup": "application",
+  "boot": "auto",
+  "init": false,
+  "ingress": true,
+  "ingress_port": 5001,
+  "panel_icon": "mdi:music-box",
+  "ports": {
+    "5001/tcp": 5001
+  },
+  "ports_description": {
+    "5001/tcp": "Web interface và API streaming"
+  },
+  "options": {
+    "port": 5001,
+    "log_level": "info",
+    "cors_enabled": true
+  },
+  "schema": {
+    "port": "port",
+    "log_level": "list(trace|debug|info|notice|warning|error|fatal)?",
+    "cors_enabled": "bool?"
+  },
+  "image": "ghcr.io/paulsteigel/zingmp3-proxy-{arch}"
+}
