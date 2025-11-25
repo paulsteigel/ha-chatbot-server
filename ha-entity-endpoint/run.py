@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Load configuration from add-on options
+# Load configuration from options.json with fallback to environment variables
 OPTIONS_FILE = "/data/options.json"
 
 def load_config():
@@ -26,18 +26,32 @@ def load_config():
     try:
         with open(OPTIONS_FILE, 'r') as f:
             options = json.load(f)
+            logger.info("✓ Loaded config from /data/options.json")
             return options
     except Exception as e:
-        logger.error(f"Error loading config: {e}")
+        logger.warning(f"Could not load /data/options.json: {e}")
+        logger.info("Using environment variables as fallback")
         return {}
 
 config = load_config()
-ACCESS_TOKEN = config.get('access_token', '')
-HA_URL = config.get('ha_url', 'http://supervisor/core')
+
+# Priority: options.json > environment variables > defaults
+ACCESS_TOKEN = config.get('access_token') or os.environ.get('ACCESS_TOKEN', '')
+HA_URL = config.get('ha_url') or os.environ.get('HA_URL', 'http://supervisor/core')
 SUPERVISOR_TOKEN = os.environ.get('SUPERVISOR_TOKEN', '')
 
+# Log configuration status
+logger.info("=" * 50)
+logger.info("HA Entity Endpoint Configuration:")
+logger.info(f"  HA URL: {HA_URL}")
+logger.info(f"  Access Token: {'✓ Configured' if ACCESS_TOKEN else '✗ NOT SET (INSECURE!)'}")
+logger.info(f"  Supervisor Token: {'✓ Available' if SUPERVISOR_TOKEN else '✗ Not available'}")
+logger.info("=" * 50)
+
 if not ACCESS_TOKEN:
-    logger.warning("Access token not configured! API will be insecure.")
+    logger.warning("⚠️  WARNING: Access token not configured! API will be INSECURE!")
+    logger.warning("⚠️  Set 'access_token' in add-on configuration")
+
 
 # Authentication decorator
 def token_required(f):

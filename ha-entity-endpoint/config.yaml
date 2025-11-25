@@ -1,7 +1,7 @@
 name: HA Entity Endpoint
-version: "1.0.0"
+version: "1.0.1"
 slug: ha-entity-endpoint
-description: API endpoint for remote devices to query HA entities and control devices
+description: API endpoint for remote devices to query HA entities
 url: https://github.com/paulsteigel/ha-chatbot-server
 arch:
   - aarch64
@@ -9,10 +9,9 @@ arch:
   - armhf
   - armv7
   - i386
+image: python:{arch}-3.11-alpine
 ports:
   5003/tcp: 5003
-ports_description:
-  5003/tcp: API endpoint port
 options:
   access_token: ""
   ha_url: "http://supervisor/core"
@@ -20,5 +19,3 @@ schema:
   access_token: str
   ha_url: str
 homeassistant_api: true
-hassio_api: true
-hassio_role: default
