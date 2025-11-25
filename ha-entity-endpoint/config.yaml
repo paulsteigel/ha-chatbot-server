@@ -1,0 +1,13 @@
+name: ha-entity-endpoint
+version: "1.0"
+description: "Custom add-on to list and control Home Assistant entities via API"
+slug: ha-entity-endpoint
+hub_version: "core-2021.10.6"
+resources: []
+network_mode: host
+ports:
+  - "5003:5003"  # Mở cổng 5003 cho API của add-on
+
+# Cấu hình token cho phép truy cập
+options:
+  access_token: ""  # Người dùng sẽ điền token tại đây
