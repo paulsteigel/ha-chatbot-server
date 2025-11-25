@@ -1,9 +1,19 @@
-name: ha-entity-endpoint
-version: "1.0"
-description: "Custom add-on to list and control Home Assistant entities via API"
+# File: config.yaml
+name: "HA entity endpoints"
+version: "1.0.1"
 slug: ha-entity-endpoint
-hub_version: "core-2021.10.6"
-resources: []
+description: Providing endpoints for entity accessibility over MQTT
+url: https://github.com/paulsteigel/ha-chatbot-server
+arch:
+  - amd64
+  - armv7
+  - aarch64
+init: false
+startup: application
+boot: auto
+hassio_api: true
+hassio_role: default
+
 network_mode: host
 ports:
   - "5003:5003"  # Mở cổng 5003 cho API của add-on
