@@ -1,7 +1,7 @@
 ARG BUILD_FROM
 FROM $BUILD_FROM
 
-# Install Python and pip
+# Install Python and pip with break-system-packages flag
 RUN apk add --no-cache python3 py3-pip
 
 # Set working directory
@@ -9,7 +9,7 @@ WORKDIR /app
 
 # Copy requirements and install dependencies
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip3 install --break-system-packages --no-cache-dir -r requirements.txt
 
 # Copy application files
 COPY run.py .
