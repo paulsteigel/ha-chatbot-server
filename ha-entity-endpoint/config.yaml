@@ -1,23 +1,24 @@
-# File: config.yaml
-name: "HA entity endpoints"
-version: "1.0.1"
+name: HA Entity Endpoint
+version: "1.0.0"
 slug: ha-entity-endpoint
-description: Providing endpoints for entity accessibility over MQTT
+description: API endpoint for remote devices to query HA entities and control devices
 url: https://github.com/paulsteigel/ha-chatbot-server
 arch:
-  - amd64
-  - armv7
   - aarch64
-init: false
-startup: application
-boot: auto
+  - amd64
+  - armhf
+  - armv7
+  - i386
+ports:
+  5003/tcp: 5003
+ports_description:
+  5003/tcp: API endpoint port
+options:
+  access_token: ""
+  ha_url: "http://supervisor/core"
+schema:
+  access_token: str
+  ha_url: str
+homeassistant_api: true
 hassio_api: true
 hassio_role: default
-
-network_mode: host
-ports:
-  - "5003:5003"  # Mở cổng 5003 cho API của add-on
-
-# Cấu hình token cho phép truy cập
-options:
-  access_token: ""  # Người dùng sẽ điền token tại đây

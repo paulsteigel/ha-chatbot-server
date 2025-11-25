@@ -1,11 +1,21 @@
-FROM python:3.9-slim
+ARG BUILD_FROM
+FROM $BUILD_FROM
 
-# Cài đặt các thư viện cần thiết
-RUN pip install Flask requests
+# Install Python and pip
+RUN apk add --no-cache python3 py3-pip
 
-# Sao chép mã nguồn Python vào container
-COPY run.py /app/run.py
-
-# Chạy mã nguồn của app
+# Set working directory
 WORKDIR /app
-CMD ["python", "run.py"]
+
+# Copy requirements and install dependencies
+COPY requirements.txt .
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+# Copy application files
+COPY run.py .
+
+# Expose port
+EXPOSE 5003
+
+# Run the application
+CMD ["python3", "run.py"]
