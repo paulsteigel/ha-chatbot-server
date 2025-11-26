@@ -1,7 +1,10 @@
-#!/usr/bin/with-contenv bashio
+#!/usr/bin/with-contenv bash
 # ==============================================================================
 # HA Entity Resolver - Startup Script
 # ==============================================================================
+
+# Source bashio
+source /usr/lib/bashio.sh
 
 bashio::log.info "Starting HA Entity Resolver v1.0.2..."
 
@@ -25,7 +28,7 @@ bashio::log.info "  HA URL: ${HA_URL}"
 bashio::log.info "  MQTT Prefix: $(cat /tmp/mqtt_prefix.txt)"
 bashio::log.info "  Log Level: ${LOG_LEVEL}"
 
-cd /app || bashio::exit.nok "Cannot change to /app"
+cd /app || exit 1
 
 bashio::log.info "Starting Flask server on port 5003..."
 

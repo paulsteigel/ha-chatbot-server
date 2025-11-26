@@ -3,12 +3,17 @@ FROM $BUILD_FROM
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# Install Python and dependencies
+# Install bashio and dependencies
 RUN apk add --no-cache \
     python3=~3.11 \
     py3-pip \
     bash \
-    curl
+    curl \
+    jq
+
+# Install bashio
+RUN curl -s https://raw.githubusercontent.com/hassio-addons/bashio/master/lib/bashio.sh -o /usr/lib/bashio.sh \
+    && chmod +x /usr/lib/bashio.sh
 
 WORKDIR /app
 
@@ -22,7 +27,7 @@ COPY app/ /app/
 # Copy rootfs
 COPY rootfs /
 
-# Set permissions
+# Fix permissions
 RUN chmod a+x /etc/services.d/resolver/run
 
 EXPOSE 5003

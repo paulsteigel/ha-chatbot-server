@@ -1,5 +1,5 @@
 name: HA Entity Resolver for ESP32
-version: "1.0.2"
+version: "1.0.3"
 slug: ha-entity-resolver
 description: Lightweight API to resolve entity names to MQTT topics for ESP32 MCP bots
 url: https://github.com/paulsteigel/ha-chatbot-server
