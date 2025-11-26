@@ -1,8 +1,8 @@
 name: HA Entity Resolver for ESP32
-version: "1.0.0"
+version: "1.0.2"
 slug: ha-entity-resolver
 description: Lightweight API to resolve entity names to MQTT topics for ESP32 MCP bots
-url: https://github.com/paulsteigel/ha-entity-resolver
+url: https://github.com/paulsteigel/ha-chatbot-server
 arch:
   - aarch64
   - amd64
@@ -30,7 +30,6 @@ schema:
       name: str
   ha_url: str
   mqtt_device_prefix: str?
-image: ghcr.io/paulsteigel/ha-entity-resolver-{arch}
 homeassistant_api: true
 hassio_api: true
 hassio_role: default

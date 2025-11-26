@@ -3,23 +3,29 @@
 # HA Entity Resolver - Startup Script
 # ==============================================================================
 
-bashio::log.info "Starting HA Entity Resolver..."
+bashio::log.info "Starting HA Entity Resolver v1.0.2..."
 
+# Export environment variables
 export LOG_LEVEL=$(bashio::config 'log_level')
 export HA_URL=$(bashio::config 'ha_url')
 export SUPERVISOR_TOKEN="${SUPERVISOR_TOKEN}"
 
-# Write access tokens
+# Write config to temp files
 bashio::config 'access_tokens' | jq -c . > /tmp/access_tokens.json
 
-# Write MQTT prefix
-bashio::config 'mqtt_device_prefix' > /tmp/mqtt_prefix.txt
+# Get MQTT prefix (optional)
+if bashio::config.has_value 'mqtt_device_prefix'; then
+    bashio::config 'mqtt_device_prefix' > /tmp/mqtt_prefix.txt
+else
+    echo "192168100131" > /tmp/mqtt_prefix.txt
+fi
 
-bashio::log.info "Configuration loaded"
+bashio::log.info "Configuration:"
 bashio::log.info "  HA URL: ${HA_URL}"
 bashio::log.info "  MQTT Prefix: $(cat /tmp/mqtt_prefix.txt)"
+bashio::log.info "  Log Level: ${LOG_LEVEL}"
 
-cd /app || bashio::exit.nok "Cannot change to /app directory"
+cd /app || bashio::exit.nok "Cannot change to /app"
 
 bashio::log.info "Starting Flask server on port 5003..."
 
