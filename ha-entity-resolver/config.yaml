@@ -8,7 +8,9 @@ arch:
   - amd64
   - armv7
   - armhf
-image: ghcr.io/paulsteigel/ha-entity-resolver-{arch}
+# ❌ XÓA dòng này:
+# image: ghcr.io/paulsteigel/ha-entity-resolver-{arch}
+
 ports:
   5003/tcp: 5003
 ports_description:
