@@ -5,20 +5,19 @@
 
 bashio::log.info "Starting HA Entity Resolver..."
 
-# Export environment variables
 export LOG_LEVEL=$(bashio::config 'log_level')
 export HA_URL=$(bashio::config 'ha_url')
 export SUPERVISOR_TOKEN="${SUPERVISOR_TOKEN}"
 
-# Write access tokens to file
+# Write access tokens
 bashio::config 'access_tokens' | jq -c . > /tmp/access_tokens.json
 
-# Write entity MQTT map to file
-bashio::config 'entity_mqtt_map' | jq -c . > /tmp/entity_mqtt_map.json
+# Write MQTT prefix
+bashio::config 'mqtt_device_prefix' > /tmp/mqtt_prefix.txt
 
-bashio::log.info "Configuration loaded:"
+bashio::log.info "Configuration loaded"
 bashio::log.info "  HA URL: ${HA_URL}"
-bashio::log.info "  Log Level: ${LOG_LEVEL}"
+bashio::log.info "  MQTT Prefix: $(cat /tmp/mqtt_prefix.txt)"
 
 cd /app || bashio::exit.nok "Cannot change to /app directory"
 

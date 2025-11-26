@@ -2,8 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 HA Entity Resolver for ESP32 MCP Bot
-Author: Đặng Đình Ngọc (ngocdd@sfdp.net)
-Version: 1.0.0
+Version: 1.0.1 - Auto MQTT topic detection
 """
 
 import os
@@ -31,14 +30,13 @@ app = Flask(__name__)
 # ============================================
 HA_URL = os.environ.get('HA_URL', 'http://supervisor/core')
 SUPERVISOR_TOKEN = os.environ.get('SUPERVISOR_TOKEN', '')
+MQTT_PREFIX = ''
 ACCESS_TOKENS = []
-ENTITY_MQTT_MAP = {}
 
 def load_config():
-    """Load configuration from files"""
-    global ACCESS_TOKENS, ENTITY_MQTT_MAP
+    """Load configuration from temporary files"""
+    global ACCESS_TOKENS, MQTT_PREFIX
     
-    # Load access tokens
     try:
         with open('/tmp/access_tokens.json', 'r') as f:
             ACCESS_TOKENS = json.load(f)
@@ -46,13 +44,13 @@ def load_config():
     except Exception as e:
         logger.warning(f"Could not load access tokens: {e}")
     
-    # Load entity MQTT map
     try:
-        with open('/tmp/entity_mqtt_map.json', 'r') as f:
-            ENTITY_MQTT_MAP = json.load(f)
-            logger.info(f"Loaded {len(ENTITY_MQTT_MAP)} entity mappings")
-    except Exception as e:
-        logger.info("No entity MQTT map provided, will use auto-generation")
+        with open('/tmp/mqtt_prefix.txt', 'r') as f:
+            MQTT_PREFIX = f.read().strip()
+            logger.info(f"MQTT device prefix: {MQTT_PREFIX}")
+    except:
+        MQTT_PREFIX = "192168100131"
+        logger.info(f"Using default MQTT prefix: {MQTT_PREFIX}")
 
 load_config()
 
@@ -60,7 +58,6 @@ load_config()
 # Authentication
 # ============================================
 def token_required(f):
-    """Authentication decorator"""
     @wraps(f)
     def decorated(*args, **kwargs):
         auth = request.headers.get('Authorization', '').replace('Bearer ', '').strip()
@@ -79,7 +76,7 @@ def token_required(f):
     return decorated
 
 # ============================================
-# Home Assistant API Helper
+# HA API Helper
 # ============================================
 def call_ha_api(endpoint):
     """Call Home Assistant API"""
@@ -97,22 +94,42 @@ def call_ha_api(endpoint):
         logger.error(f"HA API error ({endpoint}): {e}")
         return None
 
-def get_mqtt_topic(entity_id):
+def get_mqtt_topic_from_entity(entity_id):
     """
-    Convert entity_id to MQTT topic
-    Priority: mapping table > auto-generate
+    Tự động lấy MQTT topic từ HA entity
+    Ưu tiên: MQTT attributes > ESPHome discovery > Auto-generate
     """
-    # Check mapping table
-    if entity_id in ENTITY_MQTT_MAP:
-        base = ENTITY_MQTT_MAP[entity_id]
+    # 1. Lấy state của entity
+    states = call_ha_api('states')
+    if not states:
+        return auto_generate_topic(entity_id)
+    
+    entity_state = next((s for s in states if s['entity_id'] == entity_id), None)
+    if not entity_state:
+        return auto_generate_topic(entity_id)
+    
+    attrs = entity_state.get('attributes', {})
+    
+    # 2. Check MQTT discovery attributes (ESPHome devices)
+    # ESPHome publishes: {device_id}/{domain}/{object_id}
+    if 'friendly_name' in attrs:
+        # Try to find MQTT topic from integration
+        domain, object_id = entity_id.split('.')
+        
+        # ESPHome standard format
+        base_topic = f"{MQTT_PREFIX}/{domain}/{object_id}"
         return {
-            'command': f"{base}/command",
-            'state': f"{base}/state"
+            'command': f"{base_topic}/command",
+            'state': f"{base_topic}/state"
         }
     
-    # Auto-generate (ESPHome standard)
+    # 3. Fallback to auto-generate
+    return auto_generate_topic(entity_id)
+
+def auto_generate_topic(entity_id):
+    """Auto-generate MQTT topic"""
     domain, object_id = entity_id.split('.')
-    base = f"192168100131/{domain}/{object_id}"
+    base = f"{MQTT_PREFIX}/{domain}/{object_id}"
     return {
         'command': f"{base}/command",
         'state': f"{base}/state"
@@ -123,26 +140,21 @@ def get_mqtt_topic(entity_id):
 # ============================================
 @app.route('/', methods=['GET'])
 def root():
-    """API documentation"""
     return jsonify({
         "addon": "HA Entity Resolver for ESP32 MCP Bot",
-        "version": "1.0.0",
-        "author": "Đặng Đình Ngọc",
+        "version": "1.0.1",
         "endpoints": {
             "GET /health": "Health check",
             "POST /api/resolve": "Resolve entity name to MQTT topic",
-            "GET /api/entities/minimal": "Get minimal entity list",
-            "GET /api/entities/full": "Get full entity list with states"
-        },
-        "authentication": "Required: Authorization: Bearer <token>"
+            "GET /api/entities/minimal": "Get minimal entity list"
+        }
     })
 
 @app.route('/health', methods=['GET'])
 def health():
-    """Health check"""
     return jsonify({
         "status": "healthy",
-        "version": "1.0.0",
+        "version": "1.0.1",
         "ha_connected": SUPERVISOR_TOKEN != ''
     })
 
@@ -170,7 +182,6 @@ def resolve_entity():
     if not query:
         return jsonify({"error": "Missing 'query' parameter"}), 400
     
-    # Get all states
     states = call_ha_api('states')
     if not states:
         return jsonify({"error": "Failed to fetch entities from HA"}), 500
@@ -181,17 +192,15 @@ def resolve_entity():
         entity_id = state['entity_id']
         domain = entity_id.split('.')[0]
         
-        # Only controllable devices
         if domain not in ['switch', 'light', 'fan', 'cover', 'climate']:
             continue
         
         friendly_name = state.get('attributes', {}).get('friendly_name', entity_id)
         search_text = f"{friendly_name} {entity_id}".lower()
         
-        # Calculate fuzzy score
         score = fuzz.partial_ratio(query, search_text)
         
-        if score >= 60:  # Threshold
+        if score >= 60:
             candidates.append({
                 "entity_id": entity_id,
                 "friendly_name": friendly_name,
@@ -203,16 +212,13 @@ def resolve_entity():
         logger.warning(f"[{g.token_name}] No match for query: '{query}'")
         return jsonify({
             "error": "No matching entity found",
-            "query": query,
-            "hint": "Try more specific keywords"
+            "query": query
         }), 404
     
-    # Sort by score
     candidates.sort(key=lambda x: x['score'], reverse=True)
     best = candidates[0]
     
-    # Get MQTT topics
-    topics = get_mqtt_topic(best['entity_id'])
+    topics = get_mqtt_topic_from_entity(best['entity_id'])
     
     logger.info(f"[{g.token_name}] Resolved '{query}' → {best['entity_id']} (confidence: {best['score']}%)")
     
@@ -228,10 +234,7 @@ def resolve_entity():
 @app.route('/api/entities/minimal', methods=['GET'])
 @token_required
 def get_minimal_entities():
-    """
-    Get minimal entity list for ESP32 caching
-    Response: [{"id": "...", "n": "...", "ct": "...", "st": "..."}, ...]
-    """
+    """Get minimal entity list for ESP32 caching"""
     states = call_ha_api('states')
     if not states:
         return jsonify({"error": "Failed to fetch entities"}), 500
@@ -244,12 +247,12 @@ def get_minimal_entities():
         if domain not in ['switch', 'light', 'fan', 'cover', 'climate']:
             continue
         
-        topics = get_mqtt_topic(entity_id)
+        topics = get_mqtt_topic_from_entity(entity_id)
         friendly_name = state.get('attributes', {}).get('friendly_name', entity_id)
         
         result.append({
             "id": entity_id,
-            "n": friendly_name[:30],  # Truncate for ESP32 memory
+            "n": friendly_name[:30],
             "ct": topics['command'],
             "st": topics['state']
         })
@@ -261,67 +264,16 @@ def get_minimal_entities():
         "entities": result
     })
 
-@app.route('/api/entities/full', methods=['GET'])
-@token_required
-def get_full_entities():
-    """Get full entity list with current states"""
-    states = call_ha_api('states')
-    if not states:
-        return jsonify({"error": "Failed to fetch entities"}), 500
-    
-    result = []
-    for state in states:
-        entity_id = state['entity_id']
-        domain = entity_id.split('.')[0]
-        
-        if domain not in ['switch', 'light', 'fan', 'cover', 'climate']:
-            continue
-        
-        topics = get_mqtt_topic(entity_id)
-        
-        result.append({
-            "entity_id": entity_id,
-            "friendly_name": state.get('attributes', {}).get('friendly_name', entity_id),
-            "domain": domain,
-            "state": state.get('state', 'unknown'),
-            "command_topic": topics['command'],
-            "state_topic": topics['state']
-        })
-    
-    logger.info(f"[{g.token_name}] Returned {len(result)} full entities")
-    
-    return jsonify({
-        "count": len(result),
-        "entities": result
-    })
-
-# ============================================
-# Error Handlers
-# ============================================
-@app.errorhandler(404)
-def not_found(e):
-    return jsonify({"error": "Endpoint not found"}), 404
-
-@app.errorhandler(500)
-def internal_error(e):
-    logger.error(f"Internal error: {e}")
-    return jsonify({"error": "Internal server error"}), 500
-
 # ============================================
 # Main
 # ============================================
 if __name__ == '__main__':
     logger.info("=" * 60)
     logger.info("HA Entity Resolver Starting")
-    logger.info(f"  Version: 1.0.0")
+    logger.info(f"  Version: 1.0.1")
     logger.info(f"  HA URL: {HA_URL}")
+    logger.info(f"  MQTT Prefix: {MQTT_PREFIX}")
     logger.info(f"  Configured tokens: {len(ACCESS_TOKENS)}")
-    logger.info(f"  Entity mappings: {len(ENTITY_MQTT_MAP)}")
     logger.info("=" * 60)
     
-    app.run(
-        host='0.0.0.0',
-        port=5003,
-        debug=False,
-        threaded=True
-    )
+    app.run(host='0.0.0.0', port=5003, debug=False, threaded=True)

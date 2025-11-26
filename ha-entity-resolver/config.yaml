@@ -22,16 +22,14 @@ options:
     - token: "CHANGE_ME_SecureToken2025"
       name: "ESP32 Bot"
   ha_url: "http://supervisor/core"
-  entity_mqtt_map:
-    switch.den_cua: "192168100131/switch/____n_c___a"
-    switch.den_nha: "192168100131/switch/____n_nh__"
+  mqtt_device_prefix: "192168100131"
 schema:
   log_level: list(trace|debug|info|notice|warning|error|fatal)?
   access_tokens:
     - token: str
       name: str
   ha_url: str
-  entity_mqtt_map: dict(str, str)?
+  mqtt_device_prefix: str?
 image: ghcr.io/paulsteigel/ha-entity-resolver-{arch}
 homeassistant_api: true
 hassio_api: true
