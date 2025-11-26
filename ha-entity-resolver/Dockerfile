@@ -7,14 +7,9 @@ RUN apk add --no-cache \
     py3-pip \
     && rm -rf /var/cache/apk/*
 
-# Copy requirements and install
+# Copy requirements
 COPY requirements.txt /tmp/
 RUN pip3 install --no-cache-dir -r /tmp/requirements.txt
 
-# Copy application files
+# Copy rootfs
 COPY rootfs /
-
-# Ensure scripts are executable
-RUN chmod a+x /etc/services.d/ha-entity-resolver/run /etc/services.d/ha-entity-resolver/finish
-
-# No CMD - let s6-overlay handle it

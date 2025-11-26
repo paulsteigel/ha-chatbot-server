@@ -1,5 +1,5 @@
 name: HA Entity Resolver
-version: "1.0.0"
+version: "1.0.1"
 slug: ha-entity-resolver
 description: Smart entity resolver with fuzzy matching and control for ESP32 voice assistants
 url: https://github.com/paulsteigel/ha-chatbot-server
@@ -8,9 +8,7 @@ arch:
   - amd64
   - armv7
   - armhf
-# ❌ XÓA dòng này:
-# image: ghcr.io/paulsteigel/ha-entity-resolver-{arch}
-
+init: false
 ports:
   5003/tcp: 5003
 ports_description:
