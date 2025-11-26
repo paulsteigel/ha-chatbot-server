@@ -1,4 +1,5 @@
-#!/usr/bin/with-contenv bashio
+#!/command/with-contenv bashio
+# shellcheck shell=bash
 set -e
 
 bashio::log.info "Starting HA Entity Resolver..."
@@ -14,6 +15,8 @@ if bashio::config.has_value 'mqtt_device_prefix'; then
 else
     echo "192168100131" > /tmp/mqtt_prefix.txt
 fi
+
+bashio::log.info "Starting Flask server on port 5003..."
 
 cd /app
 exec python3 run.py

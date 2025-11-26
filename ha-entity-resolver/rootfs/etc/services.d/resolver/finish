@@ -1,3 +1,4 @@
-#!/usr/bin/with-contenv bashio
+#!/command/with-contenv bashio
+# shellcheck shell=bash
 
 bashio::log.info "Resolver service stopped"
