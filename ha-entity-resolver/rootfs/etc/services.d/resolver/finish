@@ -1,6 +1,0 @@
-#!/usr/bin/with-contenv bashio
-# ==============================================================================
-# Handle service shutdown
-# ==============================================================================
-
-bashio::log.info "HA Entity Endpoint service stopped"
