@@ -1,0 +1,38 @@
+name: HA Entity Resolver for ESP32
+version: "1.0.0"
+slug: ha-entity-resolver
+description: Lightweight API to resolve entity names to MQTT topics for ESP32 MCP bots
+url: https://github.com/paulsteigel/ha-entity-resolver
+arch:
+  - aarch64
+  - amd64
+  - armhf
+  - armv7
+  - i386
+startup: services
+boot: auto
+init: false
+ports:
+  5003/tcp: 5003
+ports_description:
+  5003/tcp: API endpoint
+options:
+  log_level: info
+  access_tokens:
+    - token: "CHANGE_ME_SecureToken2025"
+      name: "ESP32 Bot"
+  ha_url: "http://supervisor/core"
+  entity_mqtt_map:
+    switch.den_cua: "192168100131/switch/____n_c___a"
+    switch.den_nha: "192168100131/switch/____n_nh__"
+schema:
+  log_level: list(trace|debug|info|notice|warning|error|fatal)?
+  access_tokens:
+    - token: str
+      name: str
+  ha_url: str
+  entity_mqtt_map: dict(str, str)?
+image: ghcr.io/paulsteigel/ha-entity-resolver-{arch}
+homeassistant_api: true
+hassio_api: true
+hassio_role: default

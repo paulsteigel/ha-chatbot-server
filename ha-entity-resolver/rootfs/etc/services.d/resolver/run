@@ -1,0 +1,27 @@
+#!/usr/bin/with-contenv bashio
+# ==============================================================================
+# HA Entity Resolver - Startup Script
+# ==============================================================================
+
+bashio::log.info "Starting HA Entity Resolver..."
+
+# Export environment variables
+export LOG_LEVEL=$(bashio::config 'log_level')
+export HA_URL=$(bashio::config 'ha_url')
+export SUPERVISOR_TOKEN="${SUPERVISOR_TOKEN}"
+
+# Write access tokens to file
+bashio::config 'access_tokens' | jq -c . > /tmp/access_tokens.json
+
+# Write entity MQTT map to file
+bashio::config 'entity_mqtt_map' | jq -c . > /tmp/entity_mqtt_map.json
+
+bashio::log.info "Configuration loaded:"
+bashio::log.info "  HA URL: ${HA_URL}"
+bashio::log.info "  Log Level: ${LOG_LEVEL}"
+
+cd /app || bashio::exit.nok "Cannot change to /app directory"
+
+bashio::log.info "Starting Flask server on port 5003..."
+
+exec python3 run.py
