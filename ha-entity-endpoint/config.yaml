@@ -1,8 +1,8 @@
-name: HA Entity Endpoint
-version: "1.0.1"
-slug: ha-entity-endpoint
-description: API endpoint for remote devices to query HA entities
-url: https://github.com/paulsteigel/ha-chatbot-server
+name: HA Smart Entity Gateway
+version: "2.0.0"
+slug: ha-smart-entity-gateway
+description: Secure API gateway for remote entity control with natural language support
+url: https://github.com/paulsteigel/ha-chatbot-server.git
 arch:
   - aarch64
   - amd64
@@ -13,9 +13,19 @@ image: python:{arch}-3.11-alpine
 ports:
   5003/tcp: 5003
 options:
-  access_token: ""
+  access_tokens:
+    - token: "your-secure-token-here"
+      name: "ESP32 Device"
+      areas: []  # empty = all areas
   ha_url: "http://supervisor/core"
+  rate_limit: 60  # requests per minute
+  enable_natural_language: true
 schema:
-  access_token: str
+  access_tokens:
+    - token: str
+      name: str
+      areas: list(str)?
   ha_url: str
+  rate_limit: int
+  enable_natural_language: bool
 homeassistant_api: true
