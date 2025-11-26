@@ -7,20 +7,18 @@ RUN apk add --no-cache \
     py3-pip \
     && rm -rf /var/cache/apk/*
 
-# Set working directory
-WORKDIR /
-
-# Copy requirements first (for better caching)
+# Copy requirements and install
 COPY requirements.txt /tmp/
 RUN pip3 install --no-cache-dir -r /tmp/requirements.txt
 
-# Copy entire rootfs structure
+# Copy application
 COPY rootfs /
 
-# Make run script executable
-RUN chmod a+x /usr/bin/run.sh
+# Ensure run.sh is executable (fix GitHub edit issue)
+RUN chmod +x /usr/bin/run.sh /usr/bin/app.py
 
-# Set working directory for app
+# Set working directory
 WORKDIR /usr/bin
 
-CMD ["/usr/bin/run.sh"]
+# Run directly without s6
+CMD ["python3", "-u", "app.py"]

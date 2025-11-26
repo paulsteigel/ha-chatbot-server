@@ -12,10 +12,25 @@ from flask import Flask, request, jsonify
 import requests
 from rapidfuzz import fuzz, process
 
+# Read addon config from options.json
+OPTIONS_FILE = '/data/options.json'
+
+def load_config():
+    """Load addon configuration"""
+    if os.path.exists(OPTIONS_FILE):
+        with open(OPTIONS_FILE, 'r') as f:
+            return json.load(f)
+    return {
+        'log_level': 'info',
+        'cache_duration': 60
+    }
+
+config = load_config()
+
 # Configure logging
-log_level = os.environ.get('LOG_LEVEL', 'INFO')
+log_level = config.get('log_level', 'info').upper()
 logging.basicConfig(
-    level=getattr(logging, log_level.upper()),
+    level=getattr(logging, log_level),
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -33,7 +48,7 @@ HA_HEADERS = {
 }
 
 # Cache configuration
-CACHE_DURATION = int(os.environ.get('CACHE_DURATION', '60'))
+CACHE_DURATION = int(config.get('cache_duration', 60))
 entities_cache = []
 cache_timestamp = 0
 
