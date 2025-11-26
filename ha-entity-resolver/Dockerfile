@@ -14,11 +14,11 @@ RUN pip3 install --no-cache-dir -r /tmp/requirements.txt
 # Copy application
 COPY rootfs /
 
-# Ensure run.sh is executable (fix GitHub edit issue)
-RUN chmod +x /usr/bin/run.sh /usr/bin/app.py
+# Ensure executable permissions
+RUN chmod +x /usr/bin/app.py
 
 # Set working directory
 WORKDIR /usr/bin
 
-# Run directly without s6
+# Run Python directly
 CMD ["python3", "-u", "app.py"]

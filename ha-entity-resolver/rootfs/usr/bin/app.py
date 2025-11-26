@@ -18,8 +18,12 @@ OPTIONS_FILE = '/data/options.json'
 def load_config():
     """Load addon configuration"""
     if os.path.exists(OPTIONS_FILE):
-        with open(OPTIONS_FILE, 'r') as f:
-            return json.load(f)
+        try:
+            with open(OPTIONS_FILE, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error loading options: {e}")
+    
     return {
         'log_level': 'info',
         'cache_duration': 60
@@ -321,31 +325,7 @@ def execute_action(entity_id, action, parameters=None):
 
 @app.route('/api/control', methods=['POST'])
 def control_entity():
-    """
-    Resolve entity and execute action
-    
-    Request:
-        {
-            "query": "đèn phòng ngủ",
-            "action": "turn_on",
-            "area": "tầng 2",  // optional
-            "domain": "light",  // optional
-            "parameters": {  // optional
-                "brightness": 128
-            }
-        }
-    
-    Response:
-        {
-            "success": true,
-            "entity_id": "light.den_phong_ngu",
-            "friendly_name": "Đèn phòng ngủ",
-            "action": "turn_on",
-            "match_score": 95,
-            "previous_state": "off",
-            "new_state": "on"
-        }
-    """
+    """Resolve entity and execute action"""
     
     # Verify token
     auth_header = request.headers.get('Authorization', '')
@@ -409,28 +389,7 @@ def control_entity():
 
 @app.route('/api/resolve', methods=['POST'])
 def resolve_entity():
-    """
-    Resolve entity from natural language query (without executing action)
-    
-    Request:
-        {
-            "query": "đèn phòng ngủ",
-            "area": "tầng 2",  // optional
-            "domain": "light",  // optional
-            "min_score": 70  // optional
-        }
-    
-    Response:
-        {
-            "entity_id": "light.den_phong_ngu",
-            "friendly_name": "Đèn phòng ngủ",
-            "state": "off",
-            "domain": "light",
-            "area": "Tầng 2",
-            "match_score": 95,
-            "supported_actions": ["turn_on", "turn_off", "toggle"]
-        }
-    """
+    """Resolve entity from natural language query (without executing action)"""
     
     # Verify token
     auth_header = request.headers.get('Authorization', '')
@@ -474,6 +433,8 @@ def health():
 
 if __name__ == '__main__':
     logger.info("Starting HA Entity Resolver...")
+    logger.info(f"Log level: {log_level}")
+    logger.info(f"Cache duration: {CACHE_DURATION}s")
     
     if not SUPERVISOR_TOKEN:
         logger.error("SUPERVISOR_TOKEN not found!")
