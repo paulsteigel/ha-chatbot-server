@@ -8,16 +8,19 @@ RUN apk add --no-cache \
     && rm -rf /var/cache/apk/*
 
 # Set working directory
-WORKDIR /usr/bin
+WORKDIR /
 
-# Copy requirements
-COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt
+# Copy requirements first (for better caching)
+COPY requirements.txt /tmp/
+RUN pip3 install --no-cache-dir -r /tmp/requirements.txt
 
-# Copy application
+# Copy entire rootfs structure
 COPY rootfs /
 
 # Make run script executable
-RUN chmod +x /usr/bin/run.sh
+RUN chmod a+x /usr/bin/run.sh
+
+# Set working directory for app
+WORKDIR /usr/bin
 
 CMD ["/usr/bin/run.sh"]
