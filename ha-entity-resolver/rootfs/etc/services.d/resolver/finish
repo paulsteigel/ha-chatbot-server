@@ -1,6 +1,3 @@
-#!/usr/bin/execlineb -S0
-# ==============================================================================
-# Finish script for resolver service
-# ==============================================================================
+#!/usr/bin/with-contenv bashio
 
-s6-svc -O .
+bashio::log.info "Resolver service stopped"
