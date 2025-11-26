@@ -16,9 +16,7 @@ RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 COPY app/ /app/
 COPY rootfs /
 
-# Fix permissions for both run and finish
-RUN chmod +x /etc/services.d/resolver/run && \
-    chmod +x /etc/services.d/resolver/finish
+RUN chmod +x /etc/services.d/resolver/run /etc/services.d/resolver/finish
 
 EXPOSE 5003
 
