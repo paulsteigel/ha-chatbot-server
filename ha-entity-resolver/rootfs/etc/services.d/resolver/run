@@ -1,23 +1,5 @@
-#!/bin/bash
-set -e
-
-echo "[INFO] Starting HA Entity Resolver..."
-
-export LOG_LEVEL="${LOG_LEVEL:-info}"
-export HA_URL="${HA_URL:-http://supervisor/core}"
-export SUPERVISOR_TOKEN="${SUPERVISOR_TOKEN}"
-
-echo '[{"token":"CHANGE_ME_SecureToken2025","name":"ESP32 Bot"}]' > /tmp/access_tokens.json
-echo "192168100131" > /tmp/mqtt_prefix.txt
-
-if [ -f /data/options.json ]; then
-    LOG_LEVEL=$(jq -r '.log_level // "info"' /data/options.json)
-    HA_URL=$(jq -r '.ha_url // "http://supervisor/core"' /data/options.json)
-    jq -r '.access_tokens // []' /data/options.json > /tmp/access_tokens.json
-    jq -r '.mqtt_device_prefix // "192168100131"' /data/options.json > /tmp/mqtt_prefix.txt
-fi
-
-echo "[INFO] Starting Flask server on port 5003..."
-
+#!/usr/bin/execlineb -P
+with-contenv
+s6-setuidgid abc
 cd /app
-exec python3 run.py
+python3 run.py

@@ -1,2 +1,2 @@
-#!/bin/bash
-echo "[INFO] Resolver service stopped"
+#!/bin/sh
+echo "[INFO] Resolver stopped"

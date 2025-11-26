@@ -14,9 +14,13 @@ COPY requirements.txt .
 RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
 COPY app/ /app/
-COPY rootfs /
 
-RUN chmod +x /etc/services.d/resolver/run /etc/services.d/resolver/finish
+# Copy rootfs AFTER workdir setup
+COPY rootfs/ /
+
+# Make scripts executable
+RUN chmod a+x /etc/services.d/resolver/run && \
+    chmod a+x /etc/services.d/resolver/finish
 
 EXPOSE 5003
 
