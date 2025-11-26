@@ -14,13 +14,11 @@ COPY requirements.txt .
 RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
 COPY app/ /app/
-
-# Copy rootfs AFTER workdir setup
 COPY rootfs/ /
 
-# Make scripts executable
-RUN chmod a+x /etc/services.d/resolver/run && \
-    chmod a+x /etc/services.d/resolver/finish
+# Convert line endings and set permissions
+RUN dos2unix /etc/services.d/resolver/run /etc/services.d/resolver/finish 2>/dev/null || true && \
+    chmod +x /etc/services.d/resolver/run /etc/services.d/resolver/finish
 
 EXPOSE 5003
 
