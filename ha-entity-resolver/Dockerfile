@@ -5,19 +5,19 @@ FROM $BUILD_FROM
 RUN apk add --no-cache \
     python3 \
     py3-pip \
-    && pip3 install --no-cache-dir --upgrade pip
+    && rm -rf /var/cache/apk/*
+
+# Set working directory
+WORKDIR /usr/bin
 
 # Copy requirements
-COPY requirements.txt /tmp/
-RUN pip3 install --no-cache-dir -r /tmp/requirements.txt
+COPY requirements.txt .
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Copy application
 COPY rootfs /
 
-# Set working directory
-WORKDIR /
+# Make run script executable
+RUN chmod +x /usr/bin/run.sh
 
-# Make script executable
-RUN chmod a+x /app.py
-
-CMD ["python3", "/app.py"]
+CMD ["/usr/bin/run.sh"]

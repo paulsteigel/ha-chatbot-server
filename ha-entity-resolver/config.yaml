@@ -1,24 +1,25 @@
 name: HA Entity Resolver
 version: "1.0.0"
 slug: ha-entity-resolver
-description: Smart entity resolver with fuzzy matching for chatbot integration
+description: Smart entity resolver with fuzzy matching and control for ESP32 voice assistants
 url: https://github.com/paulsteigel/ha-chatbot-server
 arch:
   - aarch64
   - amd64
   - armv7
   - armhf
-  - i386
-startup: services
-boot: auto
+image: ghcr.io/paulsteigel/ha-entity-resolver-{arch}
 ports:
   5003/tcp: 5003
 ports_description:
-  5003/tcp: HTTP API endpoint
+  5003/tcp: HTTP API endpoint for entity resolution and control
+startup: application
+boot: auto
+hassio_api: true
+hassio_role: default
 options:
   log_level: info
-  ha_token: ""
+  cache_duration: 60
 schema:
   log_level: list(debug|info|warning|error)
-  ha_token: password
-homeassistant_api: true
+  cache_duration: int(30,300)?
