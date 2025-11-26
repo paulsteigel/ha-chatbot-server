@@ -1,0 +1,6 @@
+#!/usr/bin/with-contenv bashio
+# ==============================================================================
+# Finish script for HA Entity Resolver
+# ==============================================================================
+
+bashio::log.info "HA Entity Resolver stopped"

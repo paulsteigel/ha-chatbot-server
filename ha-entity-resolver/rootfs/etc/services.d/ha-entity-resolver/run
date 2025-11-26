@@ -1,0 +1,20 @@
+#!/usr/bin/with-contenv bashio
+# ==============================================================================
+# Start HA Entity Resolver
+# ==============================================================================
+
+# Get config from options
+LOG_LEVEL=$(bashio::config 'log_level' 'info')
+CACHE_DURATION=$(bashio::config 'cache_duration' '60')
+
+# Export as environment variables
+export LOG_LEVEL="${LOG_LEVEL}"
+export CACHE_DURATION="${CACHE_DURATION}"
+
+bashio::log.info "Starting HA Entity Resolver..."
+bashio::log.info "Log level: ${LOG_LEVEL}"
+bashio::log.info "Cache duration: ${CACHE_DURATION}s"
+
+# Run Python application
+cd /usr/bin || exit 1
+exec python3 -u app.py

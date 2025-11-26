@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 HA Entity Resolver Addon
-Smart entity resolution with fuzzy matching and control
 """
 
 import os
@@ -12,29 +11,13 @@ from flask import Flask, request, jsonify
 import requests
 from rapidfuzz import fuzz, process
 
-# Read addon config from options.json
-OPTIONS_FILE = '/data/options.json'
-
-def load_config():
-    """Load addon configuration"""
-    if os.path.exists(OPTIONS_FILE):
-        try:
-            with open(OPTIONS_FILE, 'r') as f:
-                return json.load(f)
-        except Exception as e:
-            print(f"Error loading options: {e}")
-    
-    return {
-        'log_level': 'info',
-        'cache_duration': 60
-    }
-
-config = load_config()
+# Get config from environment variables (set by s6 run script)
+LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO').upper()
+CACHE_DURATION = int(os.environ.get('CACHE_DURATION', '60'))
 
 # Configure logging
-log_level = config.get('log_level', 'info').upper()
 logging.basicConfig(
-    level=getattr(logging, log_level),
+    level=getattr(logging, LOG_LEVEL),
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)

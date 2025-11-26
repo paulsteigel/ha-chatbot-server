@@ -11,14 +11,10 @@ RUN apk add --no-cache \
 COPY requirements.txt /tmp/
 RUN pip3 install --no-cache-dir -r /tmp/requirements.txt
 
-# Copy application
+# Copy application files
 COPY rootfs /
 
-# Ensure executable permissions
-RUN chmod +x /usr/bin/app.py
+# Ensure scripts are executable
+RUN chmod a+x /etc/services.d/ha-entity-resolver/run /etc/services.d/ha-entity-resolver/finish
 
-# Set working directory
-WORKDIR /usr/bin
-
-# Run Python directly
-CMD ["python3", "-u", "app.py"]
+# No CMD - let s6-overlay handle it
