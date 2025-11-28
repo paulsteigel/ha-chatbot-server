@@ -1,0 +1,17 @@
+name: YouTube Audio Streaming
+version: "1.0.0"
+slug: youtube_audio_streaming
+description: Stream audio from YouTube videos
+arch:
+  - armhf
+  - armv7
+  - aarch64
+  - amd64
+  - i386
+startup: application
+boot: auto
+ports:
+  - "5000/tcp"
+options: {}
+schema: {}
+image: ghcr.io/home-assistant/{arch}-addon-base-python

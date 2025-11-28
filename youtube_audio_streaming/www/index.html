@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Audio Streaming</title>
+    <style>
+        /* Styles cơ bản cho giao diện */
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f4f4f9;
+        }
+        h1 {
+            text-align: center;
+        }
+        #results {
+            margin-top: 20px;
+        }
+        .video-item {
+            padding: 10px;
+            margin: 10px 0;
+            background: #fff;
+            border: 1px solid #ddd;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>YouTube Audio Streaming</h1>
+    <input type="text" id="query" placeholder="Nhập từ khóa tìm kiếm" />
+    <button onclick="search()">Tìm kiếm</button>
+    <div id="results"></div>
+
+    <script>
+        async function search() {
+            const query = document.getElementById('query').value;
+            const response = await fetch(`/search?q=${encodeURIComponent(query)}&max_results=5`);
+            const data = await response.json();
+            displayResults(data.results);
+        }
+
+        function displayResults(videos) {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '';
+            videos.forEach(video => {
+                const videoElement = document.createElement('div');
+                videoElement.classList.add('video-item');
+                videoElement.innerHTML = `
+                    <strong>${video.title}</strong>
+                    <p>By ${video.channel}</p>
+                    <p>Duration: ${video.duration}s</p>
+                `;
+                videoElement.onclick = () => playAudio(video.id);
+                resultsDiv.appendChild(videoElement);
+            });
+        }
+
+        async function playAudio(videoId) {
+            const audioResponse = await fetch(`/stream?video_id=${videoId}`);
+            const audioBlob = await audioResponse.blob();
+            const audioUrl = URL.createObjectURL(audioBlob);
+            const audio = new Audio(audioUrl);
+            audio.play();
+        }
+    </script>
+</body>
+</html>

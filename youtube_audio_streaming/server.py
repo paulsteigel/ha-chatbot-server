@@ -1,0 +1,113 @@
+from flask import Flask, request, jsonify, send_from_directory, Response
+from flask_cors import CORS
+import yt_dlp
+import os
+import requests
+
+app = Flask(__name__)
+CORS(app)
+
+@app.route('/')
+def index():
+    return send_from_directory('www', 'index.html')
+
+@app.route('/search', methods=['GET'])
+def search_youtube():
+    """Tìm kiếm video trên YouTube"""
+    query = request.args.get('q', '')
+    max_results = int(request.args.get('max_results', 10))
+    
+    if not query:
+        return jsonify({'error': 'Missing query parameter'}), 400
+    
+    ydl_opts = {
+        'quiet': True,
+        'no_warnings': True,
+        'extract_flat': True,
+    }
+    
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            search_results = ydl.extract_info(f"ytsearch{max_results}:{query}", download=False)
+            
+            videos = []
+            for entry in search_results.get('entries', []):
+                videos.append({
+                    'id': entry.get('id'),
+                    'title': entry.get('title'),
+                    'duration': entry.get('duration'),
+                    'thumbnail': entry.get('thumbnail'),
+                    'channel': entry.get('channel'),
+                    'url': f"https://www.youtube.com/watch?v={entry.get('id')}"
+                })
+            
+            return jsonify({'results': videos})
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/stream', methods=['GET'])
+def stream_audio():
+    """Stream audio từ YouTube video"""
+    video_id = request.args.get('video_id', '')
+    
+    if not video_id:
+        return jsonify({'error': 'Missing video_id parameter'}), 400
+    
+    video_url = f"https://www.youtube.com/watch?v={video_id}"
+    
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'quiet': True,
+        'no_warnings': True,
+    }
+    
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(video_url, download=False)
+            audio_url = info['url']
+            
+            # Stream audio từ URL
+            def generate():
+                response = requests.get(audio_url, stream=True)
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        yield chunk
+            
+            return Response(generate(), mimetype='audio/mpeg')
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/audio_url', methods=['GET'])
+def get_audio_url():
+    """Lấy direct audio URL từ YouTube video"""
+    video_id = request.args.get('video_id', '')
+    
+    if not video_id:
+        return jsonify({'error': 'Missing video_id parameter'}), 400
+    
+    video_url = f"https://www.youtube.com/watch?v={video_id}"
+    
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'quiet': True,
+        'no_warnings': True,
+    }
+    
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(video_url, download=False)
+            
+            return jsonify({
+                'audio_url': info.get('url'),
+                'title': info.get('title'),
+                'duration': info.get('duration'),
+                'ext': info.get('ext')
+            })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
