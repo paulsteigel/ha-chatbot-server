@@ -5,63 +5,248 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YouTube Audio Streaming</title>
     <style>
-        /* Styles cơ bản cho giao diện */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
         body {
-            font-family: Arial, sans-serif;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
             padding: 20px;
-            background: #f4f4f9;
+            padding-bottom: 100px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
         }
         h1 {
             text-align: center;
+            color: white;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .search-box {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            background: white;
+            padding: 10px;
+            border-radius: 50px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        #query {
+            flex: 1;
+            padding: 15px 20px;
+            font-size: 16px;
+            border: none;
+            outline: none;
+            border-radius: 25px;
+        }
+        button {
+            padding: 15px 30px;
+            font-size: 16px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        button:hover {
+            background: #764ba2;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
         }
         #results {
-            margin-top: 20px;
+            display: grid;
+            gap: 15px;
         }
         .video-item {
-            padding: 10px;
-            margin: 10px 0;
-            background: #fff;
-            border: 1px solid #ddd;
+            background: white;
+            border-radius: 15px;
+            padding: 15px;
+            display: flex;
+            gap: 15px;
             cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .video-item:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+        }
+        .video-item.playing {
+            background: #f0f4ff;
+            border: 2px solid #667eea;
+        }
+        .video-thumbnail {
+            width: 120px;
+            height: 90px;
+            object-fit: cover;
+            border-radius: 10px;
+        }
+        .video-info {
+            flex: 1;
+        }
+        .video-title {
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
+        .video-channel {
+            color: #666;
+            font-size: 14px;
+        }
+        .player-container {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(255, 255, 255, 0.98);
+            padding: 20px;
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.2);
+            backdrop-filter: blur(10px);
+            display: none;
+        }
+        .player-container.active {
+            display: block;
+        }
+        .player-info {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        .now-playing {
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+        audio {
+            width: 100%;
+            margin-top: 10px;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: white;
+            font-size: 18px;
         }
     </style>
 </head>
 <body>
-    <h1>YouTube Audio Streaming</h1>
-    <input type="text" id="query" placeholder="Nhập từ khóa tìm kiếm" />
-    <button onclick="search()">Tìm kiếm</button>
-    <div id="results"></div>
+    <div class="container">
+        <h1>🎵 YouTube Audio Player</h1>
+        
+        <div class="search-box">
+            <input type="text" id="query" placeholder="Tìm kiếm bài hát..." 
+                   onkeypress="if(event.key==='Enter') searchVideos()">
+            <button onclick="searchVideos()">🔍 Tìm kiếm</button>
+        </div>
+
+        <div id="loading" class="loading" style="display: none;">
+            Đang tìm kiếm...
+        </div>
+
+        <div id="results"></div>
+    </div>
+
+    <div id="player" class="player-container">
+        <div class="player-info">
+            <div class="now-playing" id="nowPlaying">Đang phát: ...</div>
+            <audio id="audioPlayer" controls autoplay>
+                Your browser does not support audio element.
+            </audio>
+        </div>
+    </div>
 
     <script>
-        async function search() {
+        let currentVideoId = null;
+
+        async function searchVideos() {
             const query = document.getElementById('query').value;
-            const response = await fetch(`/search?q=${encodeURIComponent(query)}&max_results=5`);
-            const data = await response.json();
-            displayResults(data.results);
+            if (!query) return;
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('results').innerHTML = '';
+
+            try {
+                const response = await fetch(`/search?q=${encodeURIComponent(query)}&max_results=10`);
+                const data = await response.json();
+                
+                document.getElementById('loading').style.display = 'none';
+                displayResults(data.results);
+            } catch (error) {
+                document.getElementById('loading').style.display = 'none';
+                alert('Lỗi khi tìm kiếm: ' + error.message);
+            }
         }
 
         function displayResults(videos) {
             const resultsDiv = document.getElementById('results');
             resultsDiv.innerHTML = '';
+
             videos.forEach(video => {
-                const videoElement = document.createElement('div');
-                videoElement.classList.add('video-item');
-                videoElement.innerHTML = `
-                    <strong>${video.title}</strong>
-                    <p>By ${video.channel}</p>
-                    <p>Duration: ${video.duration}s</p>
+                const videoDiv = document.createElement('div');
+                videoDiv.className = 'video-item';
+                videoDiv.id = `video-${video.id}`;
+                if (currentVideoId === video.id) {
+                    videoDiv.classList.add('playing');
+                }
+                
+                const duration = formatDuration(video.duration);
+                
+                videoDiv.innerHTML = `
+                    <img src="${video.thumbnail}" alt="${video.title}" class="video-thumbnail">
+                    <div class="video-info">
+                        <div class="video-title">${video.title}</div>
+                        <div class="video-channel">${video.channel || 'Unknown'} • ${duration}</div>
+                    </div>
                 `;
-                videoElement.onclick = () => playAudio(video.id);
-                resultsDiv.appendChild(videoElement);
+                
+                videoDiv.onclick = () => playAudio(video);
+                resultsDiv.appendChild(videoDiv);
             });
         }
 
-        async function playAudio(videoId) {
-            const audioResponse = await fetch(`/stream?video_id=${videoId}`);
-            const audioBlob = await audioResponse.blob();
-            const audioUrl = URL.createObjectURL(audioBlob);
-            const audio = new Audio(audioUrl);
-            audio.play();
+        function formatDuration(seconds) {
+            if (!seconds) return 'N/A';
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        async function playAudio(video) {
+            // Xóa highlight cũ
+            if (currentVideoId) {
+                const oldElement = document.getElementById(`video-${currentVideoId}`);
+                if (oldElement) oldElement.classList.remove('playing');
+            }
+
+            // Thêm highlight mới
+            currentVideoId = video.id;
+            const newElement = document.getElementById(`video-${currentVideoId}`);
+            if (newElement) newElement.classList.add('playing');
+
+            // Hiển thị player
+            document.getElementById('player').classList.add('active');
+            document.getElementById('nowPlaying').textContent = `Đang phát: ${video.title}`;
+
+            // Play audio
+            const audioPlayer = document.getElementById('audioPlayer');
+            audioPlayer.src = `/stream?video_id=${video.id}`;
+            
+            // Force play with user interaction
+            try {
+                await audioPlayer.play();
+                console.log('Playing:', video.title);
+            } catch (error) {
+                console.error('Play error:', error);
+                alert('Không thể phát nhạc. Vui lòng thử lại!');
+            }
         }
     </script>
 </body>
