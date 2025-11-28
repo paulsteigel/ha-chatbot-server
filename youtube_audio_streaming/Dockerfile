@@ -1,3 +1,6 @@
+ARG BUILD_FROM
+FROM $BUILD_FROM
+
 # Dùng image chính thức của Home Assistant
 FROM ghcr.io/home-assistant/{arch}-addon-base-python:latest
 

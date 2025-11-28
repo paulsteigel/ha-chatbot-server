@@ -11,7 +11,10 @@ arch:
 startup: application
 boot: auto
 ports:
-  - "5000/tcp"
-options: {}
-schema: {}
-image: ghcr.io/home-assistant/{arch}-addon-base-python
+  5000/tcp: 5000
+ports_description:
+  5000/tcp: Web interface and API
+options:
+  port: 5000
+schema:
+  port: port
