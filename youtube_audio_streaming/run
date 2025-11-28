@@ -1,8 +1,8 @@
-#!/usr/bin/with-contenv bashio
+#!/bin/sh
+set -e
 
-bashio::log.info "Starting YouTube Audio Streaming..."
-
+echo "Starting YouTube Audio Streaming..."
 cd /app || exit 1
 
-bashio::log.info "Starting Flask server on port 5000..."
+echo "Starting Flask server on port 5000..."
 exec python3 server.py
