@@ -1,12 +1,20 @@
 name: YouTube Audio Streaming
-version: "1.0.7"
+version: "1.0.8"
 slug: youtube_audio_streaming
 description: Stream audio from YouTube videos
+url: https://github.com/yourusername/youtube-audio-streaming
 arch:
+  - armhf
+  - armv7
+  - aarch64
   - amd64
+  - i386
 startup: application
 boot: auto
+init: false
 ports:
   5000/tcp: 5000
+ports_description:
+  5000/tcp: "YouTube Audio Streaming API"
 options: {}
 schema: {}
