@@ -1,10 +1,6 @@
 ARG BUILD_FROM
 FROM $BUILD_FROM
 
-# Dùng image chính thức của Home Assistant
-#FROM ghcr.io/home-assistant/{arch}-addon-base-python:latest
-FROM ghcr.io/home-assistant/amd64-addon-base-python:latest
-
 # Thiết lập thư mục làm việc
 WORKDIR /app
 

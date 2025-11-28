@@ -12,9 +12,11 @@ startup: application
 boot: auto
 ports:
   5000/tcp: 5000
-ports_description:
-  5000/tcp: Web interface and API
-options:
-  port: 5000
-schema:
-  port: port
+options: {}
+schema: {}
+build_from:
+  aarch64: "ghcr.io/hassio-addons/base-python/aarch64:latest"
+  amd64: "ghcr.io/hassio-addons/base-python/amd64:latest"
+  armhf: "ghcr.io/hassio-addons/base-python/armhf:latest"
+  armv7: "ghcr.io/hassio-addons/base-python/armv7:latest"
+  i386: "ghcr.io/hassio-addons/base-python/i386:latest"
