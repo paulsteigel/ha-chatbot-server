@@ -4,7 +4,7 @@ import yt_dlp
 import os
 import requests
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='www', static_url_path='')
 CORS(app)
 
 @app.route('/')

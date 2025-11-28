@@ -1,19 +1,13 @@
 ARG BUILD_FROM
 FROM $BUILD_FROM
 
-# Install additional dependencies if needed
-RUN apk add --no-cache ffmpeg
-
 WORKDIR /app
 
-# Copy application files
 COPY server.py requirements.txt /app/
+COPY www/ /app/www/
 
-# Install Python dependencies
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Copy run script
-COPY run.sh /
-RUN chmod a+x /run.sh
-
-CMD ["/run.sh"]
+# Copy s6 service file
+COPY run /etc/services.d/youtube_audio/run
+RUN chmod a+x /etc/services.d/youtube_audio/run
