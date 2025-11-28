@@ -6,4 +6,6 @@ COPY server.py requirements.txt /app/
 
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-CMD ["python3", "/app/server.py"]
+# Copy s6 service files
+COPY run /etc/services.d/youtube_audio/run
+RUN chmod a+x /etc/services.d/youtube_audio/run
