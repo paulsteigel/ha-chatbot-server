@@ -1,10 +1,6 @@
 #!/usr/bin/with-contenv bashio
-# ==============================================================================
-# Start YouTube Audio Streaming service
-# ==============================================================================
 
-bashio::log.info "Starting YouTube Audio Streaming..."
+bashio::log.info "Starting YouTube Audio Streaming server..."
 
-cd /app || exit 1
-
+cd /app
 exec python3 server.py

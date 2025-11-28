@@ -6,5 +6,7 @@ COPY server.py requirements.txt /app/
 
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-COPY run.sh /etc/services.d/youtube_audio/run
-RUN chmod a+x /etc/services.d/youtube_audio/run
+COPY run.sh /
+RUN chmod a+x /run.sh
+
+CMD ["/run.sh"]
