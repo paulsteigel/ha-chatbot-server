@@ -8,7 +8,7 @@ WORKDIR /app
 COPY server.py requirements.txt /app/
 
 # Cài đặt dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Copy và set permission cho run script
 COPY run.sh /etc/services.d/youtube_audio/run
