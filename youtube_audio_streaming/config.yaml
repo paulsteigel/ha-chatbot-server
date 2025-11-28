@@ -1,5 +1,5 @@
 name: YouTube Audio Streaming
-version: "1.0.5"
+version: "1.0.6"
 slug: youtube_audio_streaming
 description: Stream audio from YouTube videos
 arch:
