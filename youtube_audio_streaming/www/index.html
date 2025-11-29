@@ -146,6 +146,14 @@
             margin: 20px 0;
             text-align: center;
         }
+        .debug-info {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            font-size: 12px;
+            color: #666;
+        }
     </style>
 </head>
 <body>
@@ -169,6 +177,7 @@
             <audio id="audioPlayer" controls preload="metadata">
                 Your browser does not support audio.
             </audio>
+            <div id="debugInfo" class="debug-info" style="display: none;"></div>
         </div>
     </div>
 
@@ -286,24 +295,33 @@
                 const data = await response.json();
                 console.log('Audio info:', data);
                 
+                // Show debug info
+                const debugInfo = document.getElementById('debugInfo');
+                debugInfo.innerHTML = `Format: ${data.ext} | MIME: ${data.mime_type}`;
+                debugInfo.style.display = 'block';
+                
                 if (data.audio_url) {
                     const streamUrl = data.audio_url;
                     console.log('Stream URL:', streamUrl);
                     
-                    // Set audio source
+                    // Set audio source with proper type
                     audioPlayer.src = streamUrl;
                     audioPlayer.type = data.mime_type || 'audio/mpeg';
                     audioPlayer.load();
                     
                     document.getElementById('nowPlaying').textContent = `🎵 Đang phát: ${video.title}`;
                     
-                    // Try to play
-                    try {
-                        await audioPlayer.play();
-                        console.log('✅ Playback started successfully');
-                    } catch (playError) {
-                        console.error('❌ Play error:', playError);
-                        showError('Không thể phát nhạc: ' + playError.message);
+                    // Try to play with timeout
+                    const playPromise = audioPlayer.play();
+                    
+                    if (playPromise !== undefined) {
+                        playPromise.then(() => {
+                            console.log('✅ Playback started successfully');
+                        }).catch(error => {
+                            console.error('❌ Play error:', error);
+                            // Try alternative method
+                            tryAlternativePlayback(video.id, data.mime_type);
+                        });
                     }
                 } else {
                     throw new Error('Không có URL audio');
@@ -311,6 +329,38 @@
             } catch (error) {
                 console.error('❌ Error getting audio info:', error);
                 showError('Lỗi tải nhạc: ' + error.message);
+            }
+        }
+
+        // Alternative playback method using direct URL
+        async function tryAlternativePlayback(videoId, mimeType) {
+            console.log('Trying alternative playback...');
+            
+            try {
+                const response = await fetch(`/direct_url?video_id=${videoId}`);
+                if (!response.ok) throw new Error('Cannot get direct URL');
+                
+                const data = await response.json();
+                console.log('Direct URL data:', data);
+                
+                if (data.direct_url) {
+                    const audioPlayer = document.getElementById('audioPlayer');
+                    audioPlayer.src = data.direct_url;
+                    audioPlayer.type = mimeType;
+                    audioPlayer.load();
+                    
+                    try {
+                        await audioPlayer.play();
+                        console.log('✅ Alternative playback successful');
+                        document.getElementById('debugInfo').innerHTML += ' | Using direct URL';
+                    } catch (error) {
+                        console.error('❌ Alternative playback failed:', error);
+                        showError('Không thể phát nhạc. Vui lòng thử video khác.');
+                    }
+                }
+            } catch (error) {
+                console.error('Error in alternative playback:', error);
+                showError('Lỗi phát nhạc: ' + error.message);
             }
         }
 
@@ -325,7 +375,18 @@
         // Xử lý lỗi audio
         document.getElementById('audioPlayer').addEventListener('error', function(e) {
             console.error('🔴 Audio error:', e);
+            console.error('Audio error details:', this.error);
             showError('Lỗi phát nhạc. Vui lòng thử video khác.');
+        });
+        
+        // Xử lý khi audio có thể play
+        document.getElementById('audioPlayer').addEventListener('canplay', function() {
+            console.log('✅ Audio can play');
+        });
+        
+        // Xử lý khi audio bắt đầu tải
+        document.getElementById('audioPlayer').addEventListener('loadstart', function() {
+            console.log('🔄 Audio loading started');
         });
     </script>
 </body>
