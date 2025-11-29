@@ -1,7 +1,8 @@
 from flask import Flask, request, jsonify, send_from_directory, Response
 from flask_cors import CORS
 import yt_dlp
-import requests
+import subprocess
+import shlex
 
 app = Flask(__name__, static_folder='www', static_url_path='')
 CORS(app)
@@ -47,7 +48,7 @@ def search_youtube():
 
 @app.route('/stream', methods=['GET'])
 def stream_audio():
-    """Stream audio từ YouTube video với proper headers"""
+    """Stream audio từ YouTube với FFmpeg conversion"""
     video_id = request.args.get('video_id', '')
     
     if not video_id:
@@ -67,31 +68,42 @@ def stream_audio():
             info = ydl.extract_info(video_url, download=False)
             audio_url = info['url']
             
-            # Lấy headers từ yt-dlp
-            headers = {}
-            if 'http_headers' in info:
-                headers = info['http_headers']
+            # Sử dụng FFmpeg để convert sang MP3
+            ffmpeg_cmd = [
+                'ffmpeg',
+                '-i', audio_url,
+                '-vn',  # Không video
+                '-acodec', 'libmp3lame',  # Convert to MP3
+                '-ab', '128k',  # Bitrate
+                '-ar', '44100',  # Sample rate
+                '-f', 'mp3',  # Format
+                '-'  # Output to stdout
+            ]
             
-            # Stream audio với proper headers
+            print(f"FFmpeg command: {' '.join(ffmpeg_cmd)}")
+            
+            # Chạy FFmpeg và stream output
+            process = subprocess.Popen(
+                ffmpeg_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                bufsize=10**8
+            )
+            
             def generate():
                 try:
-                    response = requests.get(audio_url, headers=headers, stream=True, timeout=30)
-                    response.raise_for_status()
-                    
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            yield chunk
+                    while True:
+                        chunk = process.stdout.read(8192)
+                        if not chunk:
+                            break
+                        yield chunk
                 except Exception as e:
                     print(f"Stream error: {e}")
-                    
-            # Xác định content type
-            content_type = 'audio/webm'  # Default for YouTube
-            if info.get('ext') == 'mp3':
-                content_type = 'audio/mpeg'
-            elif info.get('ext') in ['m4a', 'mp4']:
-                content_type = 'audio/mp4'
+                finally:
+                    process.kill()
+                    process.wait()
             
-            response = Response(generate(), mimetype=content_type)
+            response = Response(generate(), mimetype='audio/mpeg')
             response.headers['Accept-Ranges'] = 'bytes'
             response.headers['Cache-Control'] = 'no-cache'
             
@@ -99,7 +111,9 @@ def stream_audio():
     
     except Exception as e:
         print(f"Error in stream_audio: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)

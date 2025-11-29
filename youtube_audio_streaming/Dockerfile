@@ -9,6 +9,7 @@ COPY www /app/www
 
 # Install Python dependencies
 RUN pip3 install --no-cache-dir -r requirements.txt
+RUN apk add --no-cache ffmpeg
 
 # Start command
 CMD ["python3", "server.py"]
