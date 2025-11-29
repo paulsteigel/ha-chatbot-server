@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YouTube Audio Streaming</title>
     <style>
+        /* Giữ nguyên CSS cũ */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -271,25 +272,61 @@
             playerDiv.classList.add('active');
             document.getElementById('nowPlaying').textContent = `🎵 Đang phát: ${video.title}`;
 
-            // Play audio
+            // Get audio info first
             const audioPlayer = document.getElementById('audioPlayer');
-            const streamUrl = `/stream?video_id=${video.id}`;
-            
-            console.log('Stream URL:', streamUrl);
-            audioPlayer.src = streamUrl;
+            audioPlayer.src = '';
             audioPlayer.load();
             
             try {
-                await audioPlayer.play();
-                console.log('✅ Playback started successfully');
+                document.getElementById('nowPlaying').textContent = `🎵 Đang tải: ${video.title}`;
+                
+                const response = await fetch(`/audio_info?video_id=${video.id}`);
+                if (!response.ok) throw new Error('Không thể lấy thông tin audio');
+                
+                const data = await response.json();
+                console.log('Audio info:', data);
+                
+                if (data.audio_url) {
+                    const streamUrl = data.audio_url;
+                    console.log('Stream URL:', streamUrl);
+                    
+                    // Set audio source
+                    audioPlayer.src = streamUrl;
+                    audioPlayer.type = data.mime_type || 'audio/mpeg';
+                    audioPlayer.load();
+                    
+                    document.getElementById('nowPlaying').textContent = `🎵 Đang phát: ${video.title}`;
+                    
+                    // Try to play
+                    try {
+                        await audioPlayer.play();
+                        console.log('✅ Playback started successfully');
+                    } catch (playError) {
+                        console.error('❌ Play error:', playError);
+                        showError('Không thể phát nhạc: ' + playError.message);
+                    }
+                } else {
+                    throw new Error('Không có URL audio');
+                }
             } catch (error) {
-                console.error('❌ Play error:', error);
-                showError('Không thể phát nhạc: ' + error.message);
+                console.error('❌ Error getting audio info:', error);
+                showError('Lỗi tải nhạc: ' + error.message);
             }
         }
 
         // Auto-focus search box
         document.getElementById('query').focus();
+        
+        // Xử lý sự kiện khi audio bắt đầu play
+        document.getElementById('audioPlayer').addEventListener('play', function() {
+            console.log('🎵 Audio started playing');
+        });
+        
+        // Xử lý lỗi audio
+        document.getElementById('audioPlayer').addEventListener('error', function(e) {
+            console.error('🔴 Audio error:', e);
+            showError('Lỗi phát nhạc. Vui lòng thử video khác.');
+        });
     </script>
 </body>
 </html>
