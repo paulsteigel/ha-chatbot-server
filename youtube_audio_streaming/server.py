@@ -1,9 +1,7 @@
 from flask import Flask, request, jsonify, send_from_directory, Response
 from flask_cors import CORS
 import yt_dlp
-import os
 import requests
-import re
 
 app = Flask(__name__, static_folder='www', static_url_path='')
 CORS(app)
@@ -49,7 +47,7 @@ def search_youtube():
 
 @app.route('/stream', methods=['GET'])
 def stream_audio():
-    """Stream audio từ YouTube video"""
+    """Stream audio từ YouTube video với proper headers"""
     video_id = request.args.get('video_id', '')
     
     if not video_id:
@@ -59,8 +57,9 @@ def stream_audio():
     
     ydl_opts = {
         'format': 'bestaudio/best',
-        'quiet': False,  # Enable to see debug info
-        'no_warnings': False,
+        'quiet': True,
+        'no_warnings': True,
+        'nocheckcertificate': True,
     }
     
     try:
@@ -68,134 +67,38 @@ def stream_audio():
             info = ydl.extract_info(video_url, download=False)
             audio_url = info['url']
             
-            print(f"Audio URL: {audio_url}")
-            print(f"Format: {info.get('ext')}")
-            print(f"Duration: {info.get('duration')}")
+            # Lấy headers từ yt-dlp
+            headers = {}
+            if 'http_headers' in info:
+                headers = info['http_headers']
             
-            # Get proper mimetype
-            ext = info.get('ext', 'm4a')
-            mime_type = get_mime_type(ext)
-            
-            # Stream audio với headers phù hợp
+            # Stream audio với proper headers
             def generate():
-                headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                    'Accept': '*/*',
-                    'Accept-Encoding': 'identity',
-                    'Range': 'bytes=0-'
-                }
-                
                 try:
                     response = requests.get(audio_url, headers=headers, stream=True, timeout=30)
                     response.raise_for_status()
                     
-                    content_length = response.headers.get('Content-Length')
-                    print(f"Content-Length: {content_length}")
-                    print(f"Status Code: {response.status_code}")
-                    
                     for chunk in response.iter_content(chunk_size=8192):
                         if chunk:
                             yield chunk
-                            
                 except Exception as e:
                     print(f"Stream error: {e}")
-                    yield b''
+                    
+            # Xác định content type
+            content_type = 'audio/webm'  # Default for YouTube
+            if info.get('ext') == 'mp3':
+                content_type = 'audio/mpeg'
+            elif info.get('ext') in ['m4a', 'mp4']:
+                content_type = 'audio/mp4'
             
-            return Response(
-                generate(),
-                mimetype=mime_type,
-                headers={
-                    'Content-Type': mime_type,
-                    'Cache-Control': 'no-cache, no-store, must-revalidate',
-                    'Pragma': 'no-cache',
-                    'Expires': '0',
-                    'Access-Control-Allow-Origin': '*',
-                    'Accept-Ranges': 'bytes'
-                }
-            )
+            response = Response(generate(), mimetype=content_type)
+            response.headers['Accept-Ranges'] = 'bytes'
+            response.headers['Cache-Control'] = 'no-cache'
+            
+            return response
     
     except Exception as e:
         print(f"Error in stream_audio: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/audio_info', methods=['GET'])
-def get_audio_info():
-    """Lấy thông tin audio từ YouTube video"""
-    video_id = request.args.get('video_id', '')
-    
-    if not video_id:
-        return jsonify({'error': 'Missing video_id parameter'}), 400
-    
-    video_url = f"https://www.youtube.com/watch?v={video_id}"
-    
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'quiet': False,
-        'no_warnings': False,
-    }
-    
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
-            
-            ext = info.get('ext', 'm4a')
-            mime_type = get_mime_type(ext)
-            
-            return jsonify({
-                'audio_url': f'/stream?video_id={video_id}',
-                'direct_url': info.get('url'),  # For debugging
-                'title': info.get('title'),
-                'duration': info.get('duration'),
-                'ext': ext,
-                'mime_type': mime_type,
-                'format': info.get('format')
-            })
-    
-    except Exception as e:
-        print(f"Error in get_audio_info: {e}")
-        return jsonify({'error': str(e)}), 500
-
-def get_mime_type(ext):
-    """Get proper mimetype for audio extension"""
-    mime_map = {
-        'mp3': 'audio/mpeg',
-        'm4a': 'audio/mp4',
-        'aac': 'audio/aac',
-        'ogg': 'audio/ogg',
-        'wav': 'audio/wav',
-        'webm': 'audio/webm'
-    }
-    return mime_map.get(ext.lower(), 'audio/mpeg')
-
-# Alternative endpoint that returns direct URL for testing
-@app.route('/direct_url', methods=['GET'])
-def get_direct_url():
-    """Get direct audio URL for testing"""
-    video_id = request.args.get('video_id', '')
-    
-    if not video_id:
-        return jsonify({'error': 'Missing video_id parameter'}), 400
-    
-    video_url = f"https://www.youtube.com/watch?v={video_id}"
-    
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'quiet': False,
-        'no_warnings': False,
-    }
-    
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
-            
-            return jsonify({
-                'direct_url': info.get('url'),
-                'title': info.get('title'),
-                'ext': info.get('ext'),
-                'format': info.get('format_id')
-            })
-    
-    except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
