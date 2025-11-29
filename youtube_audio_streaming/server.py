@@ -1,7 +1,6 @@
 from flask import Flask, request, jsonify, send_from_directory, Response
 from flask_cors import CORS
 import yt_dlp
-import os
 import requests
 
 app = Flask(__name__, static_folder='www', static_url_path='')
@@ -48,7 +47,10 @@ def search_youtube():
 
 @app.route('/stream', methods=['GET'])
 def stream_audio():
-    """Stream audio từ YouTube video (ĐÃ FIX LỖI MIME TYPE)"""
+    """
+    Stream audio từ YouTube video.
+    Hỗ trợ Range Request (206 Partial Content) để trình duyệt không báo lỗi.
+    """
     video_id = request.args.get('video_id', '')
     
     if not video_id:
@@ -56,6 +58,7 @@ def stream_audio():
     
     video_url = f"https://www.youtube.com/watch?v={video_id}"
     
+    # 1. Lấy URL thực của file audio từ YouTube
     ydl_opts = {
         'format': 'bestaudio/best',
         'quiet': True,
@@ -63,64 +66,67 @@ def stream_audio():
     }
     
     try:
+        audio_url = None
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=False)
             audio_url = info['url']
+
+        if not audio_url:
+            return jsonify({'error': 'Cannot extract audio url'}), 404
+
+        # 2. Chuẩn bị Headers để gửi request đến YouTube Server
+        # Quan trọng: Phải lấy Range header TỪ TRƯỚC khi vào hàm generate
+        headers = {}
+        if 'Range' in request.headers:
+            headers['Range'] = request.headers['Range']
+        
+        # User-Agent giả lập để tránh bị chặn
+        headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+
+        # 3. Gọi request đến YouTube server (Proxy stream)
+        # stream=True là bắt buộc để không tải toàn bộ file về RAM
+        upstream_response = requests.get(audio_url, headers=headers, stream=True)
+
+        # 4. Chuẩn bị Headers trả về cho trình duyệt (Client)
+        excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
+        headers_response = [
+            (name, value) for (name, value) in upstream_response.headers.items()
+            if name.lower() not in excluded_headers
+        ]
+        
+        # Thêm các header quan trọng thủ công để đảm bảo tính chính xác
+        if 'Content-Length' in upstream_response.headers:
+            headers_response.append(('Content-Length', upstream_response.headers['Content-Length']))
+        
+        if 'Content-Range' in upstream_response.headers:
+            headers_response.append(('Content-Range', upstream_response.headers['Content-Range']))
             
-            # --- PHẦN SỬA LỖI: Xác định MIME Type động ---
-            ext = info.get('ext')
-            mime_type_map = {
-                'm4a': 'audio/mp4',
-                'mp4': 'audio/mp4',
-                'webm': 'audio/webm', # Dành cho Opus
-                'opus': 'audio/ogg',
-                'mp3': 'audio/mpeg',
-            }
-            # Lấy MIME Type phù hợp, nếu không có thì dùng 'audio/mp4' làm mặc định (rất phổ biến)
-            mime_type = mime_type_map.get(ext, 'audio/mp4') 
-            
-            # Stream audio từ URL
-            def generate():
-                response = requests.get(audio_url, stream=True)
-                for chunk in response.iter_content(chunk_size=8192):
+        # Đảm bảo Content-Type đúng (thường là audio/webm hoặc audio/mp4)
+        content_type = upstream_response.headers.get('Content-Type', 'audio/mp4')
+        
+        # 5. Hàm Generator để đẩy dữ liệu
+        def generate():
+            try:
+                for chunk in upstream_response.iter_content(chunk_size=8192):
                     if chunk:
                         yield chunk
-            
-            # Trả về Response với MIME type đã được xác định động
-            return Response(generate(), mimetype=mime_type)
-    
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+            except Exception as e:
+                print(f"Stream error: {e}")
 
-@app.route('/audio_url', methods=['GET'])
-def get_audio_url():
-    """Lấy direct audio URL từ YouTube video (Không thay đổi, vẫn hoạt động tốt)"""
-    video_id = request.args.get('video_id', '')
-    
-    if not video_id:
-        return jsonify({'error': 'Missing video_id parameter'}), 400
-    
-    video_url = f"https://www.youtube.com/watch?v={video_id}"
-    
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'quiet': True,
-        'no_warnings': True,
-    }
-    
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
-            
-            return jsonify({
-                'audio_url': info.get('url'),
-                'title': info.get('title'),
-                'duration': info.get('duration'),
-                'ext': info.get('ext')
-            })
-    
+        # 6. Trả về Response
+        # Status Code: 206 (Partial) nếu có Range, hoặc 200 (OK) nếu tải từ đầu
+        return Response(
+            generate(),
+            status=upstream_response.status_code,
+            mimetype=content_type,
+            headers=headers_response,
+            direct_passthrough=True
+        )
+
     except Exception as e:
+        print(f"Error processing stream: {e}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # Threaded=True là cần thiết để xử lý nhiều request đồng thời (vừa tải trang vừa stream)
+    app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)
