@@ -1,5 +1,5 @@
 name: YouTube Audio Streaming
-version: "1.1.13"
+version: "1.1.14"
 slug: youtube_audio_streaming
 description: Stream audio from YouTube videos with web interface
 url: https://github.com/paulsteigel/ha-chatbot-server.git
@@ -13,7 +13,7 @@ startup: application
 boot: auto
 init: false
 ingress: true
-ingress_port: 5000
+ingress_port: 5005
 panel_icon: "mdi:youtube"
 ports:
   5005/tcp: 5005

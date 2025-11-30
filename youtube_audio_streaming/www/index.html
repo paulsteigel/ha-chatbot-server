@@ -1,321 +1,379 @@
-from flask import Flask, request, jsonify, send_from_directory, Response
-from flask_cors import CORS
-import yt_dlp
-import subprocess
-import logging
-import re
-
-app = Flask(__name__, static_folder='www', static_url_path='')
-CORS(app)
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-@app.route('/')
-def index():
-    """Serve static index.html"""
-    return send_from_directory('www', 'index.html')
-
-# ==================== WEB INTERFACE ENDPOINTS ====================
-
-@app.route('/search', methods=['GET'])
-def search_youtube():
-    """
-    Search YouTube for web interface
-    Parameters:
-        - q: search query
-        - max_results: number of results (default: 10)
-    
-    Also compatible with ESP32 format:
-        - query: search query (alternative parameter name)
-    """
-    # Support both 'q' (web) and 'query' (ESP32) parameters
-    query = request.args.get('q') or request.args.get('query', '')
-    max_results = int(request.args.get('max_results', 10))
-    
-    if not query:
-        return jsonify({'error': 'Missing search query'}), 400
-    
-    logger.info(f"🔍 Searching YouTube: '{query}' (max: {max_results})")
-    
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'quiet': True,
-        'no_warnings': True,
-        'default_search': f'ytsearch{max_results}',
-        'extract_flat': False,
-    }
-    
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"ytsearch{max_results}:{query}", download=False)
-            
-            if 'entries' in info and len(info['entries']) > 0:
-                results = []
-                for video in info['entries']:
-                    if video:  # Sometimes entries can be None
-                        video_data = {
-                            'id': video['id'],
-                            'title': video['title'],
-                            'channel': video.get('uploader', video.get('channel', 'Unknown')),
-                            'duration': video.get('duration', 0),
-                            'thumbnail': video.get('thumbnail', f"https://i.ytimg.com/vi/{video['id']}/default.jpg"),
-                            'url': f"https://www.youtube.com/watch?v={video['id']}"
-                        }
-                        results.append(video_data)
-                
-                logger.info(f"✅ Found {len(results)} results")
-                
-                # Return format compatible with both web and ESP32
-                response = {
-                    'success': True,
-                    'results': results,
-                    'count': len(results)
-                }
-                
-                # If ESP32 requests single result, also include these fields
-                if len(results) > 0:
-                    first = results[0]
-                    response['video_id'] = first['id']
-                    response['title'] = first['title']
-                    response['artist'] = first['channel']
-                    response['audio_url'] = f"/stream?video_id={first['id']}"
-                
-                return jsonify(response)
-            else:
-                logger.warning("❌ No results found")
-                return jsonify({'error': 'No results found', 'success': False}), 404
-    
-    except Exception as e:
-        logger.error(f"❌ Search error: {str(e)}")
-        return jsonify({'error': str(e), 'success': False}), 500
-
-@app.route('/stream', methods=['GET'])
-def stream_audio():
-    """
-    Stream MP3 audio from YouTube
-    Compatible with both web player and ESP32
-    
-    Parameters:
-        - video_id: YouTube video ID
-    
-    Format: MP3 @ 24kHz mono 64kbps (ESP32 Helix decoder compatible)
-    """
-    video_id = request.args.get('video_id', '')
-    
-    if not video_id:
-        return jsonify({'error': 'Missing video_id parameter'}), 400
-    
-    # Validate video_id format
-    if not re.match(r'^[a-zA-Z0-9_-]{11}$', video_id):
-        return jsonify({'error': 'Invalid video_id format'}), 400
-    
-    video_url = f"https://www.youtube.com/watch?v={video_id}"
-    logger.info(f"🎵 Streaming: {video_url}")
-    
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'quiet': True,
-        'no_warnings': True,
-    }
-    
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
-            audio_url = info['url']
-            
-            logger.info(f"📡 Audio URL obtained: {audio_url[:100]}...")
-            
-            # Stream MP3 format (compatible with ESP32 Helix decoder)
-            ffmpeg_cmd = [
-                'ffmpeg',
-                '-i', audio_url,
-                '-vn',                    # No video
-                '-acodec', 'libmp3lame',  # MP3 codec
-                '-ar', '24000',           # 24kHz sample rate
-                '-ac', '1',               # Mono channel
-                '-b:a', '64k',           # 64kbps bitrate
-                '-f', 'mp3',             # MP3 format
-                '-'                       # Output to stdout
-            ]
-            
-            logger.info(f"🎬 Starting FFmpeg process")
-            
-            process = subprocess.Popen(
-                ffmpeg_cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                bufsize=10**8  # 100MB buffer
-            )
-            
-            def generate():
-                chunk_count = 0
-                bytes_sent = 0
-                
-                try:
-                    while True:
-                        chunk = process.stdout.read(8192)  # 8KB chunks
-                        if not chunk:
-                            logger.info(f"✅ Stream complete: {chunk_count} chunks, {bytes_sent} bytes")
-                            break
-                        
-                        chunk_count += 1
-                        bytes_sent += len(chunk)
-                        
-                        # Log first chunk
-                        if chunk_count == 1:
-                            logger.info(f"📤 First chunk sent: {len(chunk)} bytes")
-                            # Check MP3 header
-                            if len(chunk) >= 4:
-                                header = ' '.join(f'{b:02X}' for b in chunk[:4])
-                                logger.info(f"🔍 Header bytes: {header}")
-                        
-                        # Periodic logging
-                        if chunk_count % 100 == 0:
-                            logger.info(f"📊 Progress: {chunk_count} chunks, {bytes_sent/1024:.1f} KB")
-                        
-                        yield chunk
-                
-                except GeneratorExit:
-                    logger.info(f"⚠️ Client disconnected: {chunk_count} chunks sent")
-                except Exception as e:
-                    logger.error(f"❌ Stream error: {e}")
-                finally:
-                    process.kill()
-                    process.wait()
-                    logger.info(f"🛑 FFmpeg process terminated")
-            
-            response = Response(generate(), mimetype='audio/mpeg')
-            response.headers['Accept-Ranges'] = 'bytes'
-            response.headers['Cache-Control'] = 'no-cache'
-            response.headers['Connection'] = 'keep-alive'
-            # Add CORS headers for web player
-            response.headers['Access-Control-Allow-Origin'] = '*'
-            
-            return response
-    
-    except Exception as e:
-        logger.error(f"❌ Stream error: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-# ==================== ESP32 COMPATIBILITY ENDPOINTS ====================
-
-@app.route('/stream_pcm', methods=['GET'])
-def stream_pcm_compatible():
-    """
-    Compatibility endpoint for esp32_music format
-    Returns metadata and audio_url for streaming
-    
-    Parameters:
-        - song: song name
-        - artist: artist name (optional)
-    """
-    song = request.args.get('song', '')
-    artist = request.args.get('artist', '')
-    
-    if not song:
-        return jsonify({'error': 'Missing song parameter'}), 400
-    
-    # Search for the song
-    query = f"{song} {artist}".strip()
-    logger.info(f"🎵 ESP32 /stream_pcm request: '{query}'")
-    
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'quiet': True,
-        'no_warnings': True,
-        'default_search': 'ytsearch1',
-        'extract_flat': False,
-    }
-    
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"ytsearch1:{query}", download=False)
-            
-            if 'entries' in info and len(info['entries']) > 0:
-                video = info['entries'][0]
-                
-                # Return metadata (esp32_music compatible format)
-                result = {
-                    'success': True,
-                    'title': video['title'],
-                    'artist': video.get('uploader', 'Unknown'),
-                    'audio_url': f"/stream?video_id={video['id']}",
-                    'duration': video.get('duration', 0),
-                    'video_id': video['id']
-                }
-                
-                logger.info(f"✅ Found: {video['title']} ({video['id']})")
-                return jsonify(result)
-            else:
-                logger.warning("❌ No results found")
-                return jsonify({'error': 'No results found'}), 404
-    
-    except Exception as e:
-        logger.error(f"❌ Legacy stream_pcm error: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/direct_url', methods=['GET'])
-def get_direct_url():
-    """
-    Get direct audio URL (for debugging/alternative playback)
-    """
-    video_id = request.args.get('video_id', '')
-    
-    if not video_id:
-        return jsonify({'error': 'Missing video_id'}), 400
-    
-    try:
-        video_url = f"https://www.youtube.com/watch?v={video_id}"
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'quiet': True,
-            'no_warnings': True,
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Audio Streaming</title>
+    <style>
+        /* Giữ nguyên CSS cũ */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            padding-bottom: 120px;
         }
+        .container { max-width: 900px; margin: 0 auto; }
+        h1 {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .search-box {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            background: white;
+            padding: 10px;
+            border-radius: 50px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        #query {
+            flex: 1;
+            padding: 15px 20px;
+            font-size: 16px;
+            border: none;
+            outline: none;
+            border-radius: 25px;
+        }
+        button {
+            padding: 15px 30px;
+            font-size: 16px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: bold;
+        }
+        button:hover {
+            background: #764ba2;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        button:active { transform: translateY(0); }
+        #results { display: grid; gap: 15px; }
+        .video-item {
+            background: white;
+            border-radius: 15px;
+            padding: 15px;
+            display: flex;
+            gap: 15px;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .video-item:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+            background: #f8f9ff;
+        }
+        .video-item.playing {
+            background: #e8f0ff;
+            border: 3px solid #667eea;
+            box-shadow: 0 0 20px rgba(102, 126, 234, 0.3);
+        }
+        .video-thumbnail {
+            width: 120px;
+            height: 90px;
+            object-fit: cover;
+            border-radius: 10px;
+            flex-shrink: 0;
+        }
+        .video-info { flex: 1; min-width: 0; }
+        .video-title {
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 8px;
+            font-size: 16px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+        }
+        .video-channel {
+            color: #666;
+            font-size: 14px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .player-container {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(255, 255, 255, 0.98);
+            padding: 20px;
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.3);
+            backdrop-filter: blur(10px);
+            display: none;
+            z-index: 1000;
+        }
+        .player-container.active { display: block; }
+        .player-info { max-width: 900px; margin: 0 auto; }
+        .now-playing {
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 18px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        audio {
+            width: 100%;
+            margin-top: 10px;
+            outline: none;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: white;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .error {
+            background: #ff4444;
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .debug-info {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎵 YouTube Audio Player</h1>
         
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
-            
-            return jsonify({
-                'success': True,
-                'direct_url': info['url'],
-                'format': info.get('format_note', 'unknown')
-            })
-    
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        <div class="search-box">
+            <input type="text" id="query" placeholder="Tìm kiếm bài hát, nghệ sĩ..." 
+                   onkeypress="if(event.key==='Enter') searchVideos()">
+            <button onclick="searchVideos()">🔍 Tìm</button>
+        </div>
 
-# ==================== HEALTH CHECK ====================
+        <div id="loading" class="loading" style="display: none;">⏳ Đang tìm kiếm...</div>
+        <div id="error" class="error" style="display: none;"></div>
+        <div id="results"></div>
+    </div>
 
-@app.route('/health', methods=['GET'])
-def health_check():
-    """Health check endpoint"""
-    return jsonify({
-        'status': 'healthy',
-        'service': 'YouTube Audio Streaming Server',
-        'endpoints': {
-            'web_search': '/search?q=query&max_results=10',
-            'esp32_search': '/search?query=song',
-            'stream': '/stream?video_id=xxx',
-            'esp32_compat': '/stream_pcm?song=xxx&artist=xxx'
+    <div id="player" class="player-container">
+        <div class="player-info">
+            <div class="now-playing" id="nowPlaying">🎵 Đang phát: ...</div>
+            <audio id="audioPlayer" controls preload="metadata">
+                Your browser does not support audio.
+            </audio>
+            <div id="debugInfo" class="debug-info" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentVideoId = null;
+
+        async function searchVideos() {
+            const query = document.getElementById('query').value.trim();
+            if (!query) {
+                showError('Vui lòng nhập từ khóa tìm kiếm!');
+                return;
+            }
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('error').style.display = 'none';
+            document.getElementById('results').innerHTML = '';
+
+            try {
+                const response = await fetch(`/search?q=${encodeURIComponent(query)}&max_results=10`);
+                if (!response.ok) throw new Error('Lỗi server: ' + response.status);
+                
+                const data = await response.json();
+                document.getElementById('loading').style.display = 'none';
+                
+                if (data.results && data.results.length > 0) {
+                    displayResults(data.results);
+                } else {
+                    showError('Không tìm thấy kết quả nào!');
+                }
+            } catch (error) {
+                document.getElementById('loading').style.display = 'none';
+                showError('Lỗi: ' + error.message);
+            }
         }
-    })
 
-if __name__ == '__main__':
-    logger.info("🚀 Starting YouTube Audio Streaming Server")
-    logger.info("📡 Endpoints:")
-    logger.info("   - Web interface: http://localhost:5000/")
-    logger.info("   - Search: /search?q=xxx")
-    logger.info("   - Stream: /stream?video_id=xxx")
-    logger.info("   - ESP32 compat: /stream_pcm?song=xxx")
-    
-    app.run(
-        host='0.0.0.0', 
-        port=5000, 
-        debug=True, 
-        threaded=True
-    )
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+
+        function displayResults(videos) {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '';
+
+            videos.forEach(video => {
+                const videoDiv = document.createElement('div');
+                videoDiv.className = 'video-item';
+                videoDiv.id = `video-${video.id}`;
+                
+                if (currentVideoId === video.id) {
+                    videoDiv.classList.add('playing');
+                }
+                
+                const duration = formatDuration(video.duration);
+                const thumbnail = video.thumbnail || 'https://via.placeholder.com/120x90?text=No+Image';
+                
+                videoDiv.innerHTML = `
+                    <img src="${thumbnail}" alt="${escapeHtml(video.title)}" class="video-thumbnail" 
+                         onerror="this.src='https://via.placeholder.com/120x90?text=No+Image'">
+                    <div class="video-info">
+                        <div class="video-title">${escapeHtml(video.title)}</div>
+                        <div class="video-channel">${escapeHtml(video.channel || 'Unknown')} • ${duration}</div>
+                    </div>
+                `;
+                
+                videoDiv.onclick = () => playAudio(video);
+                resultsDiv.appendChild(videoDiv);
+            });
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatDuration(seconds) {
+            if (!seconds) return 'N/A';
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        async function playAudio(video) {
+            console.log('Playing:', video);
+
+            // Remove old highlight
+            if (currentVideoId) {
+                const oldElement = document.getElementById(`video-${currentVideoId}`);
+                if (oldElement) oldElement.classList.remove('playing');
+            }
+
+            // Add new highlight
+            currentVideoId = video.id;
+            const newElement = document.getElementById(`video-${currentVideoId}`);
+            if (newElement) newElement.classList.add('playing');
+
+            // Show player
+            const playerDiv = document.getElementById('player');
+            playerDiv.classList.add('active');
+            document.getElementById('nowPlaying').textContent = `🎵 Đang phát: ${video.title}`;
+
+            // Play audio
+            const audioPlayer = document.getElementById('audioPlayer');
+            const streamUrl = `/stream?video_id=${video.id}`;
+            
+            console.log('Stream URL:', streamUrl);
+            
+            // Stop current playback
+            audioPlayer.pause();
+            audioPlayer.src = '';
+            
+            // Set new source with timestamp to avoid caching
+            audioPlayer.src = streamUrl + '&t=' + Date.now();
+            audioPlayer.load();
+            
+            // Add error handler
+            audioPlayer.onerror = function(e) {
+                console.error('Audio error:', e);
+                console.error('Error code:', audioPlayer.error?.code);
+                console.error('Error message:', audioPlayer.error?.message);
+                showError('Không thể phát nhạc. Vui lòng thử video khác.');
+            };
+            
+            // Add loaded handler
+            audioPlayer.onloadeddata = function() {
+                console.log('✅ Audio loaded successfully');
+            };
+            
+            try {
+                await audioPlayer.play();
+                console.log('✅ Playback started successfully');
+            } catch (error) {
+                console.error('❌ Play error:', error);
+                showError('Không thể phát nhạc: ' + error.message);
+            }
+        }
+
+
+        // Alternative playback method using direct URL
+        async function tryAlternativePlayback(videoId, mimeType) {
+            console.log('Trying alternative playback...');
+            
+            try {
+                const response = await fetch(`/direct_url?video_id=${videoId}`);
+                if (!response.ok) throw new Error('Cannot get direct URL');
+                
+                const data = await response.json();
+                console.log('Direct URL data:', data);
+                
+                if (data.direct_url) {
+                    const audioPlayer = document.getElementById('audioPlayer');
+                    audioPlayer.src = data.direct_url;
+                    audioPlayer.type = mimeType;
+                    audioPlayer.load();
+                    
+                    try {
+                        await audioPlayer.play();
+                        console.log('✅ Alternative playback successful');
+                        document.getElementById('debugInfo').innerHTML += ' | Using direct URL';
+                    } catch (error) {
+                        console.error('❌ Alternative playback failed:', error);
+                        showError('Không thể phát nhạc. Vui lòng thử video khác.');
+                    }
+                }
+            } catch (error) {
+                console.error('Error in alternative playback:', error);
+                showError('Lỗi phát nhạc: ' + error.message);
+            }
+        }
+
+        // Auto-focus search box
+        document.getElementById('query').focus();
+        
+        // Xử lý sự kiện khi audio bắt đầu play
+        document.getElementById('audioPlayer').addEventListener('play', function() {
+            console.log('🎵 Audio started playing');
+        });
+        
+        // Xử lý lỗi audio
+        document.getElementById('audioPlayer').addEventListener('error', function(e) {
+            console.error('🔴 Audio error:', e);
+            console.error('Audio error details:', this.error);
+            showError('Lỗi phát nhạc. Vui lòng thử video khác.');
+        });
+        
+        // Xử lý khi audio có thể play
+        document.getElementById('audioPlayer').addEventListener('canplay', function() {
+            console.log('✅ Audio can play');
+        });
+        
+        // Xử lý khi audio bắt đầu tải
+        document.getElementById('audioPlayer').addEventListener('loadstart', function() {
+            console.log('🔄 Audio loading started');
+        });
+    </script>
+</body>
+</html>
