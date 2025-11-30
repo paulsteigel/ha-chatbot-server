@@ -1,19 +1,56 @@
-from flask import Flask, request, jsonify, send_from_directory, Response
+from flask import Flask, request, jsonify, send_from_directory, Response, send_file
 from flask_cors import CORS
 import yt_dlp
 import subprocess
 import logging
+import re
+import os
 
 app = Flask(__name__, static_folder='www', static_url_path='')
 CORS(app)
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 @app.route('/')
 def index():
-    return send_from_directory('www', 'index.html')
+    """Serve static index.html"""
+    index_path = os.path.join(app.static_folder, 'index.html')
+    
+    if os.path.exists(index_path):
+        logger.info("✅ Serving index.html")
+        return send_from_directory(app.static_folder, 'index.html')
+    else:
+        logger.error(f"❌ index.html not found at: {index_path}")
+        return f"""
+        <!DOCTYPE html>
+        <html>
+        <head><title>YouTube Audio Streaming Server</title></head>
+        <body>
+            <h1>🎵 YouTube Audio Streaming Server</h1>
+            <p><strong>Status:</strong> Server is running</p>
+            <p><strong>Error:</strong> index.html not found at <code>{index_path}</code></p>
+            
+            <h2>Available Endpoints:</h2>
+            <ul>
+                <li><a href="/health">/health</a> - Health check</li>
+                <li>/search?q=your+query - Search YouTube</li>
+                <li>/stream?video_id=xxx - Stream audio</li>
+            </ul>
+            
+            <h2>Quick Test:</h2>
+            <form action="/search" method="get">
+                <input type="text" name="q" placeholder="Search YouTube..." value="Believer Imagine Dragons">
+                <button type="submit">Search</button>
+            </form>
+        </body>
+        </html>
+        """, 200
+
 
 @app.route('/search', methods=['GET'])
 def search_youtube():
