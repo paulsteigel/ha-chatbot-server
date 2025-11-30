@@ -16,8 +16,8 @@ ingress: true
 ingress_port: 5000
 panel_icon: "mdi:youtube"
 ports:
-  5000/tcp: 5000
+  5005/tcp: 5005
 ports_description:
-  5000/tcp: "YouTube Audio Streaming API"
+  5005/tcp: "YouTube Audio Streaming API"
 options: {}
 schema: {}
