@@ -1,14 +1,14 @@
 # File: config.yaml
 name: "School Chatbot WebSocket"
-version: "1.0.10"
+version: "1.0.11"
 slug: school-chatbot-websocket
-description: "AI Chatbot for schools with WebSocket support"
+description: "AI Chatbot for schools with WebSocket support and music playback"
 arch:
   - amd64
   - armv7
   - aarch64
 init: false
-hassio_api: false  # Không cần vì dùng Wyoming trực tiếp
+hassio_api: false
 startup: application
 boot: auto
 
@@ -27,20 +27,24 @@ options:
   ai_model: "deepseek-chat"
   
   # TTS Provider
-  tts_provider: openai  # "openai" or "piper"
+  tts_provider: openai
   tts_voice_vi: nova
   tts_voice_en: alloy
   
-  # Piper voices (nếu dùng piper)
+  # Piper voices
   piper_host: "addon_core_piper"
   piper_port: 10200
   piper_voice_vi: vi_VN-vais1000-medium
   piper_voice_en: en_US-lessac-medium
-  tts_remove_emoji: true  # Bật/tắt loại bỏ emoji
-  tts_remove_markdown: true  # Bật/tắt loại bỏ markdown
+  tts_remove_emoji: true
+  tts_remove_markdown: true
 
-  # MySql
-  mysql_url: connection string for mysql
+  # MySQL
+  mysql_url: ""
+
+  # Music Service
+  music_service_url: "http://music.sfdp.net"
+  enable_music_playback: true
 
   # Chat settings
   max_context: 10
@@ -55,11 +59,10 @@ options:
 # ============================================================================
 schema:
   # === AI PROVIDER ===
-  # === AI PROVIDER ===
   ai_provider: list(openai|deepseek)
   ai_model: list(gpt-5.1|gpt-5-mini|gpt-5-nano|gpt-4.1|gpt-4.1-mini|gpt-4.1-nano|o3|o4-mini|gpt-4o|gpt-4o-realtime-preview|deepseek-chat|deepseek-reasoner)
   
-  # === API KEYS (giữ nguyên tên) ===
+  # === API KEYS ===
   openai_api_key: password?
   openai_base_url: url?
   deepseek_api_key: password?
@@ -75,21 +78,25 @@ schema:
   piper_host: str?
   piper_port: int(1,65535)?
 
-  # Piper TTS voices (Vietnamese + English)
+  # Piper TTS voices
   piper_voice_vi: list(vi-25hours-single-low|vi-vivos-x-low|vi_VN-25hours_single-low|vi_VN-vais1000-medium|vi_VN-vivos-x_low)?
   piper_voice_en: list(en_US-lessac-medium|en_US-amy-medium|en_GB-alan-medium|en_GB-southern_english_female-medium)?
 
-  tts_remove_emoji: bool?  # Bật/tắt loại bỏ emoji
-  tts_remove_markdown: bool?  # Bật/tắt loại bỏ markdown
+  tts_remove_emoji: bool?
+  tts_remove_markdown: bool?
 
   # === PROMPTS ===
   system_prompt: str?
   custom_prompt: str?
   
-  # === MYSQL (giữ nguyên) ===
+  # === MYSQL ===
   mysql_url: str?
   
-  # === GENERAL (giữ nguyên) ===
+  # === MUSIC SERVICE ===
+  music_service_url: url?
+  enable_music_playback: bool?
+  
+  # === GENERAL ===
   temperature: float(0.0,2.0)?
   max_tokens: int(50,4000)?
   max_context: int(1,50)?

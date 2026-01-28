@@ -23,10 +23,10 @@ class WebSocketHandler:
         ai_service, 
         tts_service, 
         stt_service,
-        conversation_logger=None
+        conversation_logger=None,
+        music_service=None  # ✅ ADD THIS
     ):
         """Initialize WebSocket Handler"""
-        # ← KEEP: All initialization stays the same
         self.logger = logging.getLogger('WebSocketHandler')
         self.device_manager = device_manager
         self.ota_manager = ota_manager
@@ -34,6 +34,7 @@ class WebSocketHandler:
         self.tts_service = tts_service
         self.stt_service = stt_service
         self.conversation_logger = conversation_logger
+        self.music_service = music_service  # ✅ ADD THIS
         self.command_detector = CommandDetector()
         self.logger.info("🔌 WebSocket Handler initialized")
     
@@ -244,6 +245,69 @@ class WebSocketHandler:
             await self.send_error(device_id, f"Chat error: {e}")
     
     async def handle_text(self, data: Dict):
+        """Handle text message from ESP32"""
+        try:
+            device_id = data.get("device_id")
+            text = data.get("text", "")
+            
+            if not text:
+                await self.send_error(device_id, "Empty text message")
+                return
+            
+            self.logger.info(f"💬 Text from {device_id}: {text}")
+            
+            device_info = self.device_manager.devices.get(device_id, {})
+            device_type = device_info.get('type', 'unknown')
+            
+            # ✅ Call AI with music service
+            ai_response = await self.ai_service.chat(
+                user_message=text,
+                conversation_logger=self.conversation_logger,
+                device_id=device_id,
+                device_type=device_type,
+                music_service=self.music_service  # ✅ Pass music service
+            )
+
+            # ✅ Handle music playback
+            if ai_response.get('music_result'):
+                music = ai_response['music_result']
+                
+                # Send music command to ESP32
+                await self.send_message(device_id, {
+                    "type": "play_music",
+                    "title": music['title'],
+                    "artist": music.get('channel', 'Unknown'),
+                    "audio_url": music['audio_url'],
+                    "duration": music.get('duration', 0),
+                    "video_id": music['id']
+                })
+                
+                self.logger.info(f"🎵 Sent music: {music['title']}")
+
+            # Send text response
+            await self.send_message(device_id, {
+                "type": "text",
+                "text": ai_response['response'],
+                "language": ai_response['language']
+            })
+
+            # Send audio (TTS)
+            audio_base64 = await self.tts_service.synthesize(
+                ai_response['cleaned_response'], 
+                ai_response['language']
+            )
+
+            if audio_base64:
+                await self.send_message(device_id, {
+                    "type": "audio",
+                    "audio": audio_base64,
+                    "format": "wav",
+                    "language": ai_response['language']
+                })
+            
+        except Exception as e:
+            self.logger.error(f"❌ Text error: {e}", exc_info=True)
+            await self.send_error(device_id, f"Text error: {e}")
         """Handle text message from ESP32"""
         # ← KEEP: This stays exactly the same
         try:

@@ -1,9 +1,10 @@
 """
 School Chatbot WebSocket Server
 Main FastAPI application with WebSocket support for ESP32 devices
+✅ WITH MUSIC SERVICE INTEGRATION
 """
 import logging
-#import asyncio
+import asyncio  # ✅ ADD THIS (needed for mysql_status)
 import os
 import json
 from contextlib import asynccontextmanager
@@ -19,6 +20,7 @@ from app.device_manager import DeviceManager
 from app.ota_manager import OTAManager
 from app.websocket_handler import WebSocketHandler
 from app.conversation_logger import ConversationLogger
+from app.music_service import MusicService  # ✅ ADD THIS
 from app.config import SYSTEM_PROMPT, AI_CONFIG, TTS_CONFIG, STT_CONFIG, AI_MODELS
 
 # ==============================================================================
@@ -151,6 +153,10 @@ GROQ_API_KEY = get_config('groq_api_key', '')
 # MySQL configuration
 MYSQL_URL = get_config('mysql_url', '')
 
+# ✅ Music Service configuration
+MUSIC_SERVICE_URL = get_config('music_service_url', 'http://music.sfdp.net')
+ENABLE_MUSIC = get_config('enable_music_playback', True)
+
 # TTS configuration
 TTS_VOICE = get_config('tts_voice_vi', TTS_CONFIG.get("vietnamese_voice", "nova"))
 
@@ -167,9 +173,9 @@ logger.info(f"🌡️  Temperature: {CHAT_TEMPERATURE}")
 logger.info(f"📏 Max Tokens: {CHAT_MAX_TOKENS}")
 logger.info(f"💬 Max Context: {CHAT_MAX_CONTEXT}")
 logger.info(f"💾 MySQL: {'✅' if MYSQL_URL else '❌'}")
+logger.info(f"🎵 Music Service: {'✅' if ENABLE_MUSIC else '❌'} ({MUSIC_SERVICE_URL})")
 logger.info(f"📊 Log Level: {LOG_LEVEL}")
 logger.info("=" * 80)
-
 
 
 # ==============================================================================
@@ -183,6 +189,7 @@ device_manager = None
 ota_manager = None
 ws_handler = None
 conversation_logger = None
+music_service = None  # ✅ ADD THIS
 
 
 # ==============================================================================
@@ -194,7 +201,7 @@ async def lifespan(app: FastAPI):
     """
     Lifespan context manager for application startup and shutdown
     """
-    global device_manager, ota_manager, ai_service, tts_service, stt_service, ws_handler, conversation_logger
+    global device_manager, ota_manager, ai_service, tts_service, stt_service, ws_handler, conversation_logger, music_service  # ✅ ADD music_service
     
     logger.info("=" * 80)
     logger.info("🚀 SCHOOL CHATBOT WEBSOCKET SERVER")
@@ -209,13 +216,26 @@ async def lifespan(app: FastAPI):
         logger.info("📦 Initializing OTA Manager...")
         ota_manager = OTAManager()
         
+        # ✅ Initialize Music Service (BEFORE AI Service)
+        if ENABLE_MUSIC:
+            try:
+                logger.info("🎵 Initializing Music Service...")
+                music_service = MusicService(MUSIC_SERVICE_URL)
+                logger.info(f"✅ Music Service ready: {MUSIC_SERVICE_URL}")
+            except Exception as e:
+                logger.warning(f"⚠️ Music Service disabled: {e}")
+                music_service = None
+        else:
+            logger.info("⚠️ Music playback disabled in config")
+            music_service = None
+        
         # Initialize AI Service
         logger.info(f"🤖 Initializing AI Service ({AI_PROVIDER})...")
         ai_service = AIService(
             api_key=DEEPSEEK_API_KEY if AI_PROVIDER == 'deepseek' else OPENAI_API_KEY,
             base_url=DEEPSEEK_BASE_URL if AI_PROVIDER == 'deepseek' else OPENAI_BASE_URL,
             model=AI_MODEL,
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=FINAL_SYSTEM_PROMPT,  # ✅ Use FINAL_SYSTEM_PROMPT
             temperature=CHAT_TEMPERATURE,
             max_tokens=CHAT_MAX_TOKENS,
             max_context=CHAT_MAX_CONTEXT
@@ -245,7 +265,7 @@ async def lifespan(app: FastAPI):
         else:
             logger.info("⚠️ MYSQL_URL not set, conversation logging disabled")
         
-        # Initialize WebSocket Handler
+        # ✅ Initialize WebSocket Handler (WITH music_service)
         logger.info("🔌 Initializing WebSocket Handler...")
         ws_handler = WebSocketHandler(
             device_manager=device_manager,
@@ -253,7 +273,8 @@ async def lifespan(app: FastAPI):
             ai_service=ai_service,
             tts_service=tts_service,
             stt_service=stt_service,
-            conversation_logger=conversation_logger
+            conversation_logger=conversation_logger,
+            music_service=music_service  # ✅ ADD THIS
         )
         
         logger.info("=" * 80)
@@ -262,6 +283,8 @@ async def lifespan(app: FastAPI):
         logger.info(f"🌐 Server listening on: {HOST}:{PORT}")
         logger.info(f"📡 WebSocket endpoint: ws://{HOST}:{PORT}/ws")
         logger.info(f"🌍 Web interface: http://{HOST}:{PORT}/")
+        if music_service:
+            logger.info(f"🎵 Music Service: {MUSIC_SERVICE_URL}")
         logger.info("=" * 80)
         
         yield
@@ -272,6 +295,14 @@ async def lifespan(app: FastAPI):
     
     finally:
         logger.info("🛑 Shutting down services...")
+        
+        # ✅ Close Music Service
+        if music_service:
+            try:
+                await music_service.close()
+                logger.info("🎵 Music Service closed")
+            except Exception as e:
+                logger.error(f"❌ Music Service close error: {e}")
         
         # Close MySQL connection
         if conversation_logger:
@@ -290,7 +321,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="School Chatbot WebSocket Server",
-    description="WebSocket server for ESP32-based school chatbot",
+    description="WebSocket server for ESP32-based school chatbot with music playback",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -356,13 +387,13 @@ async def health_check():
             "device_manager": device_manager is not None,
             "ota_manager": ota_manager is not None,
             "websocket_handler": ws_handler is not None,
-            "conversation_logger": conversation_logger is not None
+            "conversation_logger": conversation_logger is not None,
+            "music_service": music_service is not None  # ✅ ADD THIS
         },
         "devices": device_count,
         "active_connections": active_connections
     })
 
-# Thêm vào main.py sau endpoint /health
 
 @app.get("/api/mysql/status")
 async def mysql_status():
@@ -487,7 +518,9 @@ async def get_status():
             "version": "1.0.0",
             "ai_provider": AI_PROVIDER,
             "ai_model": AI_MODEL,
-            "mysql_logging": conversation_logger is not None
+            "mysql_logging": conversation_logger is not None,
+            "music_service": music_service is not None,  # ✅ ADD THIS
+            "music_url": MUSIC_SERVICE_URL if music_service else None  # ✅ ADD THIS
         },
         "devices": stats,
         "active_connections": active_connections,
@@ -523,10 +556,7 @@ async def get_conversations(device_id: str = None, limit: int = 50):
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for device connections"""
-    #device_id = f"web-{id(websocket)}"
-    #await ws_handler.handle_connection(websocket, device_id)
     await ws_handler.handle_connection(websocket)
-
 
 
 # ==============================================================================
