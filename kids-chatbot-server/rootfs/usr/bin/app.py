@@ -86,7 +86,7 @@ else:
 # Initialize database connection
 if CONTEXT_PERSIST and db:
     DB_CONFIG = {
-        'host': os.getenv('DB_HOST', '192.168.100.251'),
+        'host': os.getenv('DB_HOST', '192.168.100.35'),
         'user': os.getenv('DB_USER', 'paulsteigel'),
         'password': os.getenv('DB_PASSWORD', 'D1ndh1sk'),
         'database': os.getenv('DB_NAME', 'homeassistant'),
