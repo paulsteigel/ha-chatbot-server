@@ -65,6 +65,80 @@
             background: rgba(248, 113, 113, 0.3);
         }
 
+        .music-player {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            display: none;
+            animation: slideDown 0.3s ease-out;
+        }
+
+        .music-player.active {
+            display: block;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .music-info {
+            color: white;
+            margin-bottom: 15px;
+        }
+
+        .music-title {
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 5px;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .music-artist {
+            font-size: 13px;
+            opacity: 0.9;
+        }
+
+        .music-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .music-controls audio {
+            flex: 1;
+            height: 40px;
+            border-radius: 20px;
+        }
+
+        .close-music {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+        }
+
+        .close-music:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: scale(1.1);
+        }
+
         .chat-container {
             height: 450px;
             overflow-y: auto;
@@ -353,6 +427,17 @@
             <div class="status disconnected" id="status">⏳ Đang kết nối...</div>
         </div>
 
+        <div class="music-player" id="musicPlayer">
+            <div class="music-info">
+                <div class="music-title" id="musicTitle">-</div>
+                <div class="music-artist" id="musicArtist">-</div>
+            </div>
+            <div class="music-controls">
+                <audio id="musicAudio" controls></audio>
+                <button class="close-music" id="closeMusicBtn" title="Đóng">✕</button>
+            </div>
+        </div>
+
         <div class="chat-container" id="chatContainer">
             <div class="message bot">
                 <div class="message-icon">🤖</div>
@@ -361,7 +446,8 @@
                         <strong>Xin chào! 👋</strong><br>
                         Mình là <strong>Yên Hoà</strong>, trợ lý AI của bạn.<br><br>
                         📝 <strong>Gõ tin nhắn</strong> để chat<br>
-                        🎤 <strong>Nhấn mic</strong> để nói chuyện<br><br>
+                        🎤 <strong>Nhấn mic</strong> để nói chuyện<br>
+                        🎵 <strong>Yêu cầu phát nhạc</strong> (VD: "Play piano music")<br><br>
                         Hãy hỏi mình bất cứ điều gì nhé! 😊
                     </div>
                     <div class="timestamp" id="welcomeTime"></div>
@@ -397,6 +483,11 @@
         const sendBtn = document.getElementById('sendBtn');
         const voiceBtn = document.getElementById('voiceBtn');
         const voiceStatus = document.getElementById('voiceStatus');
+        const musicPlayer = document.getElementById('musicPlayer');
+        const musicAudio = document.getElementById('musicAudio');
+        const musicTitle = document.getElementById('musicTitle');
+        const musicArtist = document.getElementById('musicArtist');
+        const closeMusicBtn = document.getElementById('closeMusicBtn');
 
         document.getElementById('welcomeTime').textContent = formatTime(new Date());
 
@@ -453,6 +544,10 @@
             switch (data.type) {
                 case 'registered':
                     console.log('✅ Registered:', data.device_id);
+                    break;
+                case 'play_music':
+                    console.log('🎵 Play music:', data.title);
+                    playMusic(data);
                     break;
                 case 'transcription':
                     addMessage('user', `🎤 "${data.text}"`, true);
@@ -512,6 +607,32 @@
                     break;
             }
         }
+
+        function playMusic(musicData) {
+            console.log('🎵 Playing music:', musicData);
+            musicTitle.textContent = musicData.title || 'Unknown Title';
+            musicArtist.textContent = musicData.artist || 'Unknown Artist';
+            let audioUrl = musicData.audio_url;
+            if (audioUrl.startsWith('/')) {
+                audioUrl = 'http://music.sfdp.net' + audioUrl;
+            }
+            console.log('🎵 Audio URL:', audioUrl);
+            musicAudio.src = audioUrl;
+            musicPlayer.classList.add('active');
+            musicAudio.play().catch(err => {
+                console.error('❌ Autoplay failed:', err);
+                showError('Không thể tự động phát nhạc. Vui lòng nhấn play.');
+            });
+            addMessage('bot', `🎵 Đang phát: ${musicData.title} - ${musicData.artist}`);
+        }
+
+        closeMusicBtn.addEventListener('click', () => {
+            musicAudio.pause();
+            musicAudio.src = '';
+            musicPlayer.classList.remove('active');
+            console.log('🛑 Music stopped');
+        });
+
         function addMessage(sender, text, isVoice = false, returnDiv = false) {
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${sender}`;
@@ -771,3 +892,5 @@
     </script>
 </body>
 </html>
+
+                
