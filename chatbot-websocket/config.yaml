@@ -57,10 +57,16 @@ schema:
   # === AI PROVIDER ===
   ai_provider: list(openai|deepseek)
   ai_model: list(
+    gpt-5.1|
     gpt-5-mini|
-    gpt-4o|
+    gpt-5-nano|
+    gpt-4.1|
     gpt-4.1-mini|
+    gpt-4.1-nano|
+    o3|
     o4-mini|
+    gpt-4o|
+    gpt-4o-realtime-preview|
     deepseek-chat|
     deepseek-reasoner
   )
