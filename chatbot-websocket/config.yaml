@@ -33,7 +33,7 @@ options:
   azure_speech_endpoint: "https://admin-mkz8dkfn-eastus2.cognitiveservices.azure.com/"
   azure_speech_region: "eastus2"
     
-# ═══════════════════════════════════════════════════════════════════
+  # ═══════════════════════════════════════════════════════════════════
   # TTS/STT PROVIDERS
   # ═══════════════════════════════════════════════════════════════════
   tts_provider: azure_speech    # azure, openai, or piper
@@ -109,7 +109,7 @@ schema:
   azure_speech_endpoint: str?
   azure_speech_region: str?
   
-# === TTS/STT ===
+  # === TTS/STT ===
   tts_provider: list(azure_speech|openai|piper)
   stt_provider: list(azure_speech|groq|openai)?
   
