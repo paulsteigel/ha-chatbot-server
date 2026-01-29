@@ -41,42 +41,56 @@ def get_config(key: str, default=None):
 class TTSService:
     """Text-to-Speech service with multi-provider support."""
     
-    def __init__(self):
+    def __init__(self, provider: str = None, api_key: str = None, base_url: str = None):
         """Initialize TTS service with dynamic config."""
         
-        # ← KEEP: All __init__ code stays the same
         self.config = self._build_config()
-        self.provider = get_config("tts_provider", "openai")
         
-        openai_api_key = get_config("openai_api_key", "")
-        openai_base_url = get_config("openai_base_url", "https://api.openai.com/v1")
+        # Allow override from constructor
+        if provider:
+            self.provider = provider
+        else:
+            self.provider = get_config("tts_provider", "openai")
+        
+        # Get API credentials
+        if api_key and base_url:
+            # Use provided credentials (Azure)
+            tts_api_key = api_key
+            tts_base_url = base_url
+        else:
+            # Use config (OpenAI)
+            tts_api_key = get_config("openai_api_key", "")
+            tts_base_url = get_config("openai_base_url", "https://api.openai.com/v1")
         
         self.openai_client = None
-        if openai_api_key:
+        if tts_api_key and self.provider in ['openai', 'azure']:
             try:
                 self.openai_client = AsyncOpenAI(
-                    api_key=openai_api_key,
-                    base_url=openai_base_url
+                    api_key=tts_api_key,
+                    base_url=tts_base_url
                 )
             except Exception as e:
-                logger.warning(f"⚠️ OpenAI client init failed: {e}")
+                logger.warning(f"⚠️ TTS client init failed: {e}")
         
         self.wyoming_client = None
         
         logger.info(f"🔊 TTS Service initialized")
         logger.info(f"   Provider: {self.provider}")
-        if self.provider == "openai":
+        
+        if self.provider in ['openai', 'azure']:
             tts_voice_vi = get_config("tts_voice_vi", "nova")
             tts_voice_en = get_config("tts_voice_en", "alloy")
-            logger.info(f"   OpenAI voices: VI={tts_voice_vi}, EN={tts_voice_en}")
+            logger.info(f"   Voices: VI={tts_voice_vi}, EN={tts_voice_en}")
+            logger.info(f"   Endpoint: {tts_base_url}")
             if not self.openai_client:
-                logger.error(f"   ❌ OpenAI client not initialized! Check OPENAI_API_KEY")
+                logger.error(f"   ❌ Client not initialized!")
         elif self.provider == "piper":
             piper_voice_vi = get_config("piper_voice_vi", "vi_VN-vais1000-medium")
             piper_voice_en = get_config("piper_voice_en", "en_US-lessac-medium")
             logger.info(f"   Piper voices: VI={piper_voice_vi}, EN={piper_voice_en}")
-            logger.info(f"   Will auto-fallback to OpenAI if Piper fails")
-        logger.info(f"   Output: WAV 16kHz mono for ESP32")  # ← NEW LOG
+        
+        logger.info(f"   Output: WAV 16kHz mono for ESP32")
+
     
     def _build_config(self) -> dict:
         """Build full config dict for Wyoming client."""
@@ -195,11 +209,11 @@ class TTSService:
                 wav_bytes = await self._synthesize_piper_chunk(cleaned_text, language)
                 return wav_bytes, "piper"
                 
-            else:  # openai
+            else:  # openai or azure
                 # Use original text (with emoji)
                 mp3_bytes = await self._synthesize_openai_chunk(original_text, language)
                 wav_bytes = convert_to_wav_16k(mp3_bytes, source_format="mp3")
-                return wav_bytes, "openai"
+                return wav_bytes, current_provider  # Return "azure" or "openai"
         
         except Exception as primary_error:
             logger.warning(

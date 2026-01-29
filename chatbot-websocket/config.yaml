@@ -1,6 +1,6 @@
 # File: config.yaml
 name: "School Chatbot WebSocket"
-version: "1.0.21"
+version: "1.0.22"
 slug: school-chatbot-websocket
 description: "AI Chatbot for schools with WebSocket support, music playback, and Azure AI"
 arch:
@@ -16,88 +16,107 @@ ports:
   5000/tcp: 5000
 
 options:
-  # ✅ AI Provider - AZURE ONLY
+  # ═══════════════════════════════════════════════════════════════════
+  # AI PROVIDER - AZURE
+  # ═══════════════════════════════════════════════════════════════════
   ai_provider: azure
   ai_model: "gpt-4o-2"
-
-  # API Keys
+  
+  # ═══════════════════════════════════════════════════════════════════
+  # AZURE CONFIGURATION (Chat + TTS + STT)
+  # ═══════════════════════════════════════════════════════════════════
+  azure_api_key: "YOUR_KEY_HERE"
+  azure_endpoint: "https://admin-mkz8dkfn-eastus2.openai.azure.com/openai/v1/"
+  azure_deployment: "gpt-4o-2"
+  azure_api_version: "2024-12-01-preview"
+  
+  # ═══════════════════════════════════════════════════════════════════
+  # TTS/STT PROVIDERS
+  # ═══════════════════════════════════════════════════════════════════
+  tts_provider: azure  # azure, openai, or piper
+  stt_provider: azure  # azure, groq, or openai
+  
+  # TTS Voices (for Azure/OpenAI)
+  tts_voice_vi: nova
+  tts_voice_en: alloy
+  
+  # ═══════════════════════════════════════════════════════════════════
+  # BACKUP API KEYS (Optional - for fallback)
+  # ═══════════════════════════════════
   openai_api_key: ""
   openai_base_url: "https://api.openai.com/v1"
   deepseek_api_key: ""
   groq_api_key: ""
   
-  # ✅ AZURE CONFIGURATION
-  azure_api_key: "YOUR_KEY_HERE"
-  azure_endpoint: "https://admin-mkz8dkfn-eastus2.openai.azure.com/openai/v1/"
-  azure_deployment: "gpt-4o-2"
-  azure_api_version: "2024-12-01-preview"
-  temperature: 0.7
-  max_tokens: 500
-  
-  ai_model: "deepseek-chat"
-  
-  # TTS Provider
-  tts_provider: openai
-  tts_voice_vi: nova
-  tts_voice_en: alloy
-  
-  # Piper voices
+  # ═══════════════════════════════════════════════════════════════════
+  # PIPER TTS (Local fallback)
+  # ═══════════════════════════════════════════════════════════════════
   piper_host: "addon_core_piper"
   piper_port: 10200
   piper_voice_vi: vi_VN-vais1000-medium
   piper_voice_en: en_US-lessac-medium
+  
+  # Text cleaning for TTS
   tts_remove_emoji: true
   tts_remove_markdown: true
 
-  # MySQL
+  # ═══════════════════════════════════════════════════════════════════
+  # MYSQL LOGGING
+  # ═══════════════════════════════════════════════════════════════════
   mysql_url: ""
 
-  # Music Service
+  # ═══════════════════════════════════════════════════════════════════
+  # MUSIC SERVICE
+  # ═══════════════════════════════════════════════════════════════════
   music_service_url: "http://music.sfdp.net"
   enable_music_playback: true
 
-  # Chat settings
+  # ═══════════════════════════════════════════════════════════════════
+  # CHAT SETTINGS
+  # ═══════════════════════════════════
   max_context: 10
   temperature: 0.7
   max_tokens: 500
   
-  # System
+  # ═══════════════════════════════════
+  # SYSTEM
+  # ═══════════════════════════════════════════════════════════════════
   log_level: INFO
 
 # ============================================================================
-# SCHEMA (Validation + UI) - ✅ FIXED: Optional URL handling
+# SCHEMA (Validation + UI)
 # ============================================================================
 schema:
   # === AI PROVIDER ===
   ai_provider: list(openai|deepseek|azure)
-  ai_model: list(gpt-4o|gpt-4o-mini|gpt-4|gpt-4-turbo|gpt-3.5-turbo|deepseek-chat|deepseek-reasoner)
+  ai_model: list(gpt-4o|gpt-4o-2|gpt-4o-mini|gpt-4|gpt-4-turbo|gpt-3.5-turbo|deepseek-chat|deepseek-reasoner)
   
-  # === API KEYS ===
-  openai_api_key: password?
-  openai_base_url: str?  # ✅ Changed from url? to str? to allow empty strings
-  deepseek_api_key: password?
-  groq_api_key: password?
-  
-  # === AZURE (no speech key needed) ===
+  # === AZURE ===
   azure_api_key: password?
-  azure_endpoint: str?  # ✅ Changed from url? to str? to allow empty strings
+  azure_endpoint: str?
   azure_deployment: str?
   azure_api_version: str?
   
-  # === TTS ===
-  tts_provider: list(openai|piper)
+  # === BACKUP API KEYS ===
+  openai_api_key: password?
+  openai_base_url: str?
+  deepseek_api_key: password?
+  groq_api_key: password?
   
-  # OpenAI TTS voices
+  # === TTS/STT ===
+  tts_provider: list(azure|openai|piper)
+  stt_provider: list(azure|groq|openai)?
+  
+  # TTS Voices
   tts_voice_vi: list(alloy|echo|fable|onyx|nova|shimmer)?
   tts_voice_en: list(alloy|echo|fable|onyx|nova|shimmer)?
   
+  # Piper
   piper_host: str?
   piper_port: int(1,65535)?
-
-  # Piper TTS voices
   piper_voice_vi: list(vi-25hours-single-low|vi-vivos-x-low|vi_VN-25hours_single-low|vi_VN-vais1000-medium|vi_VN-vivos-x_low)?
   piper_voice_en: list(en_US-lessac-medium|en_US-amy-medium|en_GB-alan-medium|en_GB-southern_english_female-medium)?
-
+  
   tts_remove_emoji: bool?
   tts_remove_markdown: bool?
 
@@ -106,10 +125,10 @@ schema:
   custom_prompt: str?
   
   # === MYSQL ===
-  mysql_url: str?  # ✅ Changed from url? to str? to allow empty strings
+  mysql_url: str?
   
   # === MUSIC SERVICE ===
-  music_service_url: str?  # ✅ Changed from url? to str? to allow empty strings
+  music_service_url: str?
   enable_music_playback: bool?
   
   # === GENERAL ===

@@ -26,37 +26,32 @@ class STTService:
         self,
         api_key: str,
         base_url: str = "https://api.openai.com/v1",
-        model: str = "whisper-1"
+        model: str = "whisper-1",
+        provider: str = "openai"  # ← NEW parameter
     ):
         """Initialize STT Service"""
         self.logger = logging.getLogger('STTService')
+        self.provider = provider.lower()
         
-        # Check for Groq API key
-        groq_key = os.getenv("GROQ_API_KEY")
-        
-        # Decide which provider to use
-        if GROQ_AVAILABLE and groq_key and groq_key.startswith("gsk_"):
-            # Use Groq (FAST!)
+        # Check for Groq
+        if self.provider == "groq" and GROQ_AVAILABLE:
             self.use_groq = True
-            self.client = Groq(api_key=groq_key)
+            self.client = Groq(api_key=api_key)
             self.model = "whisper-large-v3"
-            self.provider = "Groq"
-            
             self.logger.info("🎤 Initializing STT Service...")
             self.logger.info(f"   Provider: Groq Whisper (FAST! ⚡)")
             self.logger.info(f"   Model: {self.model}")
-            self.logger.info(f"   Expected latency: ~0.2s")
+            
         else:
-            # Fallback to OpenAI
+            # Azure or OpenAI (both use AsyncOpenAI)
             self.use_groq = False
             self.api_key = api_key
             self.base_url = base_url
             self.model = model
-            self.provider = "OpenAI"
             
             self.logger.info("🎤 Initializing STT Service...")
-            self.logger.info(f"   Provider: OpenAI Whisper")
-            self.logger.info(f"   Base URL: {base_url}")
+            self.logger.info(f"   Provider: {self.provider.upper()} Whisper")
+            self.logger.info(f"   Endpoint: {base_url}")
             self.logger.info(f"   Model: {model}")
             
             self.client = AsyncOpenAI(
@@ -65,7 +60,8 @@ class STTService:
             )
         
         self.logger.info("✅ STT Service initialized")
-    
+
+
     def _prepare_audio(self, audio_data: bytes) -> BytesIO:
         """
         Prepare audio data for transcription

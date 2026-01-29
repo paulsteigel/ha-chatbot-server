@@ -272,15 +272,47 @@ async def lifespan(app: FastAPI):
         
         # Initialize TTS Service
         logger.info("🔊 Initializing TTS Service...")
-        tts_service = TTSService()
+
+        # Get TTS provider config
+        TTS_PROVIDER = get_config('tts_provider', 'openai')
+
+        if TTS_PROVIDER == 'azure':
+            tts_service = TTSService(
+                provider='azure',
+                api_key=AZURE_API_KEY,
+                base_url=AZURE_ENDPOINT
+            )
+        else:
+            tts_service = TTSService()  # Use existing config
+
         
         # Initialize STT Service
         logger.info("🎤 Initializing STT Service...")
-        stt_service = STTService(
-            api_key=GROQ_API_KEY if GROQ_API_KEY else OPENAI_API_KEY,
-            base_url="https://api.groq.com/openai/v1" if GROQ_API_KEY else OPENAI_BASE_URL,
-            model="whisper-large-v3" if GROQ_API_KEY else "whisper-1"
-        )
+
+        STT_PROVIDER = get_config('stt_provider', 'groq')
+
+        if STT_PROVIDER == 'azure':
+            stt_service = STTService(
+                api_key=AZURE_API_KEY,
+                base_url=AZURE_ENDPOINT,
+                model="whisper-1",
+                provider='azure'
+            )
+        elif GROQ_API_KEY:
+            stt_service = STTService(
+                api_key=GROQ_API_KEY,
+                base_url="https://api.groq.com/openai/v1",
+                model="whisper-large-v3",
+                provider='groq'
+            )
+        else:
+            stt_service = STTService(
+                api_key=OPENAI_API_KEY,
+                base_url=OPENAI_BASE_URL,
+                model="whisper-1",
+                provider='openai'
+            )
+
         
         # Initialize Conversation Logger (MySQL)
         if MYSQL_URL:
