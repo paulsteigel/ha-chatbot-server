@@ -1,8 +1,8 @@
 # File: app/tts_service.py
 """
-TTS Service - Multi-provider with Azure Speech SDK support
-✅ Providers: azure_speech, openai, piper
-✅ Streaming support with fallback
+TTS Service - Multi-provider with Azure Speech REST API support
+✅ Providers: azure_speech (REST), openai, piper
+✅ Works on Alpine Linux!
 ✅ Always returns WAV 16kHz mono
 """
 import logging
@@ -16,11 +16,12 @@ from typing import Optional, Tuple
 from openai import AsyncOpenAI
 from app.utils.audio_converter import convert_to_wav_16k
 
-# Azure Speech SDK (optional)
+# aiohttp for Azure Speech REST API
 try:
-    AZURE_SPEECH_AVAILABLE = False
+    import aiohttp
+    AIOHTTP_AVAILABLE = True
 except ImportError:
-    AZURE_SPEECH_AVAILABLE = False
+    AIOHTTP_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -62,9 +63,20 @@ class TTSService:
             self.provider = get_config("tts_provider", "openai")
         
         # ═══════════════════════════════════════════════════════════
-        # AZURE SPEECH SDK SETUP
+        # AZURE SPEECH REST API SETUP
         # ═══════════════════════════════════════════════════════════
-        self.azure_speech_config = None
+        self.azure_speech_key = None
+        self.azure_speech_region = None
+        
+        if self.provider == "azure_speech" and AIOHTTP_AVAILABLE:
+            # Use same API key as Azure OpenAI (they share the same key!)
+            self.azure_speech_key = api_key or get_config("azure_api_key", "")
+            self.azure_speech_region = get_config("azure_speech_region", "eastus2")
+            
+            if self.azure_speech_key:
+                logger.info("✅ Azure Speech REST API configured")
+            else:
+                logger.error("❌ Azure Speech key not found!")
         
         # ═══════════════════════════════════════════════════════════
         # OPENAI CLIENT SETUP
@@ -102,14 +114,12 @@ class TTSService:
             voice_vi = get_config("tts_voice_vi", "vi-VN-HoaiMyNeural")
             voice_en = get_config("tts_voice_en", "en-US-AvaMultilingualNeural")
             logger.info(f"   Azure Voices: VI={voice_vi}, EN={voice_en}")
-            if not self.azure_speech_config:
-                logger.error(f"   ❌ Azure Speech not available!")
+            logger.info(f"   Region: {self.azure_speech_region}")
+            logger.info(f"   API: REST (Alpine compatible!)")
         elif self.provider in ['openai', 'azure']:
             voice_vi = get_config("tts_voice_vi", "nova")
             voice_en = get_config("tts_voice_en", "alloy")
             logger.info(f"   OpenAI Voices: VI={voice_vi}, EN={voice_en}")
-            if not self.openai_client:
-                logger.error(f"   ❌ OpenAI client not initialized!")
         elif self.provider == "piper":
             voice_vi = get_config("piper_voice_vi", "vi_VN-vais1000-medium")
             voice_en = get_config("piper_voice_en", "en_US-lessac-medium")
@@ -165,14 +175,6 @@ class TTSService:
         """
         Synthesize ONE chunk with fallback support.
         Always returns WAV 16kHz mono 16-bit for ESP32.
-        
-        Args:
-            original_text: Original text with emoji (for OpenAI/Azure Speech)
-            cleaned_text: Cleaned text without emoji (for Piper)
-            language: "vi" or "en"
-            
-        Returns:
-            tuple[wav_bytes, provider_used]
         """
         current_provider = get_config("tts_provider", self.provider)
         
@@ -181,8 +183,8 @@ class TTSService:
         # ─────────────────────────────────────────────────────────
         try:
             if current_provider == "azure_speech":
-                # Azure Speech SDK (use original text)
-                wav_bytes = await self._synthesize_azure_speech_chunk(
+                # ✅ Azure Speech REST API
+                wav_bytes = await self._synthesize_azure_speech_rest(
                     original_text, language
                 )
                 return wav_bytes, "azure_speech"
@@ -196,7 +198,6 @@ class TTSService:
                 return wav_bytes, "piper"
             
             else:  # openai or azure (OpenAI-compatible)
-                # OpenAI API (use original text)
                 mp3_bytes = await self._synthesize_openai_chunk(original_text, language)
                 wav_bytes = convert_to_wav_16k(mp3_bytes, source_format="mp3")
                 return wav_bytes, current_provider
@@ -236,19 +237,83 @@ class TTSService:
                 )
     
     # ═══════════════════════════════════════════════════════════════════
-    # AZURE SPEECH SDK METHOD (NEW!)
+    # AZURE SPEECH REST API METHOD (NEW!)
     # ═══════════════════════════════════════════════════════════════════
-    async def _synthesize_azure_speech_chunk(
+    async def _synthesize_azure_speech_rest(
         self, text: str, language: str
     ) -> bytes:
         """
-        Azure Speech SDK not available on Alpine Linux.
-        This method will never be called.
+        Synthesize using Azure Speech REST API.
+        Returns WAV 16kHz bytes.
+        
+        Docs: https://learn.microsoft.com/en-us/azure/ai-services/speech-service/rest-text-to-speech
         """
-        raise Exception(
-            "Azure Speech SDK not supported on Alpine Linux. "
-            "Use OpenAI or Piper for TTS instead."
+        if not AIOHTTP_AVAILABLE:
+            raise Exception("aiohttp not installed")
+        
+        if not self.azure_speech_key:
+            raise Exception("Azure Speech key not configured")
+        
+        # Get voice name
+        voice_vi = get_config("tts_voice_vi", "vi-VN-HoaiMyNeural")
+        voice_en = get_config("tts_voice_en", "en-US-AvaMultilingualNeural")
+        voice_name = voice_vi if language == "vi" else voice_en
+        
+        # Build URL
+        url = (
+            f"https://{self.azure_speech_region}.tts.speech.microsoft.com/"
+            f"cognitiveservices/v1"
         )
+        
+        # Build headers
+        headers = {
+            "Ocp-Apim-Subscription-Key": self.azure_speech_key,
+            "Content-Type": "application/ssml+xml",
+            "X-Microsoft-OutputFormat": "riff-16khz-16bit-mono-pcm",  # WAV 16kHz
+            "User-Agent": "HomeAssistant-Chatbot"
+        }
+        
+        # Build SSML (escape XML special characters)
+        text_escaped = (
+            text.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace('"', "&quot;")
+                .replace("'", "&apos;")
+        )
+        
+        ssml = f"""<speak version='1.0' xml:lang='vi-VN'>
+    <voice name='{voice_name}'>
+        {text_escaped}
+    </voice>
+</speak>"""
+        
+        logger.debug(f"🔊 Azure Speech REST: voice={voice_name}, text='{text[:50]}...'")
+        
+        # Make request
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    url, 
+                    headers=headers, 
+                    data=ssml.encode('utf-8'),
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        raise Exception(
+                            f"Azure Speech API error {response.status}: {error_text}"
+                        )
+                    
+                    wav_bytes = await response.read()
+                    
+                    logger.debug(f"✅ Azure Speech REST: {len(wav_bytes)} bytes (WAV 16kHz)")
+                    return wav_bytes
+        
+        except asyncio.TimeoutError:
+            raise Exception("Azure Speech API timeout (10s)")
+        except aiohttp.ClientError as e:
+            raise Exception(f"Azure Speech API connection error: {e}")
     
     # ═══════════════════════════════════════════════════════════════════
     # OPENAI METHOD (EXISTING)
@@ -271,34 +336,25 @@ class TTSService:
             response_format="mp3"
         )
         
-        return response.content  # MP3 bytes
+        return response.content
     
     # ═══════════════════════════════════════════════════════════════════
     # PIPER METHOD (EXISTING)
-    # ═══════════════════════════════════════════════════════════════════
+    # ═══════════════════════════════════
     async def _synthesize_piper_chunk(self, text: str, language: str) -> bytes:
         """Synthesize using Piper, return WAV bytes."""
         await self._init_wyoming_client()
         
         wav_bytes = await self.wyoming_client.synthesize(text, language)
-        
-        # Convert to 16kHz
         wav_bytes = convert_to_wav_16k(wav_bytes, source_format="wav")
         
-        return wav_bytes  # WAV 16kHz bytes
+        return wav_bytes
     
     # ═══════════════════════════════════════════════════════════════════
-    # BACKWARD COMPATIBILITY (DEPRECATED)
-    # ═══════════════════════════════════════════════════════════════════
+    # BACKWARD COMPATIBILITY
+    # ═══════════════════════════════════
     async def synthesize(self, text: str, language: str = "vi") -> str:
-        """
-        Convert text to speech audio (backward compatible).
-        
-        ⚠️ DEPRECATED: Use synthesize_chunk() for streaming.
-        
-        Returns:
-            Base64 encoded WAV audio (16kHz mono)
-        """
+        """Convert text to speech audio (backward compatible)."""
         try:
             wav_bytes, provider = await self.synthesize_chunk(text, text, language)
             audio_base64 = base64.b64encode(wav_bytes).decode("utf-8")

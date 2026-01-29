@@ -1,6 +1,6 @@
 # File: config.yaml
 name: "School Chatbot WebSocket"
-version: "1.0.24"
+version: "1.0.25"
 slug: school-chatbot-websocket
 description: "AI Chatbot for schools with WebSocket support, music playback, and Azure AI"
 arch:
@@ -37,7 +37,7 @@ options:
   # ═══════════════════════════════════════════════════════════════════
   # TTS/STT PROVIDERS
   # ═══════════════════════════════════════════════════════════════════
-  tts_provider: openai  # ← FIXED: azure_speech, openai, or piper
+  tts_provider: azure_speech  # ← FIXED: azure_speech, openai, or piper
   stt_provider: azure_speech  # ← FIXED: azure_speech, groq, or openai
   
   # TTS Voices (for Azure Speech/OpenAI)
