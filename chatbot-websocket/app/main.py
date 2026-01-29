@@ -109,8 +109,8 @@ AZURE_DEPLOYMENT = get_config('azure_deployment', '')
 AZURE_API_VERSION = get_config('azure_api_version', '2024-02-15-preview')
 
 # Azure Speech (optional)
-AZURE_SPEECH_KEY = get_config('azure_speech_key', '')
-AZURE_SPEECH_REGION = get_config('azure_speech_region', '')
+#AZURE_SPEECH_KEY = get_config('azure_speech_key', '')
+#AZURE_SPEECH_REGION = get_config('azure_speech_region', '')
 
 # Auto-select correct model for provider
 if AI_PROVIDER.lower() == 'openai':

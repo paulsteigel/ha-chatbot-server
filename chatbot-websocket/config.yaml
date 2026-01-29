@@ -17,7 +17,7 @@ ports:
 
 options:
   # AI Provider
-  ai_provider: deepseek  # openai | deepseek | azure
+  ai_provider: deepseek
   
   # API Keys
   openai_api_key: ""
@@ -25,24 +25,18 @@ options:
   deepseek_api_key: ""
   groq_api_key: ""
   
-  # ✅ NEW: Azure OpenAI Configuration
+  # ✅ Azure OpenAI Configuration (no speech key needed)
   azure_api_key: ""
-  azure_endpoint: ""  # e.g., https://your-resource.openai.azure.com/
-  azure_deployment: ""  # Your deployment name (e.g., gpt-4o)
+  azure_endpoint: ""
+  azure_deployment: ""
   azure_api_version: "2024-02-15-preview"
   
   ai_model: "deepseek-chat"
   
   # TTS Provider
-  tts_provider: openai  # openai | piper | azure
+  tts_provider: openai
   tts_voice_vi: nova
   tts_voice_en: alloy
-  
-  # ✅ NEW: Azure Speech Configuration (optional)
-  azure_speech_key: ""
-  azure_speech_region: ""  # e.g., eastus
-  azure_tts_voice_vi: "vi-VN-HoaiMyNeural"
-  azure_tts_voice_en: "en-US-JennyNeural"
   
   # Piper voices
   piper_host: "addon_core_piper"
@@ -68,7 +62,7 @@ options:
   log_level: INFO
 
 # ============================================================================
-# SCHEMA (Validation + UI)
+# SCHEMA (Validation + UI) - ✅ FIXED: Optional URL handling
 # ============================================================================
 schema:
   # === AI PROVIDER ===
@@ -77,23 +71,18 @@ schema:
   
   # === API KEYS ===
   openai_api_key: password?
-  openai_base_url: url?
+  openai_base_url: str?  # ✅ Changed from url? to str? to allow empty strings
   deepseek_api_key: password?
   groq_api_key: password?
   
-  # === AZURE ===
+  # === AZURE (no speech key needed) ===
   azure_api_key: password?
-  azure_endpoint: url?
+  azure_endpoint: str?  # ✅ Changed from url? to str? to allow empty strings
   azure_deployment: str?
   azure_api_version: str?
   
-  azure_speech_key: password?
-  azure_speech_region: str?
-  azure_tts_voice_vi: str?
-  azure_tts_voice_en: str?
-  
   # === TTS ===
-  tts_provider: list(openai|piper|azure)
+  tts_provider: list(openai|piper)
   
   # OpenAI TTS voices
   tts_voice_vi: list(alloy|echo|fable|onyx|nova|shimmer)?
@@ -114,10 +103,10 @@ schema:
   custom_prompt: str?
   
   # === MYSQL ===
-  mysql_url: str?
+  mysql_url: str?  # ✅ Changed from url? to str? to allow empty strings
   
   # === MUSIC SERVICE ===
-  music_service_url: url?
+  music_service_url: str?  # ✅ Changed from url? to str? to allow empty strings
   enable_music_playback: bool?
   
   # === GENERAL ===
