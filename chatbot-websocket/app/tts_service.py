@@ -69,18 +69,17 @@ class TTSService:
         self.azure_speech_region = None
         
         if self.provider == "azure_speech" and AIOHTTP_AVAILABLE:
-            # ✅ Use separate Azure Speech key
-            self.azure_speech_key = get_config("azure_speech_key", "") or api_key
+            # ✅ Use separate Azure Speech key (strip whitespace!)
+            self.azure_speech_key = (
+                get_config("azure_speech_key", "") or api_key or ""
+            ).strip()
+            
             self.azure_speech_region = get_config("azure_speech_region", "eastus")
             
             if self.azure_speech_key:
                 logger.info("✅ Azure Speech REST API configured")
                 logger.info(f"   Region: {self.azure_speech_region}")
-            else:
-                logger.error("❌ Azure Speech key not found!")
-            
-            if self.azure_speech_key:
-                logger.info("✅ Azure Speech REST API configured")
+                logger.info(f"   Key length: {len(self.azure_speech_key)} chars")
             else:
                 logger.error("❌ Azure Speech key not found!")
         
@@ -120,7 +119,6 @@ class TTSService:
             voice_vi = get_config("tts_voice_vi", "vi-VN-HoaiMyNeural")
             voice_en = get_config("tts_voice_en", "en-US-AvaMultilingualNeural")
             logger.info(f"   Azure Voices: VI={voice_vi}, EN={voice_en}")
-            logger.info(f"   Region: {self.azure_speech_region}")
             logger.info(f"   API: REST (Alpine compatible!)")
         elif self.provider in ['openai', 'azure']:
             voice_vi = get_config("tts_voice_vi", "nova")
@@ -243,7 +241,7 @@ class TTSService:
                 )
     
     # ═══════════════════════════════════════════════════════════════════
-    # AZURE SPEECH REST API METHOD (NEW!)
+    # AZURE SPEECH REST API METHOD (FIXED!)
     # ═══════════════════════════════════════════════════════════════════
     async def _synthesize_azure_speech_rest(
         self, text: str, language: str
@@ -265,15 +263,12 @@ class TTSService:
         voice_en = get_config("tts_voice_en", "en-US-AvaMultilingualNeural")
         voice_name = voice_vi if language == "vi" else voice_en
         
-        # Build URL
-        url = (
-            f"https://{self.azure_speech_region}.tts.speech.microsoft.com/"
-            f"cognitiveservices/v1"
-        )
+        # Build URL - Standard format from Microsoft docs
+        url = f"https://{self.azure_speech_region}.tts.speech.microsoft.com/cognitiveservices/v1"
         
         # Build headers
         headers = {
-            "Ocp-Apim-Subscription-Key": self.azure_speech_key,
+            "Ocp-Apim-Subscription-Key": self.azure_speech_key.strip(),
             "Content-Type": "application/ssml+xml",
             "X-Microsoft-OutputFormat": "riff-16khz-16bit-mono-pcm",  # WAV 16kHz
             "User-Agent": "HomeAssistant-Chatbot"
@@ -288,7 +283,8 @@ class TTSService:
                 .replace("'", "&apos;")
         )
         
-        ssml = f"""<speak version='1.0' xml:lang='vi-VN'>
+        # ✅ FIXED: Add xmlns namespace for proper voice recognition!
+        ssml = f"""<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='vi-VN'>
     <voice name='{voice_name}'>
         {text_escaped}
     </voice>
@@ -307,6 +303,7 @@ class TTSService:
                 ) as response:
                     if response.status != 200:
                         error_text = await response.text()
+                        logger.error(f"❌ Azure Speech API error {response.status}: {error_text}")
                         raise Exception(
                             f"Azure Speech API error {response.status}: {error_text}"
                         )
@@ -344,9 +341,9 @@ class TTSService:
         
         return response.content
     
-    # ═══════════════════════════════════════════════════════════════════
-    # PIPER METHOD (EXISTING)
     # ═══════════════════════════════════
+    # PIPER METHOD (EXISTING)
+    # ═══════════════════════════════════════════════════════════════════
     async def _synthesize_piper_chunk(self, text: str, language: str) -> bytes:
         """Synthesize using Piper, return WAV bytes."""
         await self._init_wyoming_client()
@@ -358,7 +355,7 @@ class TTSService:
     
     # ═══════════════════════════════════════════════════════════════════
     # BACKWARD COMPATIBILITY
-    # ═══════════════════════════════════
+    # ═══════════════════════════════════════════════════════════════════
     async def synthesize(self, text: str, language: str = "vi") -> str:
         """Convert text to speech audio (backward compatible)."""
         try:
