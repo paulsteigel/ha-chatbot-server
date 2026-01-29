@@ -2,7 +2,7 @@
 # School Chatbot WebSocket - Configuration
 # ============================================================================
 name: "School Chatbot WebSocket"
-version: "1.0.29"
+version: "1.0.30"
 slug: school-chatbot-websocket
 description: "AI Chatbot with Azure AI Foundry + Azure Speech Services"
 arch:
@@ -98,6 +98,9 @@ options:
 # ============================================================================
 # SCHEMA - Validation & UI
 # ============================================================================
+# ============================================================================
+# SCHEMA - Validation & UI
+# ============================================================================
 schema:
   # AI Provider
   ai_provider: list(openai|deepseek|azure)
@@ -117,9 +120,10 @@ schema:
   tts_provider: list(azure_speech|openai|piper)
   stt_provider: list(azure_speech|groq|openai)?
   
-  # TTS Voices
-  tts_voice_vi: str?
-  tts_voice_en: str?
+  # ✅ TTS Voices - WITH DROPDOWN!
+  tts_voice_vi: list(vi-VN-HoaiMyNeural|vi-VN-NamMinhNeural)?
+  tts_voice_en: list(en-US-AvaMultilingualNeural|en-US-AndrewMultilingualNeural|en-US-EmmaMultilingualNeural|en-US-BrianMultilingualNeural)?
+  
   tts_remove_emoji: bool?
   tts_remove_markdown: bool?
   
@@ -132,8 +136,8 @@ schema:
   # Piper
   piper_host: str?
   piper_port: int(1,65535)?
-  piper_voice_vi: str?
-  piper_voice_en: str?
+  piper_voice_vi: list(vi-25hours-single-low|vi-vivos-x-low|vi_VN-25hours_single-low|vi_VN-vais1000-medium|vi_VN-vivos-x_low)?
+  piper_voice_en: list(en_US-lessac-medium|en_US-amy-medium|en_GB-alan-medium|en_GB-southern_english_female-medium)?
   
   # Chat Settings
   temperature: float(0.0,2.0)?
@@ -149,3 +153,4 @@ schema:
   
   # System
   log_level: list(DEBUG|INFO|WARNING|ERROR)?
+

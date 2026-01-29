@@ -187,9 +187,9 @@ class TTSService:
         # ─────────────────────────────────────────────────────────
         try:
             if current_provider == "azure_speech":
-                # ✅ Azure Speech REST API
+                # ✅ Azure Speech REST API (use cleaned text to remove emoji!)
                 wav_bytes = await self._synthesize_azure_speech_rest(
-                    original_text, language
+                    cleaned_text, language  # ← FIXED: Use cleaned_text!
                 )
                 return wav_bytes, "azure_speech"
             
