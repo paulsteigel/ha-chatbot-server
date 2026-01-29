@@ -329,8 +329,10 @@ class AIService:
             sentence_count = 0
             
             async for chunk in stream:
-                if chunk.choices[0].delta.content:
-                    token = chunk.choices[0].delta.content
+                # ✅ Check if choices array is not empty
+                if chunk.choices and len(chunk.choices) > 0:
+                    if chunk.choices[0].delta.content:
+                        token = chunk.choices[0].delta.content
                     full_response += token
                     current_sentence += token
                     

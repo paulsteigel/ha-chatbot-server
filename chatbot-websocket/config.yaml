@@ -1,6 +1,6 @@
 # File: config.yaml
 name: "School Chatbot WebSocket"
-version: "1.0.19"
+version: "1.0.20"
 slug: school-chatbot-websocket
 description: "AI Chatbot for schools with WebSocket support, music playback, and Azure AI"
 arch:
@@ -16,23 +16,21 @@ ports:
   5000/tcp: 5000
 
 options:
-  # AI Provider
-  ai_provider: deepseek
-  
+  # ✅ AI Provider - AZURE ONLY
+  ai_provider: azure
+  ai_model: "gpt-4o-2"
+
   # API Keys
   openai_api_key: ""
   openai_base_url: "https://api.openai.com/v1"
   deepseek_api_key: ""
   groq_api_key: ""
   
-  # ✅ AZURE OPENAI CONFIGURATION
-  ai_provider: azure
-  azure_api_key: "YOUR_KEY_HERE"  # ← Copy từ màn hình (click icon con mắt)
+  # ✅ AZURE CONFIGURATION
+  azure_api_key: "YOUR_KEY_HERE"
   azure_endpoint: "https://admin-mkz8dkfn-eastus2.openai.azure.com/openai/v1/"
-  azure_deployment: "gpt-4o-2"  # ← Tên deployment (có -2 ở cuối)
-  azure_api_version: "2024-12-01-preview"  # Hoặc dùng "2024-02-15-preview"
   azure_deployment: "gpt-4o-2"
-  model: "gpt-4o-2"
+  azure_api_version: "2024-12-01-preview"
   temperature: 0.7
   max_tokens: 500
   
