@@ -1,6 +1,6 @@
 # File: config.yaml
 name: "School Chatbot WebSocket"
-version: "1.0.25"
+version: "1.0.26"
 slug: school-chatbot-websocket
 description: "AI Chatbot for schools with WebSocket support, music playback, and Azure AI"
 arch:
@@ -30,6 +30,12 @@ options:
   azure_deployment: "gpt-4o-2"
   azure_api_version: "2024-12-01-preview"
   
+  # ═══════════════════════════════════════════════════════════════════
+  # AZURE SPEECH SERVICES (TTS) - KEY MỚI!
+  # ═══════════════════════════════════════════════════════════════════
+  azure_speech_key: "PASTE_KEY_MỚI_VÀO_ĐÂY"  # ✅ Key từ Speech Services
+  azure_speech_region: "eastus2"
+
   # Azure Speech Services
   azure_speech_endpoint: "https://admin-mkz8dkfn-eastus2.cognitiveservices.azure.com/"
   azure_speech_region: "eastus2"
@@ -116,6 +122,10 @@ schema:
   # TTS Voices
   tts_voice_vi: list(vi-VN-HoaiMyNeural|alloy|echo|fable|onyx|nova|shimmer)?
   tts_voice_en: list(en-US-AvaMultilingualNeural|alloy|echo|fable|onyx|nova|shimmer)?
+  
+  # ✅ ADD THIS LINE:
+  azure_speech_key: password?
+  azure_speech_region: str?
 
   # Piper
   piper_host: str?

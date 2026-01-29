@@ -69,8 +69,8 @@ class TTSService:
         self.azure_speech_region = None
         
         if self.provider == "azure_speech" and AIOHTTP_AVAILABLE:
-            # Use same API key as Azure OpenAI (they share the same key!)
-            self.azure_speech_key = api_key or get_config("azure_api_key", "")
+            # ✅ Use separate Azure Speech key
+            self.azure_speech_key = get_config("azure_speech_key", "") or api_key
             self.azure_speech_region = get_config("azure_speech_region", "eastus2")
             
             if self.azure_speech_key:
