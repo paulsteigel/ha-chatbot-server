@@ -276,9 +276,9 @@ async def lifespan(app: FastAPI):
         # Get TTS provider config
         TTS_PROVIDER = get_config('tts_provider', 'openai')
 
-        if TTS_PROVIDER == 'azure':
+        if TTS_PROVIDER == 'azure_speech':
             tts_service = TTSService(
-                provider='azure',
+                provider='azure_speech',
                 api_key=AZURE_API_KEY,
                 base_url=AZURE_ENDPOINT
             )
@@ -291,12 +291,12 @@ async def lifespan(app: FastAPI):
 
         STT_PROVIDER = get_config('stt_provider', 'groq')
 
-        if STT_PROVIDER == 'azure':
+        if STT_PROVIDER == 'azure_speech':
             stt_service = STTService(
                 api_key=AZURE_API_KEY,
                 base_url=AZURE_ENDPOINT,
                 model="whisper-1",
-                provider='azure'
+                provider='azure_speech'
             )
         elif GROQ_API_KEY:
             stt_service = STTService(

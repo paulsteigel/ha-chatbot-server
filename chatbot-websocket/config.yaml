@@ -1,6 +1,6 @@
 # File: config.yaml
 name: "School Chatbot WebSocket"
-version: "1.0.22"
+version: "1.0.23"
 slug: school-chatbot-websocket
 description: "AI Chatbot for schools with WebSocket support, music playback, and Azure AI"
 arch:
@@ -30,11 +30,14 @@ options:
   azure_deployment: "gpt-4o-2"
   azure_api_version: "2024-12-01-preview"
   
-  # ═══════════════════════════════════════════════════════════════════
+  azure_speech_endpoint: "https://admin-mkz8dkfn-eastus2.cognitiveservices.azure.com/"
+  azure_speech_region: "eastus2"
+    
+# ═══════════════════════════════════════════════════════════════════
   # TTS/STT PROVIDERS
   # ═══════════════════════════════════════════════════════════════════
-  tts_provider: azure  # azure, openai, or piper
-  stt_provider: azure  # azure, groq, or openai
+  tts_provider: azure_speech    # azure, openai, or piper
+  stt_provider: azure_speech    # azure, groq, or openai
   
   # TTS Voices (for Azure/OpenAI)
   tts_voice_vi: nova
@@ -103,14 +106,17 @@ schema:
   deepseek_api_key: password?
   groq_api_key: password?
   
-  # === TTS/STT ===
-  tts_provider: list(azure|openai|piper)
-  stt_provider: list(azure|groq|openai)?
+  azure_speech_endpoint: str?
+  azure_speech_region: str?
+  
+# === TTS/STT ===
+  tts_provider: list(azure_speech|openai|piper)
+  stt_provider: list(azure_speech|groq|openai)?
   
   # TTS Voices
-  tts_voice_vi: list(alloy|echo|fable|onyx|nova|shimmer)?
-  tts_voice_en: list(alloy|echo|fable|onyx|nova|shimmer)?
-  
+  tts_voice_vi: list(vi-VN-HoaiMyNeural|alloy|echo|fable|onyx|nova|shimmer)?
+  tts_voice_en: list(en-US-AvaMultilingualNeural|alloy|echo|fable|onyx|nova|shimmer)?
+
   # Piper
   piper_host: str?
   piper_port: int(1,65535)?

@@ -1,23 +1,33 @@
 # File: app/tts_service.py
 """
-TTS Service - Multi-provider with Wyoming protocol support
-✅ UPDATED: Add synthesize_chunk() for streaming, always return WAV 16kHz
+TTS Service - Multi-provider with Azure Speech SDK support
+✅ Providers: azure_speech, openai, piper
+✅ Streaming support with fallback
+✅ Always returns WAV 16kHz mono
 """
 import logging
 import base64
 import os
 import json
+import asyncio
+from io import BytesIO
+from typing import Optional, Tuple
+
 from openai import AsyncOpenAI
-from app.utils.audio_converter import convert_to_wav_16k  # ← NEW IMPORT
+from app.utils.audio_converter import convert_to_wav_16k
+
+# Azure Speech SDK (optional)
+try:
+    import azure.cognitiveservices.speech as speechsdk
+    AZURE_SPEECH_AVAILABLE = True
+except ImportError:
+    AZURE_SPEECH_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
+
 def get_config(key: str, default=None):
-    """
-    Get configuration from Home Assistant options.json or environment.
-    Priority: HA options.json > Environment > Default
-    """
-    # ← KEEP: This function stays exactly the same
+    """Get configuration from Home Assistant options.json or environment."""
     options_file = "/data/options.json"
     if os.path.exists(options_file):
         try:
@@ -46,55 +56,88 @@ class TTSService:
         
         self.config = self._build_config()
         
-        # Allow override from constructor
+        # Determine provider
         if provider:
             self.provider = provider
         else:
             self.provider = get_config("tts_provider", "openai")
         
-        # Get API credentials
-        if api_key and base_url:
-            # Use provided credentials (Azure)
-            tts_api_key = api_key
-            tts_base_url = base_url
-        else:
-            # Use config (OpenAI)
-            tts_api_key = get_config("openai_api_key", "")
-            tts_base_url = get_config("openai_base_url", "https://api.openai.com/v1")
+        # ═══════════════════════════════════════════════════════════
+        # AZURE SPEECH SDK SETUP
+        # ═══════════════════════════════════════════════════════════
+        self.azure_speech_config = None
+        if self.provider == "azure_speech" and AZURE_SPEECH_AVAILABLE:
+            azure_key = api_key or get_config("azure_api_key", "")
+            azure_endpoint = get_config("azure_speech_endpoint", "")
+            
+            if azure_key and azure_endpoint:
+                try:
+                    self.azure_speech_config = speechsdk.SpeechConfig(
+                        subscription=azure_key,
+                        endpoint=azure_endpoint
+                    )
+                    # Set output format to WAV 16kHz
+                    self.azure_speech_config.set_speech_synthesis_output_format(
+                        speechsdk.SpeechSynthesisOutputFormat.Riff16Khz16BitMonoPcm
+                    )
+                    logger.info("✅ Azure Speech SDK configured")
+                except Exception as e:
+                    logger.error(f"❌ Azure Speech SDK init failed: {e}")
+                    self.azure_speech_config = None
         
+        # ═══════════════════════════════════════════════════════════
+        # OPENAI CLIENT SETUP
+        # ═══════════════════════════════════════════════════════════
         self.openai_client = None
-        if tts_api_key and self.provider in ['openai', 'azure']:
-            try:
-                self.openai_client = AsyncOpenAI(
-                    api_key=tts_api_key,
-                    base_url=tts_base_url
-                )
-            except Exception as e:
-                logger.warning(f"⚠️ TTS client init failed: {e}")
+        if self.provider in ['openai', 'azure']:
+            if api_key and base_url:
+                tts_api_key = api_key
+                tts_base_url = base_url
+            else:
+                tts_api_key = get_config("openai_api_key", "")
+                tts_base_url = get_config("openai_base_url", "https://api.openai.com/v1")
+            
+            if tts_api_key:
+                try:
+                    self.openai_client = AsyncOpenAI(
+                        api_key=tts_api_key,
+                        base_url=tts_base_url
+                    )
+                except Exception as e:
+                    logger.warning(f"⚠️ OpenAI client init failed: {e}")
         
+        # ═══════════════════════════════════════════════════════════
+        # PIPER (WYOMING) SETUP
+        # ═══════════════════════════════════════════════════════════
         self.wyoming_client = None
         
+        # ═══════════════════════════════════════════════════════════
+        # LOG CONFIGURATION
+        # ═══════════════════════════════════════════════════════════
         logger.info(f"🔊 TTS Service initialized")
         logger.info(f"   Provider: {self.provider}")
         
-        if self.provider in ['openai', 'azure']:
-            tts_voice_vi = get_config("tts_voice_vi", "nova")
-            tts_voice_en = get_config("tts_voice_en", "alloy")
-            logger.info(f"   Voices: VI={tts_voice_vi}, EN={tts_voice_en}")
-            logger.info(f"   Endpoint: {tts_base_url}")
+        if self.provider == "azure_speech":
+            voice_vi = get_config("tts_voice_vi", "vi-VN-HoaiMyNeural")
+            voice_en = get_config("tts_voice_en", "en-US-AvaMultilingualNeural")
+            logger.info(f"   Azure Voices: VI={voice_vi}, EN={voice_en}")
+            if not self.azure_speech_config:
+                logger.error(f"   ❌ Azure Speech not available!")
+        elif self.provider in ['openai', 'azure']:
+            voice_vi = get_config("tts_voice_vi", "nova")
+            voice_en = get_config("tts_voice_en", "alloy")
+            logger.info(f"   OpenAI Voices: VI={voice_vi}, EN={voice_en}")
             if not self.openai_client:
-                logger.error(f"   ❌ Client not initialized!")
+                logger.error(f"   ❌ OpenAI client not initialized!")
         elif self.provider == "piper":
-            piper_voice_vi = get_config("piper_voice_vi", "vi_VN-vais1000-medium")
-            piper_voice_en = get_config("piper_voice_en", "en_US-lessac-medium")
-            logger.info(f"   Piper voices: VI={piper_voice_vi}, EN={piper_voice_en}")
+            voice_vi = get_config("piper_voice_vi", "vi_VN-vais1000-medium")
+            voice_en = get_config("piper_voice_en", "en_US-lessac-medium")
+            logger.info(f"   Piper Voices: VI={voice_vi}, EN={voice_en}")
         
         logger.info(f"   Output: WAV 16kHz mono for ESP32")
-
     
     def _build_config(self) -> dict:
         """Build full config dict for Wyoming client."""
-        # ← KEEP: This stays the same
         return {
             'tts': {
                 'piper': {
@@ -108,7 +151,6 @@ class TTSService:
     
     async def _init_wyoming_client(self):
         """Initialize Wyoming client (lazy load)."""
-        # ← KEEP: This stays exactly the same
         if self.wyoming_client:
             return
         
@@ -131,69 +173,25 @@ class TTSService:
             raise Exception("❌ Cannot connect to Piper. Is Piper addon running?")
     
     # ═══════════════════════════════════════════════════════════════════
-    # ← KEEP: OLD synthesize() method for backward compatibility
-    # ═══════════════════════════════════════════════════════════════════
-    async def synthesize(self, text: str, language: str = "vi") -> str:
-        """
-        Convert text to speech audio (backward compatible).
-        
-        ⚠️ DEPRECATED: Use synthesize_chunk() for streaming.
-        
-        Args:
-            text: Text to synthesize
-            language: "vi" or "en"
-            
-        Returns:
-            Base64 encoded WAV audio (16kHz mono)
-        """
-        current_provider = get_config("tts_provider", self.provider)
-        
-        if current_provider != self.provider:
-            logger.info(f"🔄 TTS provider changed: {self.provider} → {current_provider}")
-            self.provider = current_provider
-            if current_provider != "piper":
-                self.wyoming_client = None
-        
-        try:
-            if self.provider == "piper":
-                return await self._synthesize_piper(text, language)
-            else:
-                return await self._synthesize_openai(text, language)
-                
-        except Exception as e:
-            logger.error(f"❌ TTS error with {self.provider}: {e}")
-            
-            if self.provider == "piper" and self.openai_client:
-                logger.info("🔄 Falling back to OpenAI TTS...")
-                try:
-                    return await self._synthesize_openai(text, language)
-                except Exception as e2:
-                    logger.error(f"❌ OpenAI fallback failed: {e2}")
-            
-            return ""
-    
-    # ═══════════════════════════════════════════════════════════════════
-    # ← NEW: synthesize_chunk() for streaming with fallback
+    # MAIN STREAMING METHOD
     # ═══════════════════════════════════════════════════════════════════
     async def synthesize_chunk(
         self,
         original_text: str,
         cleaned_text: str,
         language: str = "vi"
-    ) -> tuple[bytes, str]:
+    ) -> Tuple[bytes, str]:
         """
         Synthesize ONE chunk with fallback support.
         Always returns WAV 16kHz mono 16-bit for ESP32.
         
         Args:
-            original_text: Original text with emoji (for OpenAI fallback)
+            original_text: Original text with emoji (for OpenAI/Azure Speech)
             cleaned_text: Cleaned text without emoji (for Piper)
             language: "vi" or "en"
             
         Returns:
             tuple[wav_bytes, provider_used]
-            - wav_bytes: WAV 16kHz audio
-            - provider_used: "piper", "openai", or "openai_fallback"
         """
         current_provider = get_config("tts_provider", self.provider)
         
@@ -201,19 +199,26 @@ class TTSService:
         # TRY PRIMARY PROVIDER
         # ─────────────────────────────────────────────────────────
         try:
-            if current_provider == "piper":
-                # Use cleaned text (no emoji)
+            if current_provider == "azure_speech":
+                # Azure Speech SDK (use original text)
+                wav_bytes = await self._synthesize_azure_speech_chunk(
+                    original_text, language
+                )
+                return wav_bytes, "azure_speech"
+            
+            elif current_provider == "piper":
+                # Piper (use cleaned text)
                 if not cleaned_text.strip():
                     raise ValueError("Empty text after cleaning")
                 
                 wav_bytes = await self._synthesize_piper_chunk(cleaned_text, language)
                 return wav_bytes, "piper"
-                
-            else:  # openai or azure
-                # Use original text (with emoji)
+            
+            else:  # openai or azure (OpenAI-compatible)
+                # OpenAI API (use original text)
                 mp3_bytes = await self._synthesize_openai_chunk(original_text, language)
                 wav_bytes = convert_to_wav_16k(mp3_bytes, source_format="mp3")
-                return wav_bytes, current_provider  # Return "azure" or "openai"
+                return wav_bytes, current_provider
         
         except Exception as primary_error:
             logger.warning(
@@ -221,106 +226,91 @@ class TTSService:
             )
             
             # ─────────────────────────────────────────────────────────
-            # FALLBACK TO SECONDARY PROVIDER
+            # FALLBACK CHAIN
             # ─────────────────────────────────────────────────────────
             try:
-                if current_provider == "piper":
-                    # Piper failed → OpenAI (use ORIGINAL text with emoji!)
-                    logger.info("🔄 Fallback: Piper → OpenAI (with emoji)")
-                    
-                    if not self.openai_client:
-                        raise Exception("OpenAI not available for fallback")
-                    
+                # Try OpenAI as first fallback
+                if current_provider != "openai" and self.openai_client:
+                    logger.info(f"🔄 Fallback: {current_provider} → OpenAI")
                     mp3_bytes = await self._synthesize_openai_chunk(
-                        original_text,  # ← Use original with emoji!
-                        language
+                        original_text, language
                     )
                     wav_bytes = convert_to_wav_16k(mp3_bytes, source_format="mp3")
                     return wav_bytes, "openai_fallback"
-                    
-                else:
-                    # OpenAI failed → Piper (use cleaned text)
-                    logger.info("🔄 Fallback: OpenAI → Piper (cleaned)")
-                    
-                    if not cleaned_text.strip():
-                        raise ValueError("Empty text after cleaning")
-                    
-                    await self._init_wyoming_client()
-                    wav_bytes = await self._synthesize_piper_chunk(
-                        cleaned_text,
-                        language
-                    )
-                    return wav_bytes, "piper_fallback"
+                
+                # Try Piper as last resort
+                if not cleaned_text.strip():
+                    raise ValueError("Empty text for Piper fallback")
+                
+                logger.info(f"🔄 Fallback: {current_provider} → Piper")
+                await self._init_wyoming_client()
+                wav_bytes = await self._synthesize_piper_chunk(cleaned_text, language)
+                return wav_bytes, "piper_fallback"
             
             except Exception as fallback_error:
-                logger.error(f"❌ Fallback also failed: {fallback_error}")
+                logger.error(f"❌ All TTS failed: {fallback_error}")
                 raise Exception(
                     f"All TTS failed - Primary: {primary_error}, "
                     f"Fallback: {fallback_error}"
                 )
     
     # ═══════════════════════════════════════════════════════════════════
-    # ← MODIFIED: Return base64 WAV (not MP3) for backward compatibility
+    # AZURE SPEECH SDK METHOD (NEW!)
     # ═══════════════════════════════════════════════════════════════════
-    async def _synthesize_openai(self, text: str, language: str) -> str:
-        """Synthesize using OpenAI TTS, return base64 WAV (not MP3)."""
-        if not self.openai_client:
-            raise Exception("OpenAI client not initialized. Check OPENAI_API_KEY")
+    async def _synthesize_azure_speech_chunk(
+        self, text: str, language: str
+    ) -> bytes:
+        """
+        Synthesize using Azure Speech SDK.
+        Returns WAV 16kHz bytes.
+        """
+        if not self.azure_speech_config:
+            raise Exception("Azure Speech SDK not configured")
         
-        try:
-            voice_vi = get_config("tts_voice_vi", "nova")
-            voice_en = get_config("tts_voice_en", "alloy")
-            voice = voice_vi if language == "vi" else voice_en
-            
-            logger.info(f"🔊 OpenAI TTS: voice={voice}, text='{text[:50]}...'")
-            
-            response = await self.openai_client.audio.speech.create(
-                model="tts-1",
-                voice=voice,
-                input=text,
-                response_format="mp3"
+        # Get voice name
+        voice_vi = get_config("tts_voice_vi", "vi-VN-HoaiMyNeural")
+        voice_en = get_config("tts_voice_en", "en-US-AvaMultilingualNeural")
+        voice_name = voice_vi if language == "vi" else voice_en
+        
+        self.azure_speech_config.speech_synthesis_voice_name = voice_name
+        
+        logger.debug(f"🔊 Azure Speech: voice={voice_name}, text='{text[:50]}...'")
+        
+        # Azure SDK is SYNC - run in executor
+        def _sync_synthesize():
+            # Create synthesizer with null output (we'll get bytes)
+            synthesizer = speechsdk.SpeechSynthesizer(
+                speech_config=self.azure_speech_config,
+                audio_config=None  # No audio output, we want bytes
             )
             
-            mp3_bytes = response.content
+            # Synthesize
+            result = synthesizer.speak_text(text)
             
-            # ← NEW: Convert to WAV 16kHz
-            wav_bytes = convert_to_wav_16k(mp3_bytes, source_format="mp3")
-            audio_base64 = base64.b64encode(wav_bytes).decode("utf-8")
-            
-            logger.info(f"✅ OpenAI TTS: {len(wav_bytes)} bytes (WAV 16kHz)")
-            return audio_base64
-            
-        except Exception as e:
-            logger.error(f"❌ OpenAI TTS error: {e}")
-            raise
+            # Check result
+            if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
+                return result.audio_data  # WAV 16kHz bytes
+            elif result.reason == speechsdk.ResultReason.Canceled:
+                cancellation = result.cancellation_details
+                raise Exception(
+                    f"Azure Speech canceled: {cancellation.reason} - "
+                    f"{cancellation.error_details}"
+                )
+            else:
+                raise Exception(f"Azure Speech failed: {result.reason}")
+        
+        # Run in executor
+        loop = asyncio.get_event_loop()
+        wav_bytes = await loop.run_in_executor(None, _sync_synthesize)
+        
+        logger.debug(f"✅ Azure Speech: {len(wav_bytes)} bytes (WAV 16kHz)")
+        return wav_bytes
     
     # ═══════════════════════════════════════════════════════════════════
-    # ← MODIFIED: Convert to 16kHz if needed
-    # ═══════════════════════════════════════════════════════════════════
-    async def _synthesize_piper(self, text: str, language: str) -> str:
-        """Synthesize using Piper via Wyoming protocol, return base64 WAV 16kHz."""
-        try:
-            await self._init_wyoming_client()
-            
-            wav_bytes = await self.wyoming_client.synthesize(text, language)
-            
-            # ← NEW: Convert to 16kHz if Piper returns 22050Hz
-            wav_bytes = convert_to_wav_16k(wav_bytes, source_format="wav")
-            
-            audio_base64 = base64.b64encode(wav_bytes).decode("utf-8")
-            
-            logger.info(f"✅ Piper TTS: {len(wav_bytes)} bytes (WAV 16kHz)")
-            return audio_base64
-            
-        except Exception as e:
-            logger.error(f"❌ Piper TTS (Wyoming) error: {e}")
-            raise
-    
-    # ═══════════════════════════════════════════════════════════════════
-    # ← NEW: Internal methods for chunk synthesis
+    # OPENAI METHOD (EXISTING)
     # ═══════════════════════════════════════════════════════════════════
     async def _synthesize_openai_chunk(self, text: str, language: str) -> bytes:
-        """Synthesize using OpenAI, return MP3 bytes (will be converted later)."""
+        """Synthesize using OpenAI, return MP3 bytes."""
         if not self.openai_client:
             raise Exception("OpenAI client not initialized")
         
@@ -339,6 +329,9 @@ class TTSService:
         
         return response.content  # MP3 bytes
     
+    # ═══════════════════════════════════════════════════════════════════
+    # PIPER METHOD (EXISTING)
+    # ═══════════════════════════════════════════════════════════════════
     async def _synthesize_piper_chunk(self, text: str, language: str) -> bytes:
         """Synthesize using Piper, return WAV bytes."""
         await self._init_wyoming_client()
@@ -349,3 +342,24 @@ class TTSService:
         wav_bytes = convert_to_wav_16k(wav_bytes, source_format="wav")
         
         return wav_bytes  # WAV 16kHz bytes
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # BACKWARD COMPATIBILITY (DEPRECATED)
+    # ═══════════════════════════════════════════════════════════════════
+    async def synthesize(self, text: str, language: str = "vi") -> str:
+        """
+        Convert text to speech audio (backward compatible).
+        
+        ⚠️ DEPRECATED: Use synthesize_chunk() for streaming.
+        
+        Returns:
+            Base64 encoded WAV audio (16kHz mono)
+        """
+        try:
+            wav_bytes, provider = await self.synthesize_chunk(text, text, language)
+            audio_base64 = base64.b64encode(wav_bytes).decode("utf-8")
+            logger.info(f"✅ TTS ({provider}): {len(wav_bytes)} bytes")
+            return audio_base64
+        except Exception as e:
+            logger.error(f"❌ TTS error: {e}")
+            return ""
