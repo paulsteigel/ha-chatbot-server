@@ -2,7 +2,7 @@
 # School Chatbot WebSocket - Configuration
 # ============================================================================
 name: "School Chatbot WebSocket"
-version: "1.0.30"
+version: "1.0.31"
 slug: school-chatbot-websocket
 description: "AI Chatbot with Azure AI Foundry + Azure Speech Services"
 arch:
@@ -121,10 +121,10 @@ schema:
   stt_provider: list(azure_speech|groq|openai)?
   
   # ✅ TTS Voices - WITH DROPDOWN!
-  tts_voice_vi: list(vi-VN-HoaiMyNeural|vi-VN-NamMinhNeural)?
-  tts_voice_en: list(en-US-AvaMultilingualNeural|en-US-AndrewMultilingualNeural|en-US-EmmaMultilingualNeural|en-US-BrianMultilingualNeural)?
+  tts_voice_vi: list(vi-VN-HoaiMyNeural|alloy|echo|fable|onyx|nova|shimmer)?
+  tts_voice_en: list(en-US-AvaMultilingualNeural|alloy|echo|fable|onyx|nova|shimmer)?
   
-  tts_remove_emoji: bool?
+tts_remove_emoji: bool?
   tts_remove_markdown: bool?
   
   # Fallback APIs
