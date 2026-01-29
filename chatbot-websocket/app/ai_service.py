@@ -333,8 +333,8 @@ class AIService:
                 if chunk.choices and len(chunk.choices) > 0:
                     if chunk.choices[0].delta.content:
                         token = chunk.choices[0].delta.content
-                    full_response += token
-                    current_sentence += token
+                        full_response += token
+                        current_sentence += token
                     
                     if first_token_time is None:
                         first_token_time = time.time() - request_start
