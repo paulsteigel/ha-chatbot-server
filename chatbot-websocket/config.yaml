@@ -124,7 +124,7 @@ schema:
   tts_voice_vi: list(vi-VN-HoaiMyNeural|alloy|echo|fable|onyx|nova|shimmer)?
   tts_voice_en: list(en-US-AvaMultilingualNeural|alloy|echo|fable|onyx|nova|shimmer)?
   
-tts_remove_emoji: bool?
+  tts_remove_emoji: bool?
   tts_remove_markdown: bool?
   
   # Fallback APIs
