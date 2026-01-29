@@ -71,7 +71,13 @@ class TTSService:
         if self.provider == "azure_speech" and AIOHTTP_AVAILABLE:
             # ✅ Use separate Azure Speech key
             self.azure_speech_key = get_config("azure_speech_key", "") or api_key
-            self.azure_speech_region = get_config("azure_speech_region", "eastus2")
+            self.azure_speech_region = get_config("azure_speech_region", "eastus")
+            
+            if self.azure_speech_key:
+                logger.info("✅ Azure Speech REST API configured")
+                logger.info(f"   Region: {self.azure_speech_region}")
+            else:
+                logger.error("❌ Azure Speech key not found!")
             
             if self.azure_speech_key:
                 logger.info("✅ Azure Speech REST API configured")

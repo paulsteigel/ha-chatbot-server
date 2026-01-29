@@ -1,8 +1,10 @@
-# File: config.yaml
+# ============================================================================
+# School Chatbot WebSocket - Configuration
+# ============================================================================
 name: "School Chatbot WebSocket"
-version: "1.0.26"
+version: "1.0.27"
 slug: school-chatbot-websocket
-description: "AI Chatbot for schools with WebSocket support, music playback, and Azure AI"
+description: "AI Chatbot with Azure AI Foundry + Azure Speech Services"
 arch:
   - amd64
   - armv7
@@ -15,141 +17,135 @@ boot: auto
 ports:
   5000/tcp: 5000
 
+# ============================================================================
+# OPTIONS - User Configuration
+# ============================================================================
 options:
-  # ═══════════════════════════════════
-  # AI PROVIDER - AZURE
-  # ═══════════════════════════════════════════════════════════════════
+  # ══════════════════════════════════════════
+  # 🤖 AI CHAT CONFIGURATION (Azure AI Foundry)
+  # ══════════════════════════════════════════════════════════════════════════
   ai_provider: azure
   ai_model: "gpt-4o-2"
   
-  # ═══════════════════════════════════════════════════════════════════
-  # AZURE CONFIGURATION (Chat + TTS + STT)
-  # ═══════════════════════════════════════════════════════════════════
-  azure_api_key: "YOUR_KEY_HERE"
+  # Azure OpenAI (Chat)
+  azure_api_key: "heVzcP75QcQzkL5G2CNan6OAxpHkKPfYzhQsNaIGHX7aycVMQKfQJQJ99CAACHYHv6XJ3w3AAAAACOGozkS"
   azure_endpoint: "https://admin-mkz8dkfn-eastus2.openai.azure.com/openai/v1/"
   azure_deployment: "gpt-4o-2"
   azure_api_version: "2024-12-01-preview"
   
-  # ═══════════════════════════════════════════════════════════════════
-  # AZURE SPEECH SERVICES (TTS) - KEY MỚI!
-  # ═══════════════════════════════════════════════════════════════════
-  azure_speech_key: "PASTE_KEY_MỚI_VÀO_ĐÂY"  # ✅ Key từ Speech Services
-  azure_speech_region: "eastus2"
-
-  # Azure Speech Services
-  azure_speech_endpoint: "https://admin-mkz8dkfn-eastus2.cognitiveservices.azure.com/"
-  azure_speech_region: "eastus2"
-    
-  # ═══════════════════════════════════════════════════════════════════
-  # TTS/STT PROVIDERS
-  # ═══════════════════════════════════════════════════════════════════
-  tts_provider: azure_speech  # ← FIXED: azure_speech, openai, or piper
-  stt_provider: azure_speech  # ← FIXED: azure_speech, groq, or openai
+  # Chat Settings
+  temperature: 0.7
+  max_tokens: 500
+  max_context: 10
   
-  # TTS Voices (for Azure Speech/OpenAI)
+  # ══════════════════════════════════════════════════════════════════════════
+  # 🔊 TTS CONFIGURATION (Azure Speech Services)
+  # ══════════════════════════════════════════════════════════════════════════
+  tts_provider: azure_speech
+  
+  # Azure Speech Services (TTS)
+  azure_speech_key: "PASTE_KEY_1_OR_KEY_2_HERE"  # ✅ Click "Show Keys" to get!
+  azure_speech_region: "eastus"  # ✅ FIXED: eastus (not eastus2!)
+  
+  # TTS Voices (Neural HD)
   tts_voice_vi: vi-VN-HoaiMyNeural
   tts_voice_en: en-US-AvaMultilingualNeural
   
-  # ═══════════════════════════════════════════════════════════════════
-  # BACKUP API KEYS (Optional - for fallback)
-  # ═══════════════════════════════════
+  # Text Cleaning
+  tts_remove_emoji: true
+  tts_remove_markdown: true
+  
+  # ══════════════════════════════════════════
+  # 🎤 STT CONFIGURATION
+  # ══════════════════════════════════════════════════════════════════════════
+  stt_provider: groq  # groq (free + fast) or azure_speech
+  
+  # Groq API (for STT - Free!)
+  groq_api_key: ""  # Get free at https://console.groq.com
+  
+  # ══════════════════════════════════════════════════════════════════════════
+  # 🔄 FALLBACK PROVIDERS (Optional)
+  # ══════════════════════════════════════════════════════════════════════════
+  # OpenAI (for TTS fallback)
   openai_api_key: ""
   openai_base_url: "https://api.openai.com/v1"
-  deepseek_api_key: ""
-  groq_api_key: ""
   
-  # ═══════════════════════════════════════════════════════════════════
-  # PIPER TTS (Local fallback)
-  # ═══════════════════════════════════
+  # DeepSeek (for Chat fallback)
+  deepseek_api_key: ""
+  
+  # Piper (Local TTS fallback)
   piper_host: "addon_core_piper"
   piper_port: 10200
   piper_voice_vi: vi_VN-vais1000-medium
   piper_voice_en: en_US-lessac-medium
   
-  # Text cleaning for TTS
-  tts_remove_emoji: true
-  tts_remove_markdown: true
-
-  # ═══════════════════════════════════════════════════════════════════
-  # MYSQL LOGGING
-  # ═══════════════════════════════════════════════════════════════════
-  mysql_url: ""
-
-  # ═══════════════════════════════════════════════════════════════════
-  # MUSIC SERVICE
-  # ═══════════════════════════════════
+  # ══════════════════════════════════════════════════════════════════════════
+  # 💾 DATABASE (Optional)
+  # ══════════════════════════════════════════
+  mysql_url: ""  # Format: mysql://user:pass@host:3306/dbname
+  
+  # ══════════════════════════════════════════════════════════════════════════
+  # 🎵 MUSIC SERVICE (Optional)
+  # ══════════════════════════════════════════
   music_service_url: "http://music.sfdp.net"
   enable_music_playback: true
-
-  # ═══════════════════════════════════════════════════════════════════
-  # CHAT SETTINGS
-  # ═══════════════════════════════════
-  max_context: 10
-  temperature: 0.7
-  max_tokens: 500
   
-  # ═══════════════════════════════════
-  # SYSTEM
-  # ═══════════════════════════════════════════════════════════════════
+  # ══════════════════════════════════════════════════════════════════════════
+  # 🔧 SYSTEM
+  # ══════════════════════════════════════════════════════════════════════════
   log_level: INFO
 
 # ============================================================================
-# SCHEMA (Validation + UI)
+# SCHEMA - Validation & UI
 # ============================================================================
 schema:
-  # === AI PROVIDER ===
+  # AI Provider
   ai_provider: list(openai|deepseek|azure)
   ai_model: list(gpt-4o|gpt-4o-2|gpt-4o-mini|gpt-4|gpt-4-turbo|gpt-3.5-turbo|deepseek-chat|deepseek-reasoner)
   
-  # === AZURE ===
+  # Azure OpenAI (Chat)
   azure_api_key: password?
   azure_endpoint: str?
   azure_deployment: str?
   azure_api_version: str?
-  azure_speech_endpoint: str?  # ← NEW
-  azure_speech_region: str?    # ← NEW
   
-  # === BACKUP API KEYS ===
+  # Azure Speech Services (TTS)
+  azure_speech_key: password?
+  azure_speech_region: str?
+  
+  # TTS/STT Providers
+  tts_provider: list(azure_speech|openai|piper)
+  stt_provider: list(azure_speech|groq|openai)?
+  
+  # TTS Voices
+  tts_voice_vi: str?
+  tts_voice_en: str?
+  tts_remove_emoji: bool?
+  tts_remove_markdown: bool?
+  
+  # Fallback APIs
   openai_api_key: password?
   openai_base_url: str?
   deepseek_api_key: password?
   groq_api_key: password?
   
-  # === TTS/STT ===
-  tts_provider: list(azure_speech|openai|piper)  # ← FIXED
-  stt_provider: list(azure_speech|groq|openai)?  # ← FIXED
-  
-  # TTS Voices
-  tts_voice_vi: list(vi-VN-HoaiMyNeural|alloy|echo|fable|onyx|nova|shimmer)?
-  tts_voice_en: list(en-US-AvaMultilingualNeural|alloy|echo|fable|onyx|nova|shimmer)?
-  
-  # ✅ ADD THIS LINE:
-  azure_speech_key: password?
-  azure_speech_region: str?
-
   # Piper
   piper_host: str?
   piper_port: int(1,65535)?
-  piper_voice_vi: list(vi-25hours-single-low|vi-vivos-x-low|vi_VN-25hours_single-low|vi_VN-vais1000-medium|vi_VN-vivos-x_low)?
-  piper_voice_en: list(en_US-lessac-medium|en_US-amy-medium|en_GB-alan-medium|en_GB-southern_english_female-medium)?
+  piper_voice_vi: str?
+  piper_voice_en: str?
   
-  tts_remove_emoji: bool?
-  tts_remove_markdown: bool?
-
-  # === PROMPTS ===
-  system_prompt: str?
-  custom_prompt: str?
-  
-  # === MYSQL ===
-  mysql_url: str?
-  
-  # === MUSIC SERVICE ===
-  music_service_url: str?
-  enable_music_playback: bool?
-  
-  # === GENERAL ===
+  # Chat Settings
   temperature: float(0.0,2.0)?
   max_tokens: int(50,4000)?
   max_context: int(1,50)?
-  max_context_messages: int(1,50)?
+  
+  # Database
+  mysql_url: str?
+  
+  # Music
+  music_service_url: str?
+  enable_music_playback: bool?
+  
+  # System
   log_level: list(DEBUG|INFO|WARNING|ERROR)?
