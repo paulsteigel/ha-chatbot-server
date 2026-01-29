@@ -1,10 +1,10 @@
 """
 School Chatbot WebSocket Server
 Main FastAPI application with WebSocket support for ESP32 devices
-✅ WITH MUSIC SERVICE INTEGRATION
+✅ WITH MUSIC SERVICE + AZURE AI INTEGRATION
 """
 import logging
-import asyncio  # ✅ ADD THIS (needed for mysql_status)
+import asyncio
 import os
 import json
 from contextlib import asynccontextmanager
@@ -20,7 +20,7 @@ from app.device_manager import DeviceManager
 from app.ota_manager import OTAManager
 from app.websocket_handler import WebSocketHandler
 from app.conversation_logger import ConversationLogger
-from app.music_service import MusicService  # ✅ ADD THIS
+from app.music_service import MusicService
 from app.config import SYSTEM_PROMPT, AI_CONFIG, TTS_CONFIG, STT_CONFIG, AI_MODELS
 
 # ==============================================================================
@@ -28,15 +28,7 @@ from app.config import SYSTEM_PROMPT, AI_CONFIG, TTS_CONFIG, STT_CONFIG, AI_MODE
 # ==============================================================================
 
 def get_config(key: str, default=None):
-    """
-    Get configuration value from Home Assistant options.json or environment
-    
-    Priority:
-    1. Home Assistant options.json (when running as HA add-on)
-    2. Environment variable
-    3. Default value
-    """
-    # Try Home Assistant options first
+    """Get configuration value from Home Assistant options.json or environment"""
     options_file = "/data/options.json"
     if os.path.exists(options_file):
         try:
@@ -44,16 +36,13 @@ def get_config(key: str, default=None):
                 options = json.load(f)
                 if key in options:
                     value = options[key]
-                    # ✅ FIX: Handle "null" string and None
                     if value not in [None, "", "null", "None"]:
                         return value
         except Exception:
-            pass  # Silently fail, will try environment
+            pass
     
-    # Fallback to environment variable
     env_key = key.upper()
     env_value = os.getenv(env_key)
-    # ✅ FIX: Handle "null" string from env
     if env_value not in [None, "", "null", "None"]:
         return env_value
     
@@ -81,7 +70,7 @@ def safe_float(value, default: float) -> float:
 
 
 # ==============================================================================
-# Configuration
+# Configuration - AFTER get_config() is defined
 # ==============================================================================
 
 # Logging setup first
@@ -96,31 +85,54 @@ logger = logging.getLogger('Main')
 HOST = os.getenv('HOST', '0.0.0.0')
 PORT = int(os.getenv('PORT', '5000'))
 
-# ✅ AI CONFIGURATION - AUTO MODEL SELECTION
+# ✅ AI CONFIGURATION
 AI_PROVIDER = get_config('ai_provider', 'deepseek')
+
+# ✅ Update AI_MODELS to include Azure
+AI_MODELS_EXTENDED = {
+    'openai': 'gpt-4o-mini',
+    'deepseek': 'deepseek-chat',
+    'azure': 'gpt-4o'
+}
+
+# API Keys
+OPENAI_API_KEY = get_config('openai_api_key', '')
+OPENAI_BASE_URL = get_config('openai_base_url', 'https://api.openai.com/v1')
+DEEPSEEK_API_KEY = get_config('deepseek_api_key', '')
+DEEPSEEK_BASE_URL = os.getenv('DEEPSEEK_BASE_URL', 'https://api.deepseek.com/v1')
+GROQ_API_KEY = get_config('groq_api_key', '')
+
+# ✅ Azure configuration
+AZURE_API_KEY = get_config('azure_api_key', '')
+AZURE_ENDPOINT = get_config('azure_endpoint', '')
+AZURE_DEPLOYMENT = get_config('azure_deployment', '')
+AZURE_API_VERSION = get_config('azure_api_version', '2024-02-15-preview')
+
+# Azure Speech (optional)
+AZURE_SPEECH_KEY = get_config('azure_speech_key', '')
+AZURE_SPEECH_REGION = get_config('azure_speech_region', '')
 
 # Auto-select correct model for provider
 if AI_PROVIDER.lower() == 'openai':
-    DEFAULT_MODEL = AI_MODELS.get('openai', 'gpt-4o-mini')
+    DEFAULT_MODEL = AI_MODELS_EXTENDED.get('openai', 'gpt-4o-mini')
 elif AI_PROVIDER.lower() == 'deepseek':
-    DEFAULT_MODEL = AI_MODELS.get('deepseek', 'deepseek-chat')
+    DEFAULT_MODEL = AI_MODELS_EXTENDED.get('deepseek', 'deepseek-chat')
+elif AI_PROVIDER.lower() == 'azure':
+    DEFAULT_MODEL = AZURE_DEPLOYMENT or AI_MODELS_EXTENDED.get('azure', 'gpt-4o')
 else:
     DEFAULT_MODEL = 'gpt-4o-mini'
 
 # Allow manual override
 AI_MODEL = get_config('ai_model', DEFAULT_MODEL)
 
-logger.info("=" * 80)
-logger.info("🤖 AI CONFIGURATION")
-logger.info("=" * 80)
-logger.info(f"   Provider: {AI_PROVIDER}")
-logger.info(f"   Model (auto): {DEFAULT_MODEL}")
-logger.info(f"   Model (final): {AI_MODEL}")
-if AI_MODEL != DEFAULT_MODEL:
-    logger.warning(f"   ⚠️  Manual override detected!")
-logger.info("=" * 80)
+# MySQL configuration
+MYSQL_URL = get_config('mysql_url', '')
 
-# ✅ SYSTEM_PROMPT - Allow override
+# Music Service configuration
+MUSIC_SERVICE_URL = get_config('music_service_url', 'http://music.sfdp.net')
+ENABLE_MUSIC = get_config('enable_music_playback', True)
+
+# System prompt
 SYSTEM_PROMPT_OVERRIDE = get_config('system_prompt', None)
 if SYSTEM_PROMPT_OVERRIDE and len(SYSTEM_PROMPT_OVERRIDE) > 50:
     FINAL_SYSTEM_PROMPT = SYSTEM_PROMPT_OVERRIDE
@@ -129,7 +141,7 @@ else:
     FINAL_SYSTEM_PROMPT = SYSTEM_PROMPT
     logger.info("💬 Using DEFAULT system prompt from config.py")
 
-# ✅ FIX: Chat configuration with safe parsing
+# Chat configuration
 CHAT_TEMPERATURE = safe_float(
     get_config('temperature', AI_CONFIG.get("temperature", 0.7)),
     0.7
@@ -143,24 +155,24 @@ CHAT_MAX_CONTEXT = safe_int(
     10
 )
 
-# API Keys
-OPENAI_API_KEY = get_config('openai_api_key', '')
-OPENAI_BASE_URL = get_config('openai_base_url', 'https://api.openai.com/v1')
-DEEPSEEK_API_KEY = get_config('deepseek_api_key', '')
-DEEPSEEK_BASE_URL = os.getenv('DEEPSEEK_BASE_URL', 'https://api.deepseek.com/v1')
-GROQ_API_KEY = get_config('groq_api_key', '')
-
-# MySQL configuration
-MYSQL_URL = get_config('mysql_url', '')
-
-# ✅ Music Service configuration
-MUSIC_SERVICE_URL = get_config('music_service_url', 'http://music.sfdp.net')
-ENABLE_MUSIC = get_config('enable_music_playback', True)
-
 # TTS configuration
 TTS_VOICE = get_config('tts_voice_vi', TTS_CONFIG.get("vietnamese_voice", "nova"))
 
-# ✅ LOG FULL CONFIGURATION
+# ✅ LOG CONFIGURATION
+logger.info("=" * 80)
+logger.info("🤖 AI CONFIGURATION")
+logger.info("=" * 80)
+logger.info(f"   Provider: {AI_PROVIDER}")
+if AI_PROVIDER.lower() == 'azure':
+    logger.info(f"   Azure Endpoint: {AZURE_ENDPOINT}")
+    logger.info(f"   Azure Deployment: {AZURE_DEPLOYMENT}")
+    logger.info(f"   Azure API Version: {AZURE_API_VERSION}")
+logger.info(f"   Model (auto): {DEFAULT_MODEL}")
+logger.info(f"   Model (final): {AI_MODEL}")
+if AI_MODEL != DEFAULT_MODEL:
+    logger.warning(f"   ⚠️  Manual override detected!")
+logger.info("=" * 80)
+
 config_source = "Home Assistant" if os.path.exists("/data/options.json") else "Environment"
 logger.info("=" * 80)
 logger.info("📋 FULL CONFIGURATION")
@@ -189,7 +201,7 @@ device_manager = None
 ota_manager = None
 ws_handler = None
 conversation_logger = None
-music_service = None  # ✅ ADD THIS
+music_service = None
 
 
 # ==============================================================================
@@ -198,10 +210,8 @@ music_service = None  # ✅ ADD THIS
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Lifespan context manager for application startup and shutdown
-    """
-    global device_manager, ota_manager, ai_service, tts_service, stt_service, ws_handler, conversation_logger, music_service  # ✅ ADD music_service
+    """Lifespan context manager for application startup and shutdown"""
+    global device_manager, ota_manager, ai_service, tts_service, stt_service, ws_handler, conversation_logger, music_service
     
     logger.info("=" * 80)
     logger.info("🚀 SCHOOL CHATBOT WEBSOCKET SERVER")
@@ -216,7 +226,7 @@ async def lifespan(app: FastAPI):
         logger.info("📦 Initializing OTA Manager...")
         ota_manager = OTAManager()
         
-        # ✅ Initialize Music Service (BEFORE AI Service)
+        # Initialize Music Service
         if ENABLE_MUSIC:
             try:
                 logger.info("🎵 Initializing Music Service...")
@@ -229,16 +239,35 @@ async def lifespan(app: FastAPI):
             logger.info("⚠️ Music playback disabled in config")
             music_service = None
         
-        # Initialize AI Service
+        # ✅ Initialize AI Service with provider-specific configuration
         logger.info(f"🤖 Initializing AI Service ({AI_PROVIDER})...")
+        
+        if AI_PROVIDER.lower() == 'azure':
+            api_key = AZURE_API_KEY
+            base_url = AZURE_ENDPOINT
+            model = AZURE_DEPLOYMENT or AI_MODEL
+            azure_api_version = AZURE_API_VERSION
+        elif AI_PROVIDER.lower() == 'deepseek':
+            api_key = DEEPSEEK_API_KEY
+            base_url = DEEPSEEK_BASE_URL
+            model = AI_MODEL
+            azure_api_version = None
+        else:  # openai
+            api_key = OPENAI_API_KEY
+            base_url = OPENAI_BASE_URL
+            model = AI_MODEL
+            azure_api_version = None
+        
         ai_service = AIService(
-            api_key=DEEPSEEK_API_KEY if AI_PROVIDER == 'deepseek' else OPENAI_API_KEY,
-            base_url=DEEPSEEK_BASE_URL if AI_PROVIDER == 'deepseek' else OPENAI_BASE_URL,
-            model=AI_MODEL,
-            system_prompt=FINAL_SYSTEM_PROMPT,  # ✅ Use FINAL_SYSTEM_PROMPT
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            system_prompt=FINAL_SYSTEM_PROMPT,
             temperature=CHAT_TEMPERATURE,
             max_tokens=CHAT_MAX_TOKENS,
-            max_context=CHAT_MAX_CONTEXT
+            max_context=CHAT_MAX_CONTEXT,
+            provider=AI_PROVIDER,
+            azure_api_version=azure_api_version
         )
         
         # Initialize TTS Service
@@ -265,7 +294,7 @@ async def lifespan(app: FastAPI):
         else:
             logger.info("⚠️ MYSQL_URL not set, conversation logging disabled")
         
-        # ✅ Initialize WebSocket Handler (WITH music_service)
+        # Initialize WebSocket Handler
         logger.info("🔌 Initializing WebSocket Handler...")
         ws_handler = WebSocketHandler(
             device_manager=device_manager,
@@ -274,7 +303,7 @@ async def lifespan(app: FastAPI):
             tts_service=tts_service,
             stt_service=stt_service,
             conversation_logger=conversation_logger,
-            music_service=music_service  # ✅ ADD THIS
+            music_service=music_service
         )
         
         logger.info("=" * 80)
@@ -296,7 +325,6 @@ async def lifespan(app: FastAPI):
     finally:
         logger.info("🛑 Shutting down services...")
         
-        # ✅ Close Music Service
         if music_service:
             try:
                 await music_service.close()
@@ -304,7 +332,6 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 logger.error(f"❌ Music Service close error: {e}")
         
-        # Close MySQL connection
         if conversation_logger:
             try:
                 await conversation_logger.close()
@@ -321,7 +348,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="School Chatbot WebSocket Server",
-    description="WebSocket server for ESP32-based school chatbot with music playback",
+    description="WebSocket server for ESP32-based school chatbot with music playback and Azure AI",
     version="1.0.0",
     lifespan=lifespan
 )

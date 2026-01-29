@@ -1,8 +1,8 @@
 # File: config.yaml
 name: "School Chatbot WebSocket"
-version: "1.0.13"
+version: "1.0.14"
 slug: school-chatbot-websocket
-description: "AI Chatbot for schools with WebSocket support and music playback"
+description: "AI Chatbot for schools with WebSocket support, music playback, and Azure AI"
 arch:
   - amd64
   - armv7
@@ -17,19 +17,32 @@ ports:
 
 options:
   # AI Provider
-  ai_provider: deepseek
+  ai_provider: deepseek  # openai | deepseek | azure
   
   # API Keys
   openai_api_key: ""
   openai_base_url: "https://api.openai.com/v1"
   deepseek_api_key: ""
   groq_api_key: ""
+  
+  # ✅ NEW: Azure OpenAI Configuration
+  azure_api_key: ""
+  azure_endpoint: ""  # e.g., https://your-resource.openai.azure.com/
+  azure_deployment: ""  # Your deployment name (e.g., gpt-4o)
+  azure_api_version: "2024-02-15-preview"
+  
   ai_model: "deepseek-chat"
   
   # TTS Provider
-  tts_provider: openai
+  tts_provider: openai  # openai | piper | azure
   tts_voice_vi: nova
   tts_voice_en: alloy
+  
+  # ✅ NEW: Azure Speech Configuration (optional)
+  azure_speech_key: ""
+  azure_speech_region: ""  # e.g., eastus
+  azure_tts_voice_vi: "vi-VN-HoaiMyNeural"
+  azure_tts_voice_en: "en-US-JennyNeural"
   
   # Piper voices
   piper_host: "addon_core_piper"
@@ -59,8 +72,8 @@ options:
 # ============================================================================
 schema:
   # === AI PROVIDER ===
-  ai_provider: list(openai|deepseek)
-  ai_model: list(gpt-5.1|gpt-5-mini|gpt-5-nano|gpt-4.1|gpt-4.1-mini|gpt-4.1-nano|o3|o4-mini|gpt-4o|gpt-4o-realtime-preview|deepseek-chat|deepseek-reasoner)
+  ai_provider: list(openai|deepseek|azure)
+  ai_model: list(gpt-4o|gpt-4o-mini|gpt-4|gpt-4-turbo|gpt-3.5-turbo|deepseek-chat|deepseek-reasoner)
   
   # === API KEYS ===
   openai_api_key: password?
@@ -68,8 +81,19 @@ schema:
   deepseek_api_key: password?
   groq_api_key: password?
   
+  # === AZURE ===
+  azure_api_key: password?
+  azure_endpoint: url?
+  azure_deployment: str?
+  azure_api_version: str?
+  
+  azure_speech_key: password?
+  azure_speech_region: str?
+  azure_tts_voice_vi: str?
+  azure_tts_voice_en: str?
+  
   # === TTS ===
-  tts_provider: list(openai|piper)
+  tts_provider: list(openai|piper|azure)
   
   # OpenAI TTS voices
   tts_voice_vi: list(alloy|echo|fable|onyx|nova|shimmer)?
