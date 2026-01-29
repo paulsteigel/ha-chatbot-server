@@ -285,12 +285,21 @@ class TTSService:
         
         # ✅ FIXED: Add xmlns namespace for proper voice recognition!
         ssml = f"""<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='vi-VN'>
-    <voice name='{voice_name}'>
-        {text_escaped}
-    </voice>
-</speak>"""
+        <voice name='{voice_name}'>
+            {text_escaped}
+        </voice>
+    </speak>"""
         
-        logger.debug(f"🔊 Azure Speech REST: voice={voice_name}, text='{text[:50]}...'")
+        # ✅ DEBUG LOGGING - Show full request details
+        logger.info(f"🔊 Azure Speech REST API Request:")
+        logger.info(f"   URL: {url}")
+        logger.info(f"   Region: {self.azure_speech_region}")
+        logger.info(f"   Voice: {voice_name}")
+        logger.info(f"   Key length: {len(self.azure_speech_key)} chars")
+        logger.info(f"   Key prefix: {self.azure_speech_key[:10]}...")
+        logger.info(f"   Text: '{text[:100]}...'")
+        logger.info(f"   SSML length: {len(ssml)} bytes")
+        logger.debug(f"   Full SSML:\n{ssml}")
         
         # Make request
         try:
@@ -303,19 +312,29 @@ class TTSService:
                 ) as response:
                     if response.status != 200:
                         error_text = await response.text()
-                        logger.error(f"❌ Azure Speech API error {response.status}: {error_text}")
+                        
+                        # ✅ DETAILED ERROR LOGGING
+                        logger.error(f"❌ Azure Speech API Response:")
+                        logger.error(f"   Status: {response.status}")
+                        logger.error(f"   Reason: {response.reason}")
+                        logger.error(f"   Error Body: {error_text}")
+                        logger.error(f"   Response Headers: {dict(response.headers)}")
+                        logger.error(f"   Request URL: {url}")
+                        logger.error(f"   Request Headers: {headers}")
+                        
                         raise Exception(
                             f"Azure Speech API error {response.status}: {error_text}"
                         )
                     
                     wav_bytes = await response.read()
                     
-                    logger.debug(f"✅ Azure Speech REST: {len(wav_bytes)} bytes (WAV 16kHz)")
+                    logger.info(f"✅ Azure Speech REST: {len(wav_bytes)} bytes (WAV 16kHz)")
                     return wav_bytes
         
         except asyncio.TimeoutError:
             raise Exception("Azure Speech API timeout (10s)")
         except aiohttp.ClientError as e:
+            logger.error(f"❌ Connection error: {e}")
             raise Exception(f"Azure Speech API connection error: {e}")
     
     # ═══════════════════════════════════════════════════════════════════
