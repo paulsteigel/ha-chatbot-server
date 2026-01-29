@@ -2,7 +2,7 @@
 # School Chatbot WebSocket - Configuration
 # ============================================================================
 name: "School Chatbot WebSocket"
-version: "1.0.31"
+version: "1.0.32"
 slug: school-chatbot-websocket
 description: "AI Chatbot with Azure AI Foundry + Azure Speech Services"
 arch:
