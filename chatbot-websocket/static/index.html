@@ -613,32 +613,53 @@
             musicTitle.textContent = musicData.title || 'Unknown Title';
             musicArtist.textContent = musicData.artist || 'Unknown Artist';
             
-            // ✅ FIXED: Use protocol-relative URL or force HTTPS
             let audioUrl = musicData.audio_url;
             
-            // If URL starts with http://, upgrade to https://
+            // ✅ FIX 1: Force HTTPS (browser requirement)
             if (audioUrl.startsWith('http://')) {
                 audioUrl = audioUrl.replace('http://', 'https://');
                 console.log('🔒 Upgraded to HTTPS:', audioUrl);
             }
             
-            // If relative URL, use HTTPS
             if (audioUrl.startsWith('/')) {
-                audioUrl = 'https://music.sfdp.net' + audioUrl;  // ✅ HTTPS!
+                audioUrl = 'https://music.sfdp.net' + audioUrl;
             }
             
-            console.log('🎵 Audio URL:', audioUrl);
+            console.log('🎵 Final Audio URL:', audioUrl);
             
+            // ✅ FIX 2: Set crossOrigin for CORS
+            musicAudio.crossOrigin = "anonymous";
             musicAudio.src = audioUrl;
             musicPlayer.classList.add('active');
             
-            musicAudio.play().catch(err => {
-                console.error('❌ Autoplay failed:', err);
-                showError('Không thể tự động phát nhạc. Vui lòng nhấn play.');
-            });
+            // ✅ FIX 3: Better error handling
+            musicAudio.onerror = (e) => {
+                console.error('❌ Audio load error:', e);
+                console.error('   URL:', audioUrl);
+                console.error('   Error type:', musicAudio.error?.code);
+                
+                // Show user-friendly error
+                showError(`Không thể phát nhạc. Lỗi: ${musicAudio.error?.code || 'Unknown'}`);
+                
+                // Hide player
+                musicPlayer.classList.remove('active');
+            };
+            
+            // ✅ FIX 4: Try to play
+            musicAudio.play()
+                .then(() => {
+                    console.log('✅ Music playing successfully');
+                })
+                .catch(err => {
+                    console.error('❌ Autoplay failed:', err);
+                    
+                    // Don't show error - user can click play manually
+                    addMessage('bot', `🎵 Đã tìm thấy: ${musicData.title}. Nhấn ▶️ để phát.`);
+                });
             
             addMessage('bot', `🎵 Đang phát: ${musicData.title} - ${musicData.artist}`);
         }
+
 
         
         closeMusicBtn.addEventListener('click', () => {
