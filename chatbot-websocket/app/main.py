@@ -276,15 +276,16 @@ async def lifespan(app: FastAPI):
         # Get TTS provider config
         TTS_PROVIDER = get_config('tts_provider', 'openai')
 
+        # ❌ Azure Speech SDK not available on Alpine
         if TTS_PROVIDER == 'azure_speech':
-            tts_service = TTSService(
-                provider='azure_speech',
-                api_key=AZURE_API_KEY,
-                base_url=AZURE_ENDPOINT
+            logger.warning(
+                "⚠️ Azure Speech SDK not supported on Alpine Linux. "
+                "Falling back to OpenAI TTS."
             )
-        else:
-            tts_service = TTSService()  # Use existing config
+            TTS_PROVIDER = 'openai'
 
+        # Use OpenAI or Piper
+        tts_service = TTSService()
         
         # Initialize STT Service
         logger.info("🎤 Initializing STT Service...")

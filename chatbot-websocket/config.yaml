@@ -37,7 +37,7 @@ options:
   # ═══════════════════════════════════════════════════════════════════
   # TTS/STT PROVIDERS
   # ═══════════════════════════════════════════════════════════════════
-  tts_provider: azure_speech  # ← FIXED: azure_speech, openai, or piper
+  tts_provider: openai  # ← FIXED: azure_speech, openai, or piper
   stt_provider: azure_speech  # ← FIXED: azure_speech, groq, or openai
   
   # TTS Voices (for Azure Speech/OpenAI)

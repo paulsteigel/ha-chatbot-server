@@ -18,8 +18,7 @@ from app.utils.audio_converter import convert_to_wav_16k
 
 # Azure Speech SDK (optional)
 try:
-    import azure.cognitiveservices.speech as speechsdk
-    AZURE_SPEECH_AVAILABLE = True
+    AZURE_SPEECH_AVAILABLE = False
 except ImportError:
     AZURE_SPEECH_AVAILABLE = False
 
@@ -66,24 +65,6 @@ class TTSService:
         # AZURE SPEECH SDK SETUP
         # ═══════════════════════════════════════════════════════════
         self.azure_speech_config = None
-        if self.provider == "azure_speech" and AZURE_SPEECH_AVAILABLE:
-            azure_key = api_key or get_config("azure_api_key", "")
-            azure_endpoint = get_config("azure_speech_endpoint", "")
-            
-            if azure_key and azure_endpoint:
-                try:
-                    self.azure_speech_config = speechsdk.SpeechConfig(
-                        subscription=azure_key,
-                        endpoint=azure_endpoint
-                    )
-                    # Set output format to WAV 16kHz
-                    self.azure_speech_config.set_speech_synthesis_output_format(
-                        speechsdk.SpeechSynthesisOutputFormat.Riff16Khz16BitMonoPcm
-                    )
-                    logger.info("✅ Azure Speech SDK configured")
-                except Exception as e:
-                    logger.error(f"❌ Azure Speech SDK init failed: {e}")
-                    self.azure_speech_config = None
         
         # ═══════════════════════════════════════════════════════════
         # OPENAI CLIENT SETUP
@@ -261,50 +242,13 @@ class TTSService:
         self, text: str, language: str
     ) -> bytes:
         """
-        Synthesize using Azure Speech SDK.
-        Returns WAV 16kHz bytes.
+        Azure Speech SDK not available on Alpine Linux.
+        This method will never be called.
         """
-        if not self.azure_speech_config:
-            raise Exception("Azure Speech SDK not configured")
-        
-        # Get voice name
-        voice_vi = get_config("tts_voice_vi", "vi-VN-HoaiMyNeural")
-        voice_en = get_config("tts_voice_en", "en-US-AvaMultilingualNeural")
-        voice_name = voice_vi if language == "vi" else voice_en
-        
-        self.azure_speech_config.speech_synthesis_voice_name = voice_name
-        
-        logger.debug(f"🔊 Azure Speech: voice={voice_name}, text='{text[:50]}...'")
-        
-        # Azure SDK is SYNC - run in executor
-        def _sync_synthesize():
-            # Create synthesizer with null output (we'll get bytes)
-            synthesizer = speechsdk.SpeechSynthesizer(
-                speech_config=self.azure_speech_config,
-                audio_config=None  # No audio output, we want bytes
-            )
-            
-            # Synthesize
-            result = synthesizer.speak_text(text)
-            
-            # Check result
-            if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
-                return result.audio_data  # WAV 16kHz bytes
-            elif result.reason == speechsdk.ResultReason.Canceled:
-                cancellation = result.cancellation_details
-                raise Exception(
-                    f"Azure Speech canceled: {cancellation.reason} - "
-                    f"{cancellation.error_details}"
-                )
-            else:
-                raise Exception(f"Azure Speech failed: {result.reason}")
-        
-        # Run in executor
-        loop = asyncio.get_event_loop()
-        wav_bytes = await loop.run_in_executor(None, _sync_synthesize)
-        
-        logger.debug(f"✅ Azure Speech: {len(wav_bytes)} bytes (WAV 16kHz)")
-        return wav_bytes
+        raise Exception(
+            "Azure Speech SDK not supported on Alpine Linux. "
+            "Use OpenAI or Piper for TTS instead."
+        )
     
     # ═══════════════════════════════════════════════════════════════════
     # OPENAI METHOD (EXISTING)
