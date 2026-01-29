@@ -339,7 +339,7 @@ class WebSocketHandler:
     # ← MODIFIED: handle_voice() - NEW STREAMING IMPLEMENTATION
     # ═══════════════════════════════════════════════════════════════════
     async def handle_voice(self, data: Dict):
-        """Handle voice message with streaming response"""
+        """Handle voice message with streaming response + music support"""
         try:
             device_id = data.get("device_id")
             audio_base64 = data.get("audio")
@@ -356,7 +356,7 @@ class WebSocketHandler:
             )
             
             # ─────────────────────────────────────────────────────────
-            # STEP 1: TRANSCRIBE (← KEEP)
+            # STEP 1: TRANSCRIBE
             # ─────────────────────────────────────────────────────────
             audio_data = base64.b64decode(audio_base64)
             text = await self.stt_service.transcribe(audio_data, stt_language)
@@ -368,7 +368,7 @@ class WebSocketHandler:
             self.logger.info(f"📝 Transcription: {text}")
             
             # ─────────────────────────────────────────────────────────
-            # STEP 2: SEND TRANSCRIPTION (← KEEP)
+            # STEP 2: SEND TRANSCRIPTION
             # ─────────────────────────────────────────────────────────
             self.logger.info(f"📨 Sending transcription to frontend...")
             await self.send_message(device_id, {
@@ -377,7 +377,7 @@ class WebSocketHandler:
             })
 
             # ─────────────────────────────────────────────────────────
-            # STEP 3: CHECK FOR COMMANDS (← KEEP)
+            # STEP 3: CHECK FOR COMMANDS
             # ─────────────────────────────────────────────────────────
             command = self.command_detector.detect(text)
 
@@ -415,29 +415,46 @@ class WebSocketHandler:
                 })
                 
                 self.logger.info(f"✅ Command executed: {response_text}")
-                return  # ← STOP HERE!
+                return
 
             # ─────────────────────────────────────────────────────────
-            # STEP 4: GET AI STREAMING RESPONSE (← NEW!)
+            # STEP 4: GET AI STREAMING RESPONSE WITH MUSIC SUPPORT
             # ─────────────────────────────────────────────────────────
             device_info = self.device_manager.devices.get(device_id, {})
             device_type = device_info.get('type', 'unknown')
             
-            # Collect all sentences for display
             full_original_text = ""
             sentence_count = 0
+            music_sent = False  # ✅ Track if music was sent
             
-            # Stream AI response sentence by sentence
-            async for original, cleaned, language, is_last in self.ai_service.chat_stream(
+            # ✅ FIXED: Unpack 5 values including music_result!
+            async for original, cleaned, language, is_last, music_result in self.ai_service.chat_stream(
                 user_message=text,
                 conversation_logger=self.conversation_logger,
                 device_id=device_id,
-                device_type=device_type
+                device_type=device_type,
+                music_service=self.music_service  # ✅ Pass music service!
             ):
+                # ─────────────────────────────────────────────────────
+                # STEP 5: HANDLE MUSIC PLAYBACK (if found)
+                # ─────────────────────────────────────────────────────
+                if music_result and not music_sent:
+                    self.logger.info(f"🎵 Sending music to device: {music_result['title']}")
+                    
+                    await self.send_message(device_id, {
+                        "type": "play_music",
+                        "title": music_result['title'],
+                        "artist": music_result.get('channel', 'Unknown'),
+                        "audio_url": music_result['audio_url'],
+                        "duration": music_result.get('duration', 0),
+                        "video_id": music_result['id']
+                    })
+                    
+                    music_sent = True
+                
                 # Skip empty chunks
                 if not original.strip():
                     if is_last:
-                        # End of stream
                         break
                     continue
                 
@@ -445,26 +462,25 @@ class WebSocketHandler:
                 full_original_text += original + " "
                 
                 # ─────────────────────────────────────────────────────
-                # STEP 5: SYNTHESIZE CHUNK WITH FALLBACK (← NEW!)
+                # STEP 6: SYNTHESIZE CHUNK WITH FALLBACK
                 # ─────────────────────────────────────────────────────
                 try:
                     wav_bytes, tts_provider = await self.tts_service.synthesize_chunk(
-                        original_text=original,   # ← For OpenAI fallback (with emoji)
-                        cleaned_text=cleaned,     # ← For Piper (no emoji)
+                        original_text=original,
+                        cleaned_text=cleaned,
                         language=language
                     )
                     
-                    # Convert to base64
                     audio_base64 = base64.b64encode(wav_bytes).decode("utf-8")
                     
                     # ─────────────────────────────────────────────────
-                    # STEP 6: SEND AUDIO CHUNK (← NEW!)
+                    # STEP 7: SEND AUDIO CHUNK
                     # ─────────────────────────────────────────────────
                     await self.send_message(device_id, {
                         "type": "audio_chunk",
                         "chunk_index": sentence_count - 1,
-                        "chunk_text": original,      # Display text (with emoji)
-                        "audio": audio_base64,       # WAV 16kHz base64
+                        "chunk_text": original,
+                        "audio": audio_base64,
                         "format": "wav",
                         "sample_rate": 16000,
                         "tts_provider": tts_provider,
@@ -482,30 +498,28 @@ class WebSocketHandler:
                     self.logger.error(
                         f"❌ Failed to synthesize chunk {sentence_count}: {chunk_error}"
                     )
-                    # Continue with next chunk instead of failing completely
                     continue
             
             # ─────────────────────────────────────────────────────────
-            # STEP 7: LOG CONVERSATION TO MYSQL (← ADD THIS!)
+            # STEP 8: LOG CONVERSATION TO MYSQL
             # ─────────────────────────────────────────────────────────
             if self.conversation_logger and full_original_text.strip():
                 try:
-                    import time
                     await self.conversation_logger.log_conversation(
                         device_id=device_id,
                         device_type=device_type,
-                        user_message=text,  # ← User's voice transcription
-                        ai_response=full_original_text.strip(),  # ← Full AI response
+                        user_message=text,
+                        ai_response=full_original_text.strip(),
                         model=self.ai_service.model,
                         provider=self.ai_service.provider,
-                        response_time=0.0,  # ← We don't track time in streaming
+                        response_time=0.0,
                     )
                     self.logger.info(f"💾 Conversation saved: {device_id}")
                 except Exception as log_error:
                     self.logger.error(f"❌ MySQL log error: {log_error}")
-                    
+            
             # ─────────────────────────────────────────────────────────
-            # STEP 8: SEND COMPLETION MESSAGE (← NEW!)
+            # STEP 9: SEND COMPLETION MESSAGE
             # ─────────────────────────────────────────────────────────
             self.logger.info(
                 f"✅ Voice response complete: {sentence_count} chunks, "

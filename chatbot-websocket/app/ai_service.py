@@ -296,13 +296,79 @@ class AIService:
         conversation_logger=None,
         device_id: str = None,
         device_type: str = None,
-    ) -> AsyncGenerator[tuple[str, str, str, bool], None]:
-        """🌊 STREAM CHAT RESPONSE - Sentence by sentence"""
+        music_service=None  # ✅ ADD THIS PARAMETER!
+    ) -> AsyncGenerator[tuple[str, str, str, bool, Optional[dict]], None]:  # ✅ ADD music_result to tuple
+        """🌊 STREAM CHAT RESPONSE - Sentence by sentence WITH MUSIC SUPPORT"""
         start_time = time.time()
         
         try:
             self.logger.info(f"💬 User: {user_message}")
             
+            # ═══════════════════════════════════════════════════════════
+            # ✅ STEP 1: CHECK FOR MUSIC INTENT FIRST!
+            # ═══════════════════════════════════════════════════════════
+            if music_service:
+                # Try function calling first (OpenAI/Azure)
+                if self.use_function_calling:
+                    self.logger.info(f"🎵 Function calling enabled ({self.provider})")
+                    
+                    # Use non-streaming chat() for function calling
+                    result = await self.chat(
+                        user_message=user_message,
+                        conversation_logger=conversation_logger,
+                        device_id=device_id,
+                        device_type=device_type,
+                        music_service=music_service
+                    )
+                    
+                    # If music was found, yield it and return
+                    if result.get('music_result'):
+                        self.logger.info(f"🎵 Music function called successfully!")
+                        
+                        yield (
+                            result['response'],
+                            result['cleaned_response'],
+                            result['language'],
+                            True,  # is_final
+                            result['music_result']  # ✅ Music data
+                        )
+                        return
+                
+                # Fallback: Keyword detection (DeepSeek)
+                else:
+                    music_query = self.detect_music_intent(user_message)
+                    
+                    if music_query:
+                        self.logger.info(f"🎵 Music intent detected (keyword): '{music_query}'")
+                        
+                        music_results = await music_service.search_music(music_query, 1)
+                        
+                        if music_results:
+                            first_result = music_results[0]
+                            
+                            response_text = (
+                                f"🎵 Đang phát: {first_result['title']} "
+                                f"của {first_result['channel']}"
+                            )
+                            
+                            self.conversation_history.append({"role": "user", "content": user_message})
+                            self.conversation_history.append({"role": "assistant", "content": response_text})
+                            
+                            cleaned_text = self.clean_text_for_tts(response_text)
+                            language = self.detect_language(cleaned_text)
+                            
+                            yield (
+                                response_text,
+                                cleaned_text,
+                                language,
+                                True,
+                                first_result  # ✅ Music data
+                            )
+                            return
+            
+            # ═══════════════════════════════════════════════════════════
+            # ✅ STEP 2: NORMAL STREAMING CHAT (No music)
+            # ═══════════════════════════════════════════════════════════
             self.conversation_history.append({"role": "user", "content": user_message})
             
             if len(self.conversation_history) > self.max_context * 2:
@@ -329,7 +395,6 @@ class AIService:
             sentence_count = 0
             
             async for chunk in stream:
-                # ✅ Check if choices array is not empty
                 if chunk.choices and len(chunk.choices) > 0:
                     if chunk.choices[0].delta.content:
                         token = chunk.choices[0].delta.content
@@ -355,10 +420,11 @@ class AIService:
                                     f"'{original[:50]}{'...' if len(original) > 50 else ''}'"
                                 )
                                 
-                                yield (original, cleaned, language, False)
+                                yield (original, cleaned, language, False, None)  # ✅ Add None for music
                             
                             current_sentence = ""
             
+            # Final sentence
             if current_sentence.strip():
                 original = current_sentence.strip()
                 cleaned = self.clean_text_for_tts(original)
@@ -366,12 +432,13 @@ class AIService:
                 if cleaned:
                     sentence_count += 1
                     language = self.detect_language(cleaned)
-                    yield (original, cleaned, language, True)
+                    yield (original, cleaned, language, True, None)  # ✅ Add None
                 else:
-                    yield ("", "", "", True)
+                    yield ("", "", "", True, None)  # ✅ Add None
             else:
-                yield ("", "", "", True)
+                yield ("", "", "", True, None)  # ✅ Add None
             
+            # Save to history
             self.conversation_history.append({
                 "role": "assistant",
                 "content": full_response
@@ -386,6 +453,7 @@ class AIService:
                 f"⏱️  Timing: First token {first_token_time:.2f}s, Total {request_time:.2f}s"
             )
             
+            # Log to MySQL
             if conversation_logger and device_id:
                 try:
                     await conversation_logger.log_conversation(
@@ -406,8 +474,10 @@ class AIService:
                 "Xin lỗi, chị gặp lỗi khi xử lý.", 
                 "Xin lỗi, chị gặp lỗi khi xử lý.", 
                 "vi", 
-                True
+                True,
+                None  # ✅ Add None
             )
+
 
     async def chat(
         self,
