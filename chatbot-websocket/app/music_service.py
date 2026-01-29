@@ -11,7 +11,7 @@ logger = logging.getLogger('MusicService')
 class MusicService:
     """Service to search and stream music from YouTube"""
     
-    def __init__(self, music_server_url: str = "http://music.sfdp.net"):
+    def __init__(self, music_server_url: str = "https://music.sfdp.net"):
         """
         Initialize Music Service
         

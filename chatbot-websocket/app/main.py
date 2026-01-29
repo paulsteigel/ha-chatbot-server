@@ -129,7 +129,7 @@ AI_MODEL = get_config('ai_model', DEFAULT_MODEL)
 MYSQL_URL = get_config('mysql_url', '')
 
 # Music Service configuration
-MUSIC_SERVICE_URL = get_config('music_service_url', 'http://music.sfdp.net')
+MUSIC_SERVICE_URL = get_config('music_service_url', 'https://music.sfdp.net')
 ENABLE_MUSIC = get_config('enable_music_playback', True)
 
 # System prompt
