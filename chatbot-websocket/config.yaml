@@ -16,7 +16,7 @@ ports:
   5000/tcp: 5000
 
 options:
-  # ═══════════════════════════════════════════════════════════════════
+  # ═══════════════════════════════════
   # AI PROVIDER - AZURE
   # ═══════════════════════════════════════════════════════════════════
   ai_provider: azure
@@ -30,18 +30,19 @@ options:
   azure_deployment: "gpt-4o-2"
   azure_api_version: "2024-12-01-preview"
   
+  # Azure Speech Services
   azure_speech_endpoint: "https://admin-mkz8dkfn-eastus2.cognitiveservices.azure.com/"
   azure_speech_region: "eastus2"
     
   # ═══════════════════════════════════════════════════════════════════
   # TTS/STT PROVIDERS
   # ═══════════════════════════════════════════════════════════════════
-  tts_provider: azure_speech    # azure, openai, or piper
-  stt_provider: azure_speech    # azure, groq, or openai
+  tts_provider: azure_speech  # ← FIXED: azure_speech, openai, or piper
+  stt_provider: azure_speech  # ← FIXED: azure_speech, groq, or openai
   
-  # TTS Voices (for Azure/OpenAI)
-  tts_voice_vi: nova
-  tts_voice_en: alloy
+  # TTS Voices (for Azure Speech/OpenAI)
+  tts_voice_vi: vi-VN-HoaiMyNeural
+  tts_voice_en: en-US-AvaMultilingualNeural
   
   # ═══════════════════════════════════════════════════════════════════
   # BACKUP API KEYS (Optional - for fallback)
@@ -53,7 +54,7 @@ options:
   
   # ═══════════════════════════════════════════════════════════════════
   # PIPER TTS (Local fallback)
-  # ═══════════════════════════════════════════════════════════════════
+  # ═══════════════════════════════════
   piper_host: "addon_core_piper"
   piper_port: 10200
   piper_voice_vi: vi_VN-vais1000-medium
@@ -70,7 +71,7 @@ options:
 
   # ═══════════════════════════════════════════════════════════════════
   # MUSIC SERVICE
-  # ═══════════════════════════════════════════════════════════════════
+  # ═══════════════════════════════════
   music_service_url: "http://music.sfdp.net"
   enable_music_playback: true
 
@@ -99,6 +100,8 @@ schema:
   azure_endpoint: str?
   azure_deployment: str?
   azure_api_version: str?
+  azure_speech_endpoint: str?  # ← NEW
+  azure_speech_region: str?    # ← NEW
   
   # === BACKUP API KEYS ===
   openai_api_key: password?
@@ -106,12 +109,9 @@ schema:
   deepseek_api_key: password?
   groq_api_key: password?
   
-  azure_speech_endpoint: str?
-  azure_speech_region: str?
-  
   # === TTS/STT ===
-  tts_provider: list(azure_speech|openai|piper)
-  stt_provider: list(azure_speech|groq|openai)?
+  tts_provider: list(azure_speech|openai|piper)  # ← FIXED
+  stt_provider: list(azure_speech|groq|openai)?  # ← FIXED
   
   # TTS Voices
   tts_voice_vi: list(vi-VN-HoaiMyNeural|alloy|echo|fable|onyx|nova|shimmer)?
