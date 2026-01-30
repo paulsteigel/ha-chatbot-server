@@ -185,7 +185,7 @@ class WebSocketHandler:
     # ═══════════════════════════════════════════════════════════════════
     # ✅ UPDATED: handle_chat() - NOW WITH CHUNK PROCESSING
     # ═══════════════════════════════════
-    async def handle_chat(self, data: Dict):
+    async def handle_chat_singthread(self, data: Dict):
         """Handle chat message from web interface with smart chunking"""
         try:
             device_id = data.get("device_id")
@@ -279,11 +279,145 @@ class WebSocketHandler:
             self.logger.error(f"❌ Chat error: {e}", exc_info=True)
             await self.send_error(device_id, f"Chat error: {e}")
 
+    async def handle_chat(self, data: Dict):
+        """Handle chat message with PARALLEL TTS processing"""
+        try:
+            device_id = data.get("device_id")
+            text = data.get("text", "")
+            
+            if not text:
+                await self.send_error(device_id, "Empty text message")
+                return
+            
+            self.logger.info(f"💬 Chat from {device_id}: {text}")
+            
+            device_info = self.device_manager.devices.get(device_id, {})
+            device_type = device_info.get('type', 'unknown')
+            
+            # ─────────────────────────────────────────────────────────
+            # STEP 1: GET AI RESPONSE
+            # ─────────────────────────────────────────────────────────
+            ai_response = await self.ai_service.chat(
+                user_message=text,
+                conversation_logger=self.conversation_logger,
+                device_id=device_id,
+                device_type=device_type,
+                music_service=self.music_service
+            )
+
+            # ─────────────────────────────────────────────────────────
+            # STEP 2: HANDLE MUSIC
+            # ─────────────────────────────────────────────────────────
+            if ai_response.get('music_result'):
+                music = ai_response['music_result']
+                self.logger.info(f"🎵 Music found: {music['title']}")
+                await self.send_message(device_id, {
+                    "type": "play_music",
+                    "title": music['title'],
+                    "artist": music.get('channel', 'Unknown'),
+                    "audio_url": music['audio_url'],
+                    "duration": music.get('duration', 0),
+                    "video_id": music['id']
+                })
+
+            # ─────────────────────────────────────────────────────────
+            # STEP 3: PARALLEL TTS PROCESSING ✨
+            # ─────────────────────────────────────────────────────────
+            response_text = ai_response['response']
+            chunks = ai_response.get('chunks', [response_text])
+            
+            self.logger.info(f"📊 Processing {len(chunks)} chunks in PARALLEL")
+            
+            # ✅ CREATE ALL TTS TASKS AT ONCE
+            import asyncio
+            
+            async def process_chunk(index, chunk_text):
+                """Process a single chunk"""
+                try:
+                    cleaned_chunk = self.ai_service.clean_text_for_tts(chunk_text)
+                    language = self.ai_service.detect_language(cleaned_chunk)
+                    
+                    audio_bytes, provider = await self.tts_service.synthesize_chunk(
+                        chunk_text, cleaned_chunk, language
+                    )
+                    
+                    return {
+                        'index': index,
+                        'chunk_text': chunk_text,
+                        'audio_bytes': audio_bytes,
+                        'provider': provider,
+                        'language': language,
+                        'success': True
+                    }
+                except Exception as e:
+                    self.logger.error(f"❌ Chunk {index} failed: {e}")
+                    return {
+                        'index': index,
+                        'chunk_text': chunk_text,
+                        'success': False,
+                        'error': str(e)
+                    }
+            
+            # ✅ RUN ALL CHUNKS IN PARALLEL
+            start_time = asyncio.get_event_loop().time()
+            
+            tasks = [
+                process_chunk(i, chunk_text) 
+                for i, chunk_text in enumerate(chunks, 1)
+            ]
+            
+            results = await asyncio.gather(*tasks)
+            
+            elapsed = asyncio.get_event_loop().time() - start_time
+            
+            self.logger.info(
+                f"⚡ Parallel TTS complete: {len(chunks)} chunks in {elapsed:.2f}s "
+                f"(~{elapsed/len(chunks):.2f}s per chunk)"
+            )
+            
+            # ─────────────────────────────────────────────────────────
+            # STEP 4: SEND CHUNKS IN ORDER
+            # ─────────────────────────────────────────────────────────
+            for result in results:
+                if result['success'] and result['audio_bytes']:
+                    audio_base64 = base64.b64encode(result['audio_bytes']).decode('utf-8')
+                    
+                    await self.send_message(device_id, {
+                        "type": "audio_chunk",
+                        "audio": audio_base64,
+                        "text": result['chunk_text'],
+                        "chunk": result['index'],
+                        "total_chunks": len(chunks),
+                        "is_final": (result['index'] == len(chunks)),
+                        "format": "wav",
+                        "language": result['language'],
+                        "tts_provider": result['provider']
+                    })
+                    
+                    self.logger.info(
+                        f"📤 Sent chunk {result['index']}/{len(chunks)}: "
+                        f"{len(result['audio_bytes'])} bytes ({result['provider']}) - "
+                        f"'{result['chunk_text'][:40]}...'"
+                    )
+            
+            # ─────────────────────────────────────────────────────────
+            # STEP 5: SEND COMPLETION
+            # ─────────────────────────────────────────────────────────
+            await self.send_message(device_id, {
+                "type": "chat_response_complete",
+                "full_text": response_text,
+                "total_chunks": len(chunks)
+            })
+            
+        except Exception as e:
+            self.logger.error(f"❌ Chat error: {e}", exc_info=True)
+            await self.send_error(device_id, f"Chat error: {e}")
+
 
     # ═══════════════════════════════════════════════════════════════════
     # ✅ UPDATED: handle_text() - NOW WITH CHUNK PROCESSING
     # ═══════════════════════════════════════════════════════════════════
-    async def handle_text(self, data: Dict):
+    async def handle_text_singlethread(self, data: Dict):
         """Handle text message from ESP32 with smart chunking"""
         try:
             device_id = data.get("device_id")
@@ -377,6 +511,142 @@ class WebSocketHandler:
         except Exception as e:
             self.logger.error(f"❌ Text error: {e}", exc_info=True)
             await self.send_error(device_id, f"Text error: {e}")
+    
+    async def handle_text(self, data: Dict):
+        """Handle text message from ESP32 with PARALLEL TTS processing"""
+        try:
+            device_id = data.get("device_id")
+            text = data.get("text", "")
+            
+            if not text:
+                await self.send_error(device_id, "Empty text message")
+                return
+            
+            self.logger.info(f"💬 Text from {device_id}: {text}")
+            
+            device_info = self.device_manager.devices.get(device_id, {})
+            device_type = device_info.get('type', 'unknown')
+            
+            # ─────────────────────────────────────────────────────────
+            # STEP 1: GET AI RESPONSE
+            # ─────────────────────────────────────────────────────────
+            ai_response = await self.ai_service.chat(
+                user_message=text,
+                conversation_logger=self.conversation_logger,
+                device_id=device_id,
+                device_type=device_type,
+                music_service=self.music_service
+            )
+
+            # ─────────────────────────────────────────────────────────
+            # STEP 2: HANDLE MUSIC
+            # ─────────────────────────────────────────────────────────
+            if ai_response.get('music_result'):
+                music = ai_response['music_result']
+                self.logger.info(f"🎵 Music found: {music['title']}")
+                await self.send_message(device_id, {
+                    "type": "play_music",
+                    "title": music['title'],
+                    "artist": music.get('channel', 'Unknown'),
+                    "audio_url": music['audio_url'],
+                    "duration": music.get('duration', 0),
+                    "video_id": music['id']
+                })
+
+            # ─────────────────────────────────────────────────────────
+            # STEP 3: SEND TEXT RESPONSE FIRST (ESP32 specific)
+            # ─────────────────────────────────────────────────────────
+            response_text = ai_response['response']
+            language = ai_response['language']
+
+            await self.send_message(device_id, {
+                "type": "text",
+                "text": response_text,
+                "language": language
+            })
+
+            # ─────────────────────────────────────────────────────────
+            # STEP 4: PARALLEL TTS PROCESSING ✨
+            # ─────────────────────────────────────────────────────────
+            chunks = ai_response.get('chunks', [response_text])
+            
+            self.logger.info(f"📊 Processing {len(chunks)} chunks in PARALLEL")
+            
+            import asyncio
+            
+            async def process_chunk(index, chunk_text):
+                """Process a single chunk"""
+                try:
+                    cleaned_chunk = self.ai_service.clean_text_for_tts(chunk_text)
+                    chunk_language = self.ai_service.detect_language(cleaned_chunk)
+                    
+                    audio_bytes, provider = await self.tts_service.synthesize_chunk(
+                        chunk_text, cleaned_chunk, chunk_language
+                    )
+                    
+                    return {
+                        'index': index,
+                        'chunk_text': chunk_text,
+                        'audio_bytes': audio_bytes,
+                        'provider': provider,
+                        'language': chunk_language,
+                        'success': True
+                    }
+                except Exception as e:
+                    self.logger.error(f"❌ Chunk {index} failed: {e}")
+                    return {
+                        'index': index,
+                        'chunk_text': chunk_text,
+                        'success': False,
+                        'error': str(e)
+                    }
+            
+            # ✅ RUN ALL CHUNKS IN PARALLEL
+            start_time = asyncio.get_event_loop().time()
+            
+            tasks = [
+                process_chunk(i, chunk_text) 
+                for i, chunk_text in enumerate(chunks, 1)
+            ]
+            
+            results = await asyncio.gather(*tasks)
+            
+            elapsed = asyncio.get_event_loop().time() - start_time
+            
+            self.logger.info(
+                f"⚡ Parallel TTS complete: {len(chunks)} chunks in {elapsed:.2f}s "
+                f"(~{elapsed/len(chunks):.2f}s per chunk)"
+            )
+            
+            # ─────────────────────────────────────────────────────────
+            # STEP 5: SEND AUDIO CHUNKS IN ORDER (ESP32 format)
+            # ─────────────────────────────────────────────────────────
+            for result in results:
+                if result['success'] and result['audio_bytes']:
+                    audio_base64 = base64.b64encode(result['audio_bytes']).decode('utf-8')
+                    
+                    # ✅ ESP32 uses "audio" type, not "audio_chunk"
+                    await self.send_message(device_id, {
+                        "type": "audio",
+                        "audio": audio_base64,
+                        "format": "wav",
+                        "language": result['language'],
+                        "chunk": result['index'],
+                        "total_chunks": len(chunks),
+                        "is_final": (result['index'] == len(chunks)),
+                        "tts_provider": result['provider']
+                    })
+                    
+                    self.logger.info(
+                        f"📤 Sent audio chunk {result['index']}/{len(chunks)}: "
+                        f"{len(result['audio_bytes'])} bytes ({result['provider']}) - "
+                        f"'{result['chunk_text'][:40]}...'"
+                    )
+            
+        except Exception as e:
+            self.logger.error(f"❌ Text error: {e}", exc_info=True)
+            await self.send_error(device_id, f"Text error: {e}")
+
     # ═══════════════════════════════════════════════════════════════════
     # ✅ KEEP: handle_voice() - Already uses streaming with smart splitting
     # ═══════════════════════════════════════════════════════════════════
