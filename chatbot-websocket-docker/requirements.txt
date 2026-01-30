@@ -9,6 +9,10 @@ azure-cognitiveservices-speech==1.34.0
 azure-ai-inference==1.0.0b1
 openai==1.3.0
 
+# ✅ ADD THESE FOR FALLBACK
+aiohttp==3.9.1          # ← Azure REST API fallback
+wyoming==1.5.3          # ← Piper fallback
+
 # Audio processing
 pydub==0.25.1
 opuslib==3.0.1
