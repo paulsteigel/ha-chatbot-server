@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⚙️ Cấu hình Chatbot</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            color: #667eea;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .category-section {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .category-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+
+        .category-header h2 {
+            color: #667eea;
+            font-size: 1.3em;
+        }
+
+        .config-item {
+            display: grid;
+            grid-template-columns: 200px 1fr 100px;
+            gap: 15px;
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            align-items: center;
+        }
+
+        .config-item:last-child {
+            border-bottom: none;
+        }
+
+        .config-label {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .config-description {
+            font-size: 0.85em;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .config-input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .config-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .config-input.secret {
+            font-family: monospace;
+            letter-spacing: 2px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .btn-save {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-save:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+        }
+
+        .btn-save:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .status-message {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 25px;
+            border-radius: 5px;
+            color: white;
+            font-weight: 600;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+            z-index: 1000;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .status-success {
+            background: #10b981;
+        }
+
+        .status-error {
+            background: #ef4444;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #667eea;
+            font-size: 1.2em;
+        }
+
+        .category-icon {
+            font-size: 1.5em;
+            margin-right: 10px;
+        }
+
+        select.config-input {
+            cursor: pointer;
+        }
+
+        .toggle-secret {
+            background: #f3f4f6;
+            border: 1px solid #ddd;
+            padding: 5px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 0.85em;
+        }
+
+        .toggle-secret:hover {
+            background: #e5e7eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⚙️ Cấu hình Chatbot</h1>
+            <p style="color: #666; margin-top: 10px;">Quản lý cấu hình AI, TTS, STT và các dịch vụ khác</p>
+            <div style="margin-top: 15px; display: flex; justify-content: space-between; align-items: center;">
+                <span id="username-display" style="color: #666; font-size: 0.9em;"></span>
+                <button onclick="logout()" style="padding: 8px 15px; background: #ef4444; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: 600;">
+                    🚪 Đăng xuất
+                </button>
+            </div>
+
+        </div>
+
+        <div id="loading" class="loading">
+            ⏳ Đang tải cấu hình...
+        </div>
+
+        <div id="config-container" style="display: none;"></div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        let configs = {};
+        let secretsVisible = {};
+
+        // Category icons and names
+        const CATEGORIES = {
+            'ai': { icon: '🤖', name: 'AI Models' },
+            'tts': { icon: '🔊', name: 'Text-to-Speech' },
+            'stt': { icon: '🎤', name: 'Speech-to-Text' },
+            'azure': { icon: '☁️', name: 'Azure Services' },
+            'piper': { icon: '🎵', name: 'Piper TTS' },
+            'system': { icon: '⚙️', name: 'System' },
+            'chat': { icon: '💬', name: 'Chat Settings' },
+            'music': { icon: '🎶', name: 'Music Service' }
+        };
+
+        // Input types for different config keys
+        const INPUT_TYPES = {
+            'ai_provider': 'select',
+            'tts_provider': 'select',
+            'stt_provider': 'select',
+            'enable_music_playback': 'select',
+            'tts_remove_emoji': 'select'
+        };
+
+        const SELECT_OPTIONS = {
+            'ai_provider': ['openai', 'azure', 'deepseek', 'groq'],
+            'tts_provider': ['azure_speech', 'openai', 'piper'],
+            'stt_provider': ['azure_speech', 'openai', 'groq'],
+            'enable_music_playback': ['true', 'false'],
+            'tts_remove_emoji': ['true', 'false']
+        };
+
+        async function loadConfig() {
+            try {
+                const response = await fetch(`${API_BASE}/api/config`);
+                if (!response.ok) throw new Error('Failed to load config');
+                
+                configs = await response.json();
+                renderConfig();
+            } catch (error) {
+                showStatus('❌ Lỗi tải cấu hình: ' + error.message, 'error');
+            }
+        }
+
+        function renderConfig() {
+            const container = document.getElementById('config-container');
+            const loading = document.getElementById('loading');
+            
+            // Group by category
+            const grouped = {};
+            for (const [key, value] of Object.entries(configs)) {
+                const category = value.category || 'system';
+                if (!grouped[category]) grouped[category] = [];
+                grouped[category].push({ key, ...value });
+            }
+
+            // Render each category
+            let html = '';
+            for (const [category, items] of Object.entries(grouped)) {
+                const catInfo = CATEGORIES[category] || { icon: '📋', name: category };
+                
+                html += `
+                    <div class="category-section">
+                        <div class="category-header">
+                            <h2>
+                                <span class="category-icon">${catInfo.icon}</span>
+                                ${catInfo.name}
+                            </h2>
+                        </div>
+                `;
+
+                items.forEach(item => {
+                    const inputType = INPUT_TYPES[item.key] || 'text';
+                    const isSecret = item.is_secret === 1;
+                    const value = item.config_value || '';
+                    
+                    html += `
+                        <div class="config-item">
+                            <div>
+                                <div class="config-label">${item.key}</div>
+                                ${item.description ? `<div class="config-description">${item.description}</div>` : ''}
+                            </div>
+                            <div>
+                                ${renderInput(item.key, value, inputType, isSecret)}
+                            </div>
+                            <div>
+                                <button class="btn btn-save" onclick="saveConfig('${item.key}')">💾 Lưu</button>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                html += `</div>`;
+            }
+
+            container.innerHTML = html;
+            loading.style.display = 'none';
+            container.style.display = 'block';
+        }
+
+        async function logout() {
+            if (!confirm('Bạn có chắc muốn đăng xuất?')) return;
+            
+            try {
+                await fetch(`${API_BASE}/api/auth/logout`, { method: 'POST' });
+                window.location.href = '/login';
+            } catch (error) {
+                alert('Lỗi đăng xuất: ' + error.message);
+            }
+        }
+
+        async function checkAuth() {
+            try {
+                const response = await fetch(`${API_BASE}/api/auth/check`);
+                if (!response.ok) {
+                    window.location.href = '/login';
+                    return;
+                }
+                const data = await response.json();
+                document.getElementById('username-display').textContent = `👤 ${data.username}`;
+            } catch (error) {
+                window.location.href = '/login';
+            }
+        }
+
+        // Check auth on load
+        checkAuth();
+
+
+        function renderInput(key, value, type, isSecret) {
+            if (type === 'select') {
+                const options = SELECT_OPTIONS[key] || [];
+                return `
+                    <select id="input-${key}" class="config-input">
+                        ${options.map(opt => `
+                            <option value="${opt}" ${opt === value ? 'selected' : ''}>
+                                ${opt}
+                            </option>
+                        `).join('')}
+                    </select>
+                `;
+            }
+
+            if (isSecret) {
+                const visible = secretsVisible[key] || false;
+                return `
+                    <div style="display: flex; gap: 10px;">
+                        <input 
+                            type="${visible ? 'text' : 'password'}" 
+                            id="input-${key}" 
+                            class="config-input secret" 
+                            value="${value}"
+                            placeholder="••••••••"
+                        />
+                        <button class="toggle-secret" onclick="toggleSecret('${key}')">
+                            ${visible ? '🙈' : '👁️'}
+                        </button>
+                    </div>
+                `;
+            }
+
+            return `
+                <input 
+                    type="text" 
+                    id="input-${key}" 
+                    class="config-input" 
+                    value="${value}"
+                    placeholder="Nhập giá trị..."
+                />
+            `;
+        }
+
+        function toggleSecret(key) {
+            secretsVisible[key] = !secretsVisible[key];
+            renderConfig();
+        }
+
+        async function saveConfig(key) {
+            const input = document.getElementById(`input-${key}`);
+            const value = input.value;
+
+            try {
+                const response = await fetch(`${API_BASE}/api/config/${key}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value })
+                });
+
+                if (!response.ok) throw new Error('Failed to save');
+
+                configs[key].config_value = value;
+                showStatus('✅ Đã lưu: ' + key, 'success');
+            } catch (error) {
+                showStatus('❌ Lỗi lưu: ' + error.message, 'error');
+            }
+        }
+
+        function showStatus(message, type) {
+            const existing = document.querySelector('.status-message');
+            if (existing) existing.remove();
+
+            const div = document.createElement('div');
+            div.className = `status-message status-${type}`;
+            div.textContent = message;
+            document.body.appendChild(div);
+
+            setTimeout(() => div.remove(), 3000);
+        }
+
+        // Load on page load
+        loadConfig();
+    </script>
+</body>
+</html>

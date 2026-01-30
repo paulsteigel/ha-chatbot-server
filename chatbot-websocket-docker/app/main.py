@@ -3,6 +3,10 @@ School Chatbot WebSocket Server
 Main FastAPI application with WebSocket support for ESP32 devices
 ✅ WITH MUSIC SERVICE + AZURE AI INTEGRATION
 """
+import secrets
+import hashlib
+from typing import Optional
+
 from app.config_manager import ConfigManager
 config_manager = None
 
@@ -11,9 +15,9 @@ import asyncio
 import os
 import json
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request, Response, Depends
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, JSONResponse, RedirectResponse
 
 # Import services
 from app.ai_service import AIService
@@ -109,6 +113,93 @@ def safe_bool(value, default: bool = False) -> bool:
         return bool(value)
     
     return default
+
+# ═══════════════════════════════════════════════════════════════════
+# AUTHENTICATION & SESSION MANAGEMENT
+# ═══════════════════════════════════
+
+# In-memory session storage (for simplicity)
+# In production, use Redis or database
+active_sessions = {}
+
+def hash_password(password: str) -> str:
+    """Hash password using SHA-256"""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify password against hash"""
+    return hash_password(plain_password) == hashed_password
+
+def create_session(username: str) -> str:
+    """Create a new session and return session token"""
+    session_token = secrets.token_urlsafe(32)
+    active_sessions[session_token] = {
+        'username': username,
+        'created_at': time.time()
+    }
+    return session_token
+
+def get_session(session_token: str) -> Optional[dict]:
+    """Get session data from token"""
+    return active_sessions.get(session_token)
+
+def delete_session(session_token: str):
+    """Delete a session"""
+    if session_token in active_sessions:
+        del active_sessions[session_token]
+
+async def get_current_user(request: Request) -> dict:
+    """Dependency to check if user is authenticated"""
+    session_token = request.cookies.get('session_token')
+    
+    if not session_token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    session = get_session(session_token)
+    if not session:
+        raise HTTPException(status_code=401, detail="Invalid session")
+    
+    # Check session age (24 hours)
+    if time.time() - session['created_at'] > 86400:
+        delete_session(session_token)
+        raise HTTPException(status_code=401, detail="Session expired")
+    
+    return session
+
+async def get_admin_credentials():
+    """Get admin credentials from database or environment"""
+    # Try database first
+    try:
+        async with conversation_logger.pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute("""
+                    SELECT config_value FROM chatbot_config 
+                    WHERE config_key = 'admin_username'
+                """)
+                username_row = await cursor.fetchone()
+                
+                await cursor.execute("""
+                    SELECT config_value FROM chatbot_config 
+                    WHERE config_key = 'admin_password_hash'
+                """)
+                password_row = await cursor.fetchone()
+                
+                if username_row and password_row:
+                    return {
+                        'username': username_row['config_value'],
+                        'password_hash': password_row['config_value']
+                    }
+    except Exception as e:
+        logger.warning(f"⚠️ Could not load admin credentials from DB: {e}")
+    
+    # Fallback to environment variables
+    username = os.getenv('ADMIN_USERNAME', 'admin')
+    password = os.getenv('ADMIN_PASSWORD', 'admin123')  # Default password
+    
+    return {
+        'username': username,
+        'password_hash': hash_password(password)
+    }
 
 # ==============================================================================
 # Configuration - AFTER get_config() is defined
@@ -777,6 +868,143 @@ async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for device connections"""
     await ws_handler.handle_connection(websocket)
 
+# ═══════════════════════════════════════════════════════════════════
+# AUTHENTICATION ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════
+
+@app.get("/login")
+async def login_page():
+    """Serve login page"""
+    return FileResponse("static/login.html")
+
+@app.post("/api/auth/login")
+async def login(request: Request, response: Response):
+    """Login endpoint"""
+    try:
+        data = await request.json()
+        username = data.get('username', '')
+        password = data.get('password', '')
+        
+        # Get admin credentials
+        admin_creds = await get_admin_credentials()
+        
+        # Verify credentials
+        if username == admin_creds['username'] and \
+           verify_password(password, admin_creds['password_hash']):
+            
+            # Create session
+            session_token = create_session(username)
+            
+            # Set cookie
+            response = JSONResponse({'success': True, 'username': username})
+            response.set_cookie(
+                key='session_token',
+                value=session_token,
+                httponly=True,
+                max_age=86400,  # 24 hours
+                samesite='lax'
+            )
+            
+            logger.info(f"✅ Admin login successful: {username}")
+            return response
+        else:
+            logger.warning(f"⚠️ Failed login attempt: {username}")
+            raise HTTPException(status_code=401, detail="Sai tên đăng nhập hoặc mật khẩu")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Login error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/auth/logout")
+async def logout(request: Request, response: Response):
+    """Logout endpoint"""
+    session_token = request.cookies.get('session_token')
+    if session_token:
+        delete_session(session_token)
+    
+    response = JSONResponse({'success': True})
+    response.delete_cookie('session_token')
+    return response
+
+@app.get("/api/auth/check")
+async def check_auth(user: dict = Depends(get_current_user)):
+    """Check if user is authenticated"""
+    return {'authenticated': True, 'username': user['username']}
+
+# ═══════════════════════════════════════════════════════════════════
+# PROTECTED ADMIN ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════
+
+@app.get("/admin")
+async def admin_page(request: Request):
+    """Serve admin configuration page (protected)"""
+    # Check if authenticated
+    session_token = request.cookies.get('session_token')
+    if not session_token or not get_session(session_token):
+        return RedirectResponse(url='/login')
+    
+    return FileResponse("static/admin.html")
+
+@app.get("/api/config")
+async def get_all_config(user: dict = Depends(get_current_user)):
+    """Get all configuration (protected)"""
+    try:
+        async with conversation_logger.pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                await cursor.execute("""
+                    SELECT id, config_key, config_value, category, 
+                           description, is_secret, updated_at
+                    FROM chatbot_config
+                    ORDER BY category, config_key
+                """)
+                rows = await cursor.fetchall()
+                
+                # Convert to dict
+                result = {}
+                for row in rows:
+                    key = row['config_key']
+                    result[key] = {
+                        'config_value': row['config_value'],
+                        'category': row['category'],
+                        'description': row['description'],
+                        'is_secret': row['is_secret'],
+                        'updated_at': row['updated_at'].isoformat() if row['updated_at'] else None
+                    }
+                
+                return result
+    except Exception as e:
+        logger.error(f"❌ Get config error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/config/{key}")
+async def update_config(key: str, data: dict, user: dict = Depends(get_current_user)):
+    """Update a configuration value (protected)"""
+    try:
+        value = data.get('value', '')
+        
+        async with conversation_logger.pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("""
+                    UPDATE chatbot_config 
+                    SET config_value = %s, updated_at = NOW()
+                    WHERE config_key = %s
+                """, (value, key))
+                
+                await conn.commit()
+                
+                if cursor.rowcount == 0:
+                    raise HTTPException(status_code=404, detail="Config key not found")
+                
+                logger.info(f"✅ Config updated by {user['username']}: {key} = {value[:20]}...")
+                
+                return {"success": True, "key": key, "value": value}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Update config error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ==============================================================================
 # Main Entry Point
