@@ -203,6 +203,18 @@
 
         </div>
 
+        <div style="margin-top: 15px; display: flex; justify-content: space-between; align-items: center;">
+            <span id="username-display" style="color: #666; font-size: 0.9em;"></span>
+            <div style="display: flex; gap: 10px;">
+                <button onclick="reloadServices()" style="padding: 8px 15px; background: #10b981; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: 600;">
+                    🔄 Reload Services
+                </button>
+                <button onclick="logout()" style="padding: 8px 15px; background: #ef4444; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: 600;">
+                    🚪 Đăng xuất
+                </button>
+            </div>
+        </div>
+
         <div id="loading" class="loading">
             ⏳ Đang tải cấu hình...
         </div>
@@ -329,6 +341,35 @@
             }
         }
 
+        async function reloadServices() {
+            if (!confirm('Reload tất cả services với config mới?\n\nLưu ý: Các kết nối đang hoạt động có thể bị gián đoạn.')) {
+                return;
+            }
+            
+            try {
+                showStatus('⏳ Đang reload services...', 'success');
+                
+                const response = await fetch(`${API_BASE}/api/reload`, {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Reload failed');
+                }
+                
+                const data = await response.json();
+                
+                showStatus('✅ Services đã được reload thành công!', 'success');
+                
+                // Show service status
+                console.log('Services status:', data.services);
+                
+            } catch (error) {
+                showStatus('❌ Lỗi reload: ' + error.message, 'error');
+            }
+        }
 
         async function checkAuth() {
             try {

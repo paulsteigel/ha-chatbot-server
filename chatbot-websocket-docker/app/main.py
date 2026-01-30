@@ -338,6 +338,173 @@ conversation_logger = None
 music_service = None
 
 # ==============================================================================
+# Service Reload Function
+# ==============================================================================
+
+async def reload_services():
+    """Reload all services with new configuration from database"""
+    global ai_service, tts_service, stt_service, music_service
+    
+    logger.info("=" * 80)
+    logger.info("🔄 RELOADING SERVICES WITH NEW CONFIGURATION")
+    logger.info("=" * 80)
+    
+    try:
+        # Load fresh config from database
+        config = await config_manager.load_config()
+        logger.info(f"✅ Loaded {len(config)} config items from database")
+        
+        # ============================================================
+        # RELOAD AI SERVICE
+        # ============================================================
+        ai_provider = config.get('ai_provider', 'azure').lower()
+        logger.info(f"🤖 Reloading AI Service (provider: {ai_provider})...")
+        
+        if ai_provider == 'azure':
+            api_key = config.get('azure_api_key')
+            base_url = config.get('azure_endpoint')
+            model = config.get('ai_model') or config.get('azure_deployment')
+            azure_api_version = config.get('azure_api_version', '2024-12-01-preview')
+        elif ai_provider == 'deepseek':
+            api_key = config.get('deepseek_api_key')
+            base_url = config.get('deepseek_base_url', 'https://api.deepseek.com/v1')
+            model = config.get('ai_model', 'deepseek-chat')
+            azure_api_version = None
+        else:  # openai
+            api_key = config.get('openai_api_key')
+            base_url = config.get('openai_base_url', 'https://api.openai.com/v1')
+            model = config.get('ai_model', 'gpt-4')
+            azure_api_version = None
+        
+        system_prompt = config.get('system_prompt', FINAL_SYSTEM_PROMPT)
+        
+        ai_service = AIService(
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            system_prompt=system_prompt,
+            temperature=float(config.get('temperature', 0.7)),
+            max_tokens=int(config.get('max_tokens', 500)),
+            max_context=int(config.get('max_context', 10)),
+            provider=ai_provider,
+            azure_api_version=azure_api_version
+        )
+        logger.info(f"✅ AI Service reloaded: {model}")
+        
+        # ============================================================
+        # RELOAD TTS SERVICE
+        # ============================================================
+        tts_provider = config.get('tts_provider', 'azure_speech').lower()
+        logger.info(f"🔊 Reloading TTS Service (provider: {tts_provider})...")
+        
+        if tts_provider == 'azure_speech':
+            azure_speech_key = config.get('azure_speech_key')
+            azure_speech_region = config.get('azure_speech_region', 'eastus')
+            
+            if not azure_speech_key:
+                logger.warning("⚠️ azure_speech_key not found, falling back to Piper")
+                tts_provider = 'piper'
+            else:
+                tts_service = TTSService(
+                    provider='azure_speech',
+                    api_key=azure_speech_key,
+                    region=azure_speech_region,
+                    base_url=None
+                )
+        
+        if tts_provider == 'piper':
+            piper_host = config.get('piper_host', 'addon_core_piper')
+            piper_port = int(config.get('piper_port', 10200))
+            tts_service = TTSService(
+                provider='piper',
+                piper_host=piper_host,
+                piper_port=piper_port
+            )
+        
+        elif tts_provider == 'openai':
+            openai_key = config.get('openai_api_key')
+            openai_url = config.get('openai_base_url', 'https://api.openai.com/v1')
+            tts_service = TTSService(
+                provider='openai',
+                api_key=openai_key,
+                base_url=openai_url
+            )
+        
+        logger.info(f"✅ TTS Service reloaded: {tts_provider}")
+        
+        # ============================================================
+        # RELOAD STT SERVICE
+        # ============================================================
+        stt_provider = config.get('stt_provider', 'azure_speech').lower()
+        logger.info(f"🎤 Reloading STT Service (provider: {stt_provider})...")
+        
+        if stt_provider == 'azure_speech':
+            azure_speech_key = config.get('azure_speech_key')
+            if not azure_speech_key:
+                logger.warning("⚠️ azure_speech_key not found, falling back to Groq")
+                stt_provider = 'groq'
+            else:
+                stt_service = STTService(
+                    api_key=azure_speech_key,
+                    model="whisper-1",
+                    provider='azure_speech'
+                )
+        
+        if stt_provider == 'groq':
+            groq_key = config.get('groq_api_key')
+            if not groq_key:
+                logger.warning("⚠️ groq_api_key not found, falling back to OpenAI")
+                stt_provider = 'openai'
+            else:
+                stt_service = STTService(
+                    api_key=groq_key,
+                    base_url="https://api.groq.com/openai/v1",
+                    model="whisper-large-v3",
+                    provider='groq'
+                )
+        
+        if stt_provider == 'openai':
+            openai_key = config.get('openai_api_key')
+            openai_url = config.get('openai_base_url', 'https://api.openai.com/v1')
+            stt_service = STTService(
+                api_key=openai_key,
+                base_url=openai_url,
+                model="whisper-1",
+                provider='openai'
+            )
+        
+        logger.info(f"✅ STT Service reloaded: {stt_provider}")
+        
+        # ============================================================
+        # RELOAD MUSIC SERVICE
+        # ============================================================
+        enable_music = safe_bool(config.get('enable_music_playback', True))
+        music_url = config.get('music_service_url', 'http://music.sfdp.net')
+        
+        if enable_music:
+            if music_service:
+                await music_service.close()
+            music_service = MusicService(music_url)
+            logger.info(f"✅ Music Service reloaded: {music_url}")
+        else:
+            if music_service:
+                await music_service.close()
+                music_service = None
+            logger.info("⚠️ Music Service disabled")
+        
+        # ============================================================
+        # UPDATE WEBSOCKET HANDLER REFERENCES
+        # ============================================================
+        if ws_handler:
+            ws_handler.ai_service = ai_service
+            ws_handler.tts_service = tts_service
+            ws_handler.stt_service = stt_service
+            ws_handler.music_service = music_service
+            logger.info("✅ WebSocket handler updated with new services")
+        
+        logger
+
+# ==============================================================================
 # Lifespan Context Manager
 # ==============================================================================
 
@@ -1027,6 +1194,27 @@ async def update_config(key: str, data: dict, user: dict = Depends(get_current_u
         raise
     except Exception as e:
         logger.error(f"❌ Update config error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+@app.post("/api/reload")
+async def reload_services_endpoint(user: dict = Depends(get_current_user)):
+    """Reload all services with new configuration (protected)"""
+    try:
+        await reload_services()
+        
+        logger.info(f"✅ Services reloaded by {user['username']}")
+        
+        return JSONResponse({
+            "success": True,
+            "message": "Services reloaded successfully",
+            "services": {
+                "ai": ai_service is not None,
+                "tts": tts_service is not None,
+                "stt": stt_service is not None,
+                "music": music_service is not None
+            }
+        })
+    except Exception as e:
+        logger.error(f"❌ Reload endpoint error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # ==============================================================================
