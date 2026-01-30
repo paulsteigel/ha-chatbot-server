@@ -411,23 +411,22 @@ async def lifespan(app: FastAPI):
         # ============================================================
         stt_provider = config.get('stt_provider', 'azure_speech').lower()
         logger.info(f"🎤 Initializing STT Service (provider: {stt_provider})...")
-        
+
         if stt_provider == 'azure_speech':
             azure_speech_key = config.get('azure_speech_key')
-            azure_speech_region = config.get('azure_speech_region', 'eastus')
             
             if not azure_speech_key:
                 logger.warning("⚠️ azure_speech_key not found, falling back to Groq")
                 stt_provider = 'groq'
             else:
                 logger.info("🎤 Using Azure Speech STT")
+                # ✅ FIXED: Don't pass region - service gets it from config!
                 stt_service = STTService(
                     api_key=azure_speech_key,
-                    region=azure_speech_region,
                     model="whisper-1",
                     provider='azure_speech'
                 )
-        
+
         if stt_provider == 'groq':
             groq_key = config.get('groq_api_key')
             
@@ -442,7 +441,7 @@ async def lifespan(app: FastAPI):
                     model="whisper-large-v3",
                     provider='groq'
                 )
-        
+
         if stt_provider == 'openai':
             openai_key = config.get('openai_api_key')
             openai_url = config.get('openai_base_url', 'https://api.openai.com/v1')
@@ -457,8 +456,9 @@ async def lifespan(app: FastAPI):
                 model="whisper-1",
                 provider='openai'
             )
-        
+
         logger.info(f"✅ STT Service initialized: {stt_provider}")
+
         
         # ============================================================
         # STEP 8: Initialize Conversation Logger
