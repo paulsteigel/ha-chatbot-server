@@ -6,6 +6,8 @@ Main FastAPI application with WebSocket support for ESP32 devices
 import secrets
 import hashlib
 from typing import Optional
+import time
+import aiomysql
 
 from app.config_manager import ConfigManager
 config_manager = None
@@ -168,29 +170,30 @@ async def get_current_user(request: Request) -> dict:
 
 async def get_admin_credentials():
     """Get admin credentials from database or environment"""
-    # Try database first
-    try:
-        async with conversation_logger.pool.acquire() as conn:
-            async with conn.cursor(aiomysql.DictCursor) as cursor:
-                await cursor.execute("""
-                    SELECT config_value FROM chatbot_config 
-                    WHERE config_key = 'admin_username'
-                """)
-                username_row = await cursor.fetchone()
-                
-                await cursor.execute("""
-                    SELECT config_value FROM chatbot_config 
-                    WHERE config_key = 'admin_password_hash'
-                """)
-                password_row = await cursor.fetchone()
-                
-                if username_row and password_row:
-                    return {
-                        'username': username_row['config_value'],
-                        'password_hash': password_row['config_value']
-                    }
-    except Exception as e:
-        logger.warning(f"⚠️ Could not load admin credentials from DB: {e}")
+    # Try database first (only if conversation_logger is initialized)
+    if conversation_logger and hasattr(conversation_logger, 'pool') and conversation_logger.pool:
+        try:
+            async with conversation_logger.pool.acquire() as conn:
+                async with conn.cursor(aiomysql.DictCursor) as cursor:
+                    await cursor.execute("""
+                        SELECT config_value FROM chatbot_config 
+                        WHERE config_key = 'admin_username'
+                    """)
+                    username_row = await cursor.fetchone()
+                    
+                    await cursor.execute("""
+                        SELECT config_value FROM chatbot_config 
+                        WHERE config_key = 'admin_password_hash'
+                    """)
+                    password_row = await cursor.fetchone()
+                    
+                    if username_row and password_row:
+                        return {
+                            'username': username_row['config_value'],
+                            'password_hash': password_row['config_value']
+                        }
+        except Exception as e:
+            logger.warning(f"⚠️ Could not load admin credentials from DB: {e}")
     
     # Fallback to environment variables
     username = os.getenv('ADMIN_USERNAME', 'admin')
@@ -200,7 +203,6 @@ async def get_admin_credentials():
         'username': username,
         'password_hash': hash_password(password)
     }
-
 # ==============================================================================
 # Configuration - AFTER get_config() is defined
 # ==============================================================================
