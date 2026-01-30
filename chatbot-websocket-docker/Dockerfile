@@ -2,26 +2,19 @@ FROM python:3.11-slim-bookworm
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# ✅ ENHANCED: Install ALL dependencies for Azure Speech SDK
+# ✅ CORRECT: Install ONLY essential dependencies for Azure Speech SDK
 RUN apt-get update && apt-get install -y \
     build-essential \
     libssl-dev \
     ca-certificates \
     libasound2 \
-    libasound2-dev \
-    libpulse0 \
-    libpulse-dev \
     wget \
     curl \
     ffmpeg \
-    # ✅ ADD THESE FOR SDK:
-    libgstreamer1.0-0 \
-    libgstreamer-plugins-base1.0-0 \
-    libgstreamer-plugins-good1.0-0 \
-    gstreamer1.0-plugins-good \
-    gstreamer1.0-plugins-ugly \
-    gstreamer1.0-libav \
+    # ✅ CRITICAL for Azure SDK:
     libgomp1 \
+    libatomic1 \
+    libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
