@@ -1003,6 +1003,10 @@ async def update_config(key: str, data: dict, user: dict = Depends(get_current_u
     try:
         value = data.get('value', '')
         
+        # ✅ TRIM whitespace for API keys
+        if 'api_key' in key.lower() or 'password' in key.lower():
+            value = value.strip()
+        
         async with conversation_logger.pool.acquire() as conn:
             async with conn.cursor() as cursor:
                 await cursor.execute("""
