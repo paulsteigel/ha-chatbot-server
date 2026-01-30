@@ -887,8 +887,23 @@ async def login(request: Request, response: Response):
         username = data.get('username', '')
         password = data.get('password', '')
         
+        # ✅ ADD DEBUG LOGGING
+        logger.info(f"🔐 Login attempt:")
+        logger.info(f"   Username from form: '{username}'")
+        logger.info(f"   Password length: {len(password)}")
+        
         # Get admin credentials
         admin_creds = await get_admin_credentials()
+        
+        # ✅ ADD DEBUG LOGGING
+        logger.info(f"🔐 Loaded credentials:")
+        logger.info(f"   Expected username: '{admin_creds['username']}'")
+        logger.info(f"   Expected hash: {admin_creds['password_hash'][:20]}...")
+        
+        # Hash the input password
+        input_hash = hash_password(password)
+        logger.info(f"   Input hash: {input_hash[:20]}...")
+        logger.info(f"   Hashes match: {input_hash == admin_creds['password_hash']}")
         
         # Verify credentials
         if username == admin_creds['username'] and \
@@ -911,6 +926,8 @@ async def login(request: Request, response: Response):
             return response
         else:
             logger.warning(f"⚠️ Failed login attempt: {username}")
+            logger.warning(f"   Username match: {username == admin_creds['username']}")
+            logger.warning(f"   Password match: {verify_password(password, admin_creds['password_hash'])}")
             raise HTTPException(status_code=401, detail="Sai tên đăng nhập hoặc mật khẩu")
             
     except HTTPException:
