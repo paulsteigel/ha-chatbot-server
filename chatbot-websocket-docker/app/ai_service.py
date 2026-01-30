@@ -1,7 +1,7 @@
 # File: app/ai_service.py
 """
 AI Service - Handles chat with AI providers (OpenAI/DeepSeek/Azure)
-✅ Streaming support with sentence-level chunking
+✅ Streaming support with sentence-level chunking + SMART SPLITTING
 ✅ Enhanced emoji/markdown removal for TTS
 ✅ Azure OpenAI support
 ✅ Music function calling (OpenAI/Azure) + keyword detection (DeepSeek)
@@ -14,7 +14,7 @@ import re
 import unicodedata
 import json
 from typing import List, Dict, Optional, AsyncGenerator, Any
-from openai import AsyncOpenAI, AsyncAzureOpenAI  # ✅ ADD Azure
+from openai import AsyncOpenAI, AsyncAzureOpenAI
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -58,8 +58,8 @@ class AIService:
         temperature: float = 0.7,
         max_tokens: int = 500,
         max_context: int = 10,
-        provider: str = "openai",  # ✅ NEW: explicit provider
-        azure_api_version: str = None  # ✅ NEW: for Azure
+        provider: str = "openai",
+        azure_api_version: str = None
     ):
         """Initialize AI Service"""
         self.logger = logging.getLogger("AIService")
@@ -71,7 +71,7 @@ class AIService:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.max_context = max_context
-        self.provider = provider.lower()  # ✅ Use explicit provider
+        self.provider = provider.lower()
         self.azure_api_version = azure_api_version
 
         # ✅ Enable function calling (OpenAI and Azure only)
@@ -83,30 +83,19 @@ class AIService:
         self.logger.info("🤖 Initializing AI Service...")
         self.logger.info(f"   Provider: {self.provider}")
         self.logger.info(f"   Model: {model}")
-        self.logger.info(f"   Streaming: Enabled")
+        self.logger.info(f"   Streaming: Enabled with smart splitting")  # ✅ UPDATED
         self.logger.info(f"   Function Calling: {'Enabled' if self.use_function_calling else 'Disabled'}")
         self.logger.info(f"   Emoji removal: Enhanced")
 
         try:
-            # ✅ Initialize appropriate client
             if self.provider == "azure":
                 self.logger.info(f"   Azure Endpoint: {base_url}")
-
-                # ✅ DEBUG: Log what we're using
-                self.logger.info(f"   🔍 DEBUG - API Key (first 20 chars): {api_key[:20]}...")
-                self.logger.info(f"   🔍 DEBUG - Base URL: {base_url}")
-                self.logger.info(f"   🔍 DEBUG - Model: {model}")
-                
-                # Azure AI Foundry uses standard OpenAI-compatible API
-                # ✅ CORRECT: Just use api_key normally (Authorization: Bearer header)
                 self.client = AsyncOpenAI(
                     api_key=api_key,
                     base_url=base_url
                 )
-                
-                self.logger.info("✅ Using AsyncOpenAI (Azure Foundry - standard auth)")
+                self.logger.info("✅ Using AsyncOpenAI (Azure Foundry)")
             else:
-                # OpenAI or DeepSeek (OpenAI-compatible)
                 self.client = AsyncOpenAI(
                     api_key=api_key,
                     base_url=base_url
@@ -123,16 +112,9 @@ class AIService:
         import asyncio
 
         async def test():
-            # Test with dict return format
             result = await self.chat("Hello")
-            
-            # Handle dict format
             if isinstance(result, dict):
                 self.logger.info(f"✅ Test response: {result.get('response', '')[:50]}...")
-            else:
-                # Old tuple format (shouldn't happen anymore)
-                self.logger.info(f"✅ Test response: {result[0][:50]}...")
-            
             self.clear_history()
 
         try:
@@ -146,14 +128,9 @@ class AIService:
             self.logger.warning(f"⚠️ AI test skipped: {e}")
 
     def detect_music_intent(self, text: str) -> Optional[str]:
-        """
-        🎵 DETECT MUSIC INTENT (for DeepSeek fallback)
-        
-        Returns music query if detected, None otherwise
-        """
+        """🎵 DETECT MUSIC INTENT (for DeepSeek fallback)"""
         text_lower = text.lower()
         
-        # Vietnamese patterns
         vi_patterns = [
             r'(?:mở|phát|chơi|bật|tìm|nghe)\s+(?:bài\s+)?(?:nhạc|hát|piano|guitar|music)',
             r'(?:cho|giúp)\s+(?:tôi|em|mình)\s+(?:nghe|mở|phát)\s+(?:nhạc|bài)',
@@ -164,34 +141,17 @@ class AIService:
         for pattern in vi_patterns:
             match = re.search(pattern, text_lower)
             if match:
-                # Extract query after the command
                 after_command = text_lower[match.end():].strip()
-                
                 if after_command:
-                    # Clean up common words
                     after_command = re.sub(r'^(về|của|bởi|by|from)\s+', '', after_command)
                     return after_command
                 else:
-                    # Generic request, return a default
                     return "piano music"
         
         return None
 
     def clean_text_for_tts(self, text: str) -> str:
-        """
-        ✨ CLEAN TEXT FOR TTS - ENHANCED VERSION ✨
-        
-        Loại bỏ:
-        - Emoji (😊 🎉 👍 ✅ ❌ etc)
-        - Markdown (**bold**, `code`, ~~strike~~)
-        - Special symbols (✨ ⭐ etc)
-        - Brackets with single chars ([x], [!])
-        
-        Giữ lại:
-        - Vietnamese diacritics (àáảãạ...)
-        - Basic punctuation (. , ! ? ; : - ' " /)
-        - Numbers and letters
-        """
+        """✨ CLEAN TEXT FOR TTS - ENHANCED VERSION ✨"""
         if not text:
             return ""
         
@@ -265,22 +225,6 @@ class AIService:
         cleaned = ' '.join(cleaned.split())
         cleaned = re.sub(r'\s+([.,!?;:])', r'\1', cleaned)
         
-        # STEP 7: Log
-        if original_text != cleaned:
-            removed = set(original_text) - set(cleaned)
-            removed_special = {
-                c for c in removed 
-                if not c.isalnum() and not c.isspace()
-            }
-            if removed_special:
-                removed_str = ''.join(sorted(removed_special))
-                self.logger.debug(
-                    f"🧹 Cleaned TTS text:\n"
-                    f"   Before: {original_text[:60]}{'...' if len(original_text) > 60 else ''}\n"
-                    f"   After:  {cleaned[:60]}{'...' if len(cleaned) > 60 else ''}\n"
-                    f"   Removed: {removed_str}"
-                )
-        
         return cleaned.strip()
 
     def detect_language(self, text: str) -> str:
@@ -298,29 +242,88 @@ class AIService:
         
         return "vi"
 
+    # ✅ NEW: HELPER METHOD FOR SPLITTING LONG RESPONSES
+    def split_long_response(self, text: str, max_chunk_size: int = 150) -> List[str]:
+        """
+        ✂️ SPLIT LONG RESPONSE INTO CHUNKS
+        
+        Splits at:
+        1. Sentence endings (. ! ?)
+        2. Commas/semicolons (if > 120 chars)
+        3. Force split (if > max_chunk_size)
+        
+        Returns list of chunks
+        """
+        if len(text) <= max_chunk_size:
+            return [text]
+        
+        chunks = []
+        current = ""
+        
+        # Split by sentences first
+        sentences = re.split(r'([.!?。！？]\s+)', text)
+        
+        for i in range(0, len(sentences), 2):
+            sentence = sentences[i]
+            delimiter = sentences[i + 1] if i + 1 < len(sentences) else ""
+            
+            full_sentence = sentence + delimiter
+            
+            # If adding this sentence exceeds limit
+            if len(current) + len(full_sentence) > max_chunk_size:
+                # Yield current if not empty
+                if current:
+                    chunks.append(current.strip())
+                    current = ""
+                
+                # If sentence itself is too long, split it
+                if len(full_sentence) > max_chunk_size:
+                    # Try split at comma
+                    parts = re.split(r'([,;，；]\s+)', full_sentence)
+                    
+                    for j in range(0, len(parts), 2):
+                        part = parts[j]
+                        part_delim = parts[j + 1] if j + 1 < len(parts) else ""
+                        full_part = part + part_delim
+                        
+                        if len(current) + len(full_part) > max_chunk_size:
+                            if current:
+                                chunks.append(current.strip())
+                            current = full_part
+                        else:
+                            current += full_part
+                else:
+                    current = full_sentence
+            else:
+                current += full_sentence
+        
+        # Add remaining
+        if current:
+            chunks.append(current.strip())
+        
+        return chunks
+
     async def chat_stream(
         self,
         user_message: str,
         conversation_logger=None,
         device_id: str = None,
         device_type: str = None,
-        music_service=None  # ✅ ADD THIS PARAMETER!
-    ) -> AsyncGenerator[tuple[str, str, str, bool, Optional[dict]], None]:  # ✅ ADD music_result to tuple
-        """🌊 STREAM CHAT RESPONSE - Sentence by sentence WITH MUSIC SUPPORT"""
+        music_service=None
+    ) -> AsyncGenerator[tuple[str, str, str, bool, Optional[dict]], None]:
+        """🌊 STREAM CHAT RESPONSE - WITH SMART SPLITTING"""
         start_time = time.time()
         
         try:
             self.logger.info(f"💬 User: {user_message}")
             
             # ═══════════════════════════════════════════════════════════
-            # ✅ STEP 1: CHECK FOR MUSIC INTENT FIRST!
+            # STEP 1: CHECK FOR MUSIC INTENT FIRST
             # ═══════════════════════════════════════════════════════════
             if music_service:
-                # Try function calling first (OpenAI/Azure)
                 if self.use_function_calling:
                     self.logger.info(f"🎵 Function calling enabled ({self.provider})")
                     
-                    # Use non-streaming chat() for function calling
                     result = await self.chat(
                         user_message=user_message,
                         conversation_logger=conversation_logger,
@@ -329,7 +332,6 @@ class AIService:
                         music_service=music_service
                     )
                     
-                    # If music was found, yield it and return
                     if result.get('music_result'):
                         self.logger.info(f"🎵 Music function called successfully!")
                         
@@ -337,12 +339,11 @@ class AIService:
                             result['response'],
                             result['cleaned_response'],
                             result['language'],
-                            True,  # is_final
-                            result['music_result']  # ✅ Music data
+                            True,
+                            result['music_result']
                         )
                         return
                 
-                # Fallback: Keyword detection (DeepSeek)
                 else:
                     music_query = self.detect_music_intent(user_message)
                     
@@ -370,12 +371,12 @@ class AIService:
                                 cleaned_text,
                                 language,
                                 True,
-                                first_result  # ✅ Music data
+                                first_result
                             )
                             return
             
             # ═══════════════════════════════════════════════════════════
-            # ✅ STEP 2: NORMAL STREAMING CHAT (No music)
+            # STEP 2: NORMAL STREAMING CHAT WITH SMART SPLITTING
             # ═══════════════════════════════════════════════════════════
             self.conversation_history.append({"role": "user", "content": user_message})
             
@@ -402,6 +403,7 @@ class AIService:
             first_token_time = None
             sentence_count = 0
             
+            # ✅ IMPROVED STREAMING LOOP WITH SMART SPLITTING
             async for chunk in stream:
                 if chunk.choices and len(chunk.choices) > 0:
                     if chunk.choices[0].delta.content:
@@ -413,7 +415,62 @@ class AIService:
                         first_token_time = time.time() - request_start
                         self.logger.info(f"⚡ First token: {first_token_time:.2f}s")
                     
+                    # ✅ SMART SENTENCE DETECTION WITH FORCE SPLIT
+                    should_yield = False
+                    split_reason = None
+                    
+                    # Check 1: Natural sentence ending
                     if re.search(r'[.!?。！？]\s*$', current_sentence):
+                        should_yield = True
+                        split_reason = "sentence_end"
+                    
+                    # Check 2: Force split at comma/semicolon if > 120 chars
+                    elif len(current_sentence) > 120:
+                        match = re.search(r'^(.*[,;，；])\s*', current_sentence)
+                        if match:
+                            to_yield = match.group(1).strip()
+                            current_sentence = current_sentence[match.end():].strip()
+                            
+                            if to_yield:
+                                sentence_count += 1
+                                cleaned = self.clean_text_for_tts(to_yield)
+                                
+                                if cleaned:
+                                    language = self.detect_language(cleaned)
+                                    
+                                    self.logger.info(
+                                        f"📤 Chunk {sentence_count} ({language}, split@comma, {len(to_yield)} chars): "
+                                        f"'{to_yield[:40]}...'"
+                                    )
+                                    
+                                    yield (to_yield, cleaned, language, False, None)
+                            
+                            continue
+                    
+                    # Check 3: Absolute max (180 chars) - force split anywhere
+                    elif len(current_sentence) > 180:
+                        self.logger.warning(f"⚠️ Force split at 180 chars")
+                        to_yield = current_sentence.strip()
+                        current_sentence = ""
+                        
+                        if to_yield:
+                            sentence_count += 1
+                            cleaned = self.clean_text_for_tts(to_yield)
+                            
+                            if cleaned:
+                                language = self.detect_language(cleaned)
+                                
+                                self.logger.info(
+                                    f"📤 Chunk {sentence_count} ({language}, force_split, {len(to_yield)} chars): "
+                                    f"'{to_yield[:40]}...'"
+                                )
+                                
+                                yield (to_yield, cleaned, language, False, None)
+                        
+                        continue
+                    
+                    # Normal sentence ending
+                    if should_yield:
                         original = current_sentence.strip()
                         
                         if original:
@@ -424,11 +481,11 @@ class AIService:
                                 language = self.detect_language(cleaned)
                                 
                                 self.logger.info(
-                                    f"📤 Sentence {sentence_count} ({language}): "
-                                    f"'{original[:50]}{'...' if len(original) > 50 else ''}'"
+                                    f"📤 Chunk {sentence_count} ({language}, {split_reason}, {len(original)} chars): "
+                                    f"'{original[:40]}...'"
                                 )
                                 
-                                yield (original, cleaned, language, False, None)  # ✅ Add None for music
+                                yield (original, cleaned, language, False, None)
                             
                             current_sentence = ""
             
@@ -440,11 +497,12 @@ class AIService:
                 if cleaned:
                     sentence_count += 1
                     language = self.detect_language(cleaned)
-                    yield (original, cleaned, language, True, None)  # ✅ Add None
+                    self.logger.info(f"📤 Final chunk {sentence_count} ({len(original)} chars)")
+                    yield (original, cleaned, language, True, None)
                 else:
-                    yield ("", "", "", True, None)  # ✅ Add None
+                    yield ("", "", "", True, None)
             else:
-                yield ("", "", "", True, None)  # ✅ Add None
+                yield ("", "", "", True, None)
             
             # Save to history
             self.conversation_history.append({
@@ -455,7 +513,7 @@ class AIService:
             request_time = time.time() - request_start
             
             self.logger.info(
-                f"🤖 Complete: {len(full_response)} chars, {sentence_count} sentences"
+                f"🤖 Complete: {len(full_response)} chars, {sentence_count} chunks"
             )
             self.logger.info(
                 f"⏱️  Timing: First token {first_token_time:.2f}s, Total {request_time:.2f}s"
@@ -483,10 +541,8 @@ class AIService:
                 "Xin lỗi, chị gặp lỗi khi xử lý.", 
                 "vi", 
                 True,
-                None  # ✅ Add None
+                None
             )
-
-
     async def chat(
         self,
         user_message: str,
@@ -496,21 +552,22 @@ class AIService:
         music_service=None
     ) -> Dict[str, Any]:
         """
-        💬 CHAT WITH FUNCTION CALLING SUPPORT
-        
-        ✅ NEW: Returns dict instead of tuple for music support
+        💬 CHAT WITH FUNCTION CALLING SUPPORT + SMART SPLITTING
         
         Returns dict with:
-        - response: str (text response)
+        - response: str (full text response)
         - cleaned_response: str (for TTS)
         - language: str
         - function_call: dict (if music function called)
         - music_result: dict (if music found)
+        - chunks: List[str] (✅ NEW: split response for TTS)
         """
         try:
             self.logger.info(f"💬 User: {user_message}")
             
-            # ✅ STEP 1: Check for music intent (DeepSeek fallback)
+            # ═══════════════════════════════════════════════════════════
+            # STEP 1: Check for music intent (DeepSeek fallback)
+            # ═══════════════════════════════════════════════════════════
             if not self.use_function_calling and music_service:
                 music_query = self.detect_music_intent(user_message)
                 
@@ -541,10 +598,13 @@ class AIService:
                                 'name': 'search_and_play_music',
                                 'arguments': {'query': music_query, 'method': 'keyword'}
                             },
-                            'music_result': first_result
+                            'music_result': first_result,
+                            'chunks': [response_text]  # ✅ Single chunk for music
                         }
             
-            # ✅ STEP 2: Normal chat with function calling (OpenAI/Azure)
+            # ═══════════════════════════════════════════════════════════
+            # STEP 2: Normal chat with function calling (OpenAI/Azure)
+            # ═══════════════════════════════════════════════════════════
             self.conversation_history.append({"role": "user", "content": user_message})
             
             if len(self.conversation_history) > self.max_context * 2:
@@ -567,7 +627,7 @@ class AIService:
                 request_params["tool_choice"] = "auto"
                 self.logger.info(f"🎵 Function calling enabled ({self.provider})")
             
-            # ✅ ADD THIS DEBUG LOGGING BEFORE THE API CALL
+            # ✅ DEBUG LOGGING
             self.logger.info(f"🔍 DEBUG - About to call API with:")
             self.logger.info(f"   Model: {request_params.get('model')}")
             self.logger.info(f"   Messages count: {len(request_params.get('messages', []))}")
@@ -575,25 +635,24 @@ class AIService:
             self.logger.info(f"   Temperature: {request_params.get('temperature')}")
             self.logger.info(f"   Max tokens: {request_params.get('max_tokens')}")
             
-            # Log the actual client configuration
             self.logger.info(f"🔍 DEBUG - Client config:")
             self.logger.info(f"   Base URL: {self.client.base_url}")
             self.logger.info(f"   API Key (first 20): {self.client.api_key[:20]}...")
             
-            # Log the EXACT request that will be sent
-            import json
             self.logger.info(f"🔍 EXACT REQUEST:")
             self.logger.info(f"   URL: {self.client.base_url}chat/completions")
             self.logger.info(f"   Headers: Authorization: Bearer {self.client.api_key[:20]}...")
             self.logger.info(f"   Body: {json.dumps(request_params, indent=2)}")
 
-            # Call API (works for all providers)
+            # Call API
             response = await self.client.chat.completions.create(**request_params)
             
             message = response.choices[0].message
             finish_reason = response.choices[0].finish_reason
             
-            # Handle function call
+            # ═══════════════════════════════════════════════════════════
+            # STEP 3: Handle function call
+            # ═══════════════════════════════════════════════════════════
             if finish_reason == 'tool_calls' and message.tool_calls:
                 tool_call = message.tool_calls[0]
                 function_name = tool_call.function.name
@@ -631,7 +690,8 @@ class AIService:
                                 'name': function_name,
                                 'arguments': function_args
                             },
-                            'music_result': first_result
+                            'music_result': first_result,
+                            'chunks': [response_text]  # ✅ Single chunk
                         }
                     else:
                         response_text = f"❌ Xin lỗi, tôi không tìm thấy bài hát '{query}'."
@@ -649,16 +709,26 @@ class AIService:
                             'cleaned_response': cleaned_text,
                             'language': language,
                             'function_call': None,
-                            'music_result': None
+                            'music_result': None,
+                            'chunks': [response_text]  # ✅ Single chunk
                         }
             
-            # Normal text response
+            # ═══════════════════════════════════════════════════════════
+            # STEP 4: Normal text response WITH SMART SPLITTING
+            # ═══════════════════════════════════════════════════════════
             response_text = message.content or "Tôi không chắc cách trả lời câu hỏi đó."
             
             self.conversation_history.append({
                 "role": "assistant",
                 "content": response_text
             })
+            
+            # ✅ SPLIT LONG RESPONSES INTO CHUNKS
+            chunks = self.split_long_response(response_text, max_chunk_size=150)
+            
+            self.logger.info(f"📊 Response split into {len(chunks)} chunks")
+            for i, chunk in enumerate(chunks, 1):
+                self.logger.info(f"   Chunk {i}: {len(chunk)} chars - '{chunk[:40]}...'")
             
             cleaned_text = self.clean_text_for_tts(response_text)
             language = self.detect_language(cleaned_text)
@@ -683,7 +753,8 @@ class AIService:
                 'cleaned_response': cleaned_text,
                 'language': language,
                 'function_call': None,
-                'music_result': None
+                'music_result': None,
+                'chunks': chunks  # ✅ RETURN CHUNKS FOR TTS
             }
         
         except Exception as e:
@@ -696,7 +767,8 @@ class AIService:
                 'cleaned_response': error_text,
                 'language': 'vi',
                 'function_call': None,
-                'music_result': None
+                'music_result': None,
+                'chunks': [error_text]  # ✅ Single chunk for error
             }
 
     def clear_history(self):

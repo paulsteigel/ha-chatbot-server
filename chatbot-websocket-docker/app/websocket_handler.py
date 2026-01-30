@@ -1,7 +1,7 @@
 # File: app/websocket_handler.py
 """
 WebSocket Handler - Handles WebSocket connections and messages
-✅ UPDATED: handle_voice() now uses streaming chunks
+✅ UPDATED: All methods now support smart chunking for better TTS performance
 """
 
 import logging
@@ -24,7 +24,7 @@ class WebSocketHandler:
         tts_service, 
         stt_service,
         conversation_logger=None,
-        music_service=None  # ✅ ADD THIS
+        music_service=None
     ):
         """Initialize WebSocket Handler"""
         self.logger = logging.getLogger('WebSocketHandler')
@@ -34,22 +34,20 @@ class WebSocketHandler:
         self.tts_service = tts_service
         self.stt_service = stt_service
         self.conversation_logger = conversation_logger
-        self.music_service = music_service  # ✅ ADD THIS
+        self.music_service = music_service
         self.command_detector = CommandDetector()
-        self.logger.info("🔌 WebSocket Handler initialized")
+        self.logger.info("🔌 WebSocket Handler initialized with smart chunking")
     
-    async def handle_connection(self, websocket: WebSocket):  # ← BỎ device_id
+    async def handle_connection(self, websocket: WebSocket):
         """Handle WebSocket connection"""
         
-        # ✅ TẠO TEMP ID
         temp_id = f"temp-{id(websocket)}"
-        device_id = None  # ← Chưa biết device_id thật
+        device_id = None
         
         try:
             await websocket.accept()
             self.logger.info(f"📱 New WebSocket connection: {temp_id}")
             
-            # ✅ ADD CONNECTION với temp_id
             await self.device_manager.add_connection(temp_id, websocket)
             
             while True:
@@ -64,11 +62,10 @@ class WebSocketHandler:
                             timeout=300.0
                         )
                         
-                        # ✅ THÊM LOG ĐỂ DEBUG
                         data_len = len(data)
                         self.logger.info(f"📦 Received {data_len} bytes from {temp_id if not device_id else device_id}")
                         
-                        if data_len > 100000:  # > 100KB
+                        if data_len > 100000:
                             self.logger.warning(f"⚠️ Large message: {data_len / 1024:.1f} KB")
                             
                     except asyncio.TimeoutError:
@@ -76,7 +73,6 @@ class WebSocketHandler:
                         await self.send_message(temp_id, {"type": "ping"})
                         continue
                     
-                    # ✅ THÊM LOG TRƯỚC KHI PARSE JSON
                     try:
                         message = json.loads(data)
                     except json.JSONDecodeError as e:
@@ -85,32 +81,24 @@ class WebSocketHandler:
                         await self.send_error(device_id or temp_id, "Invalid JSON format")
                         continue
                     
-                    message = json.loads(data)
                     message_type = message.get('type', 'unknown')
                     
                     self.logger.info(f"📨 Message from {temp_id if not device_id else device_id}: {message_type}")
                     
-                    # ✅ NẾU LÀ REGISTER → UPDATE device_id
                     if message_type == "register" and not device_id:
                         device_id_from_msg = message.get("device_id")
                         
                         if device_id_from_msg:
-                            # Update device_id
                             device_id = device_id_from_msg
                             
-                            # Remove temp connection
                             await self.device_manager.remove_connection(temp_id)
-                            
-                            # Add real connection
                             await self.device_manager.add_connection(device_id, websocket)
                             
                             self.logger.info(f"✅ Device registered: {device_id}")
                             
-                            # Handle registration
                             await self.handle_register(message)
                             continue
                     
-                    # ✅ ROUTE MESSAGE với device_id ĐÚNG
                     current_id = device_id if device_id else temp_id
                     await self.route_message(current_id, message)
                     
@@ -140,14 +128,12 @@ class WebSocketHandler:
             self.logger.error(f"❌ Connection error: {e}", exc_info=True)
             
         finally:
-            # ✅ CLEANUP với device_id ĐÚNG
             final_id = device_id if device_id else temp_id
             await self.device_manager.remove_connection(final_id)
             self.logger.info(f"📱 Connection closed: {final_id}")
   
     async def route_message(self, device_id: str, message: Dict):
         """Route message to appropriate handler"""
-        # ← KEEP: This stays exactly the same
         message_type = message.get("type")
         
         handlers = {
@@ -169,9 +155,6 @@ class WebSocketHandler:
             self.logger.warning(f"⚠️ Unknown message type: {message_type}")
             await self.send_error(device_id, f"Unknown message type: {message_type}")
     
-    # ═══════════════════════════════════════════════════════════════════
-    # ← KEEP: These methods stay exactly the same
-    # ═══════════════════════════════════════════════════════════════════
     async def handle_register(self, data: Dict):
         """Handle device registration"""
         try:
@@ -198,11 +181,12 @@ class WebSocketHandler:
         except Exception as e:
             self.logger.error(f"❌ Registration error: {e}", exc_info=True)
             await self.send_error(data.get("device_id"), f"Registration error: {e}")
-    # app/websocket_handler.py
-    # Replace these two methods
 
+    # ═══════════════════════════════════════════════════════════════════
+    # ✅ UPDATED: handle_chat() - NOW WITH CHUNK PROCESSING
+    # ═══════════════════════════════════
     async def handle_chat(self, data: Dict):
-        """Handle chat message from web interface"""
+        """Handle chat message from web interface with smart chunking"""
         try:
             device_id = data.get("device_id")
             text = data.get("text", "")
@@ -216,22 +200,25 @@ class WebSocketHandler:
             device_info = self.device_manager.devices.get(device_id, {})
             device_type = device_info.get('type', 'unknown')
             
-            # ✅ Call AI with music service (returns dict)
+            # ─────────────────────────────────────────────────────────
+            # STEP 1: GET AI RESPONSE (with chunks)
+            # ─────────────────────────────────────────────────────────
             ai_response = await self.ai_service.chat(
                 user_message=text,
                 conversation_logger=self.conversation_logger,
                 device_id=device_id,
                 device_type=device_type,
-                music_service=self.music_service  # ✅ Pass music service
+                music_service=self.music_service
             )
 
-            # ✅ Handle music playback
+            # ─────────────────────────────────────────────────────────
+            # STEP 2: HANDLE MUSIC PLAYBACK (if found)
+            # ─────────────────────────────────────────────────────────
             if ai_response.get('music_result'):
                 music = ai_response['music_result']
                 
                 self.logger.info(f"🎵 Music found: {music['title']}")
                 
-                # Send music command to web player
                 await self.send_message(device_id, {
                     "type": "play_music",
                     "title": music['title'],
@@ -241,21 +228,51 @@ class WebSocketHandler:
                     "video_id": music['id']
                 })
 
-            # ✅ Send text response (use 'response' key from dict)
+            # ─────────────────────────────────────────────────────────
+            # STEP 3: PROCESS CHUNKS FOR TTS
+            # ─────────────────────────────────────────────────────────
             response_text = ai_response['response']
-            cleaned_text = ai_response['cleaned_response']
-            language = ai_response['language']
-
-            # Generate audio
-            audio_base64 = await self.tts_service.synthesize(cleaned_text, language)
-
-            # Send combined response
+            chunks = ai_response.get('chunks', [response_text])
+            
+            self.logger.info(f"📊 Processing {len(chunks)} chunks for TTS")
+            
+            for i, chunk_text in enumerate(chunks, 1):
+                cleaned_chunk = self.ai_service.clean_text_for_tts(chunk_text)
+                language = self.ai_service.detect_language(cleaned_chunk)
+                
+                # Synthesize each chunk
+                audio_bytes, provider = await self.tts_service.synthesize_chunk(
+                    chunk_text, cleaned_chunk, language
+                )
+                
+                if audio_bytes:
+                    audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+                    
+                    # Send chunk to client
+                    await self.send_message(device_id, {
+                        "type": "audio_chunk",
+                        "audio": audio_base64,
+                        "text": chunk_text,
+                        "chunk": i,
+                        "total_chunks": len(chunks),
+                        "is_final": (i == len(chunks)),
+                        "format": "wav",
+                        "language": language,
+                        "tts_provider": provider
+                    })
+                    
+                    self.logger.info(
+                        f"📤 Sent chunk {i}/{len(chunks)}: {len(audio_bytes)} bytes "
+                        f"({provider}) - '{chunk_text[:40]}...'"
+                    )
+            
+            # ─────────────────────────────────────────────────────────
+            # STEP 4: SEND COMPLETION MESSAGE
+            # ─────────────────────────────────────────────────────────
             await self.send_message(device_id, {
-                "type": "chat_response",
-                "text": response_text,
-                "audio": audio_base64,
-                "audio_format": "wav",
-                "language": language
+                "type": "chat_response_complete",
+                "full_text": response_text,
+                "total_chunks": len(chunks)
             })
             
         except Exception as e:
@@ -263,8 +280,11 @@ class WebSocketHandler:
             await self.send_error(device_id, f"Chat error: {e}")
 
 
+    # ═══════════════════════════════════════════════════════════════════
+    # ✅ UPDATED: handle_text() - NOW WITH CHUNK PROCESSING
+    # ═══════════════════════════════════════════════════════════════════
     async def handle_text(self, data: Dict):
-        """Handle text message from ESP32"""
+        """Handle text message from ESP32 with smart chunking"""
         try:
             device_id = data.get("device_id")
             text = data.get("text", "")
@@ -278,22 +298,25 @@ class WebSocketHandler:
             device_info = self.device_manager.devices.get(device_id, {})
             device_type = device_info.get('type', 'unknown')
             
-            # ✅ Call AI with music service (returns dict)
+            # ─────────────────────────────────────────────────────────
+            # STEP 1: GET AI RESPONSE (with chunks)
+            # ─────────────────────────────────────────────────────────
             ai_response = await self.ai_service.chat(
                 user_message=text,
                 conversation_logger=self.conversation_logger,
                 device_id=device_id,
                 device_type=device_type,
-                music_service=self.music_service  # ✅ Pass music service
+                music_service=self.music_service
             )
 
-            # ✅ Handle music playback
+            # ─────────────────────────────────────────────────────────
+            # STEP 2: HANDLE MUSIC PLAYBACK (if found)
+            # ─────────────────────────────────────────────────────────
             if ai_response.get('music_result'):
                 music = ai_response['music_result']
                 
                 self.logger.info(f"🎵 Music found: {music['title']}")
                 
-                # Send music command to ESP32
                 await self.send_message(device_id, {
                     "type": "play_music",
                     "title": music['title'],
@@ -303,36 +326,59 @@ class WebSocketHandler:
                     "video_id": music['id']
                 })
 
-            # ✅ Extract values from dict
+            # ─────────────────────────────────────────────────────────
+            # STEP 3: SEND TEXT RESPONSE FIRST
+            # ─────────────────────────────────────────────────────────
             response_text = ai_response['response']
-            cleaned_text = ai_response['cleaned_response']
             language = ai_response['language']
 
-            # Send text response
             await self.send_message(device_id, {
                 "type": "text",
                 "text": response_text,
                 "language": language
             })
 
-            # Generate and send audio
-            audio_base64 = await self.tts_service.synthesize(cleaned_text, language)
-
-            if audio_base64:
-                await self.send_message(device_id, {
-                    "type": "audio",
-                    "audio": audio_base64,
-                    "format": "wav",
-                    "language": language
-                })
+            # ─────────────────────────────────────────────────────────
+            # STEP 4: PROCESS CHUNKS FOR TTS
+            # ─────────────────────────────────────────────────────────
+            chunks = ai_response.get('chunks', [response_text])
+            
+            self.logger.info(f"📊 Processing {len(chunks)} chunks for TTS")
+            
+            for i, chunk_text in enumerate(chunks, 1):
+                cleaned_chunk = self.ai_service.clean_text_for_tts(chunk_text)
+                chunk_language = self.ai_service.detect_language(cleaned_chunk)
+                
+                # Synthesize each chunk
+                audio_bytes, provider = await self.tts_service.synthesize_chunk(
+                    chunk_text, cleaned_chunk, chunk_language
+                )
+                
+                if audio_bytes:
+                    audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+                    
+                    # Send audio chunk
+                    await self.send_message(device_id, {
+                        "type": "audio",
+                        "audio": audio_base64,
+                        "format": "wav",
+                        "language": chunk_language,
+                        "chunk": i,
+                        "total_chunks": len(chunks),
+                        "is_final": (i == len(chunks)),
+                        "tts_provider": provider
+                    })
+                    
+                    self.logger.info(
+                        f"📤 Sent audio chunk {i}/{len(chunks)}: {len(audio_bytes)} bytes "
+                        f"({provider}) - '{chunk_text[:40]}...'"
+                    )
             
         except Exception as e:
             self.logger.error(f"❌ Text error: {e}", exc_info=True)
             await self.send_error(device_id, f"Text error: {e}")
-   
-    
     # ═══════════════════════════════════════════════════════════════════
-    # ← MODIFIED: handle_voice() - NEW STREAMING IMPLEMENTATION
+    # ✅ KEEP: handle_voice() - Already uses streaming with smart splitting
     # ═══════════════════════════════════════════════════════════════════
     async def handle_voice(self, data: Dict):
         """Handle voice message with streaming response + music support"""
@@ -421,15 +467,15 @@ class WebSocketHandler:
             
             full_original_text = ""
             sentence_count = 0
-            music_sent = False  # ✅ Track if music was sent
+            music_sent = False
             
-            # ✅ FIXED: Unpack 5 values including music_result!
+            # ✅ Stream with smart splitting (already implemented in ai_service)
             async for original, cleaned, language, is_last, music_result in self.ai_service.chat_stream(
                 user_message=text,
                 conversation_logger=self.conversation_logger,
                 device_id=device_id,
                 device_type=device_type,
-                music_service=self.music_service  # ✅ Pass music service!
+                music_service=self.music_service
             ):
                 # ─────────────────────────────────────────────────────
                 # STEP 5: HANDLE MUSIC PLAYBACK (if found)
@@ -533,7 +579,7 @@ class WebSocketHandler:
             await self.send_error(device_id, f"Voice error: {e}")
     
     # ═══════════════════════════════════════════════════════════════════
-    # ← KEEP: These methods stay exactly the same
+    # UTILITY METHODS - Keep unchanged
     # ═══════════════════════════════════════════════════════════════════
     async def handle_ping(self, data: Dict):
         """Handle ping message"""
