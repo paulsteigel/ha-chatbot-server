@@ -59,7 +59,15 @@ def get_config(key: str, default=None):
 class TTSService:
     """Text-to-Speech service with multi-provider support."""
     
-    def __init__(self, provider: str = None, api_key: str = None, base_url: str = None):
+    def __init__(
+        self, 
+        provider: str = None, 
+        api_key: str = None, 
+        base_url: str = None,
+        region: str = None,
+        piper_host: str = None,
+        piper_port: int = None
+        ):
         """Initialize TTS service with dynamic config."""
         
         self.config = self._build_config()
@@ -83,7 +91,7 @@ class TTSService:
                 get_config("azure_speech_key", "") or api_key or ""
             ).strip()
             
-            self.azure_speech_region = get_config("azure_speech_region", "eastus")
+            self.azure_speech_region = (region or get_config("azure_speech_region", "eastus"))
             
             if self.azure_speech_key:
                 # ✅ TRY TO INITIALIZE SDK (if available)
@@ -167,18 +175,19 @@ class TTSService:
         
         logger.info(f"   Output: WAV 16kHz mono for ESP32")
     
-    def _build_config(self) -> dict:
+    def _build_config(self, piper_host=None, piper_port=None) -> dict:
         """Build full config dict for Wyoming client."""
         return {
             'tts': {
                 'piper': {
-                    'host': get_config('piper_host', 'addon_core_piper'),
-                    'port': int(get_config('piper_port', 10200))
+                    'host': piper_host or get_config('piper_host', 'addon_core_piper'),
+                    'port': piper_port or int(get_config('piper_port', 10200))
                 }
             },
             'piper_voice_vi': get_config('piper_voice_vi', 'vi_VN-vais1000-medium'),
             'piper_voice_en': get_config('piper_voice_en', 'en_US-lessac-medium')
         }
+
     
     async def _init_wyoming_client(self):
         """Initialize Wyoming client (lazy load)."""

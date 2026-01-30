@@ -363,28 +363,33 @@ async def lifespan(app: FastAPI):
         # ============================================================
         tts_provider = config.get('tts_provider', 'azure_speech').lower()
         logger.info(f"🔊 Initializing TTS Service (provider: {tts_provider})...")
-
+        
         if tts_provider == 'azure_speech':
             azure_speech_key = config.get('azure_speech_key')
+            azure_speech_region = config.get('azure_speech_region', 'eastus')
             
             if not azure_speech_key:
                 logger.warning("⚠️ azure_speech_key not found, falling back to Piper")
                 tts_provider = 'piper'
             else:
-                logger.info("🔊 Using Azure Speech (SDK + REST API)")
-                # ✅ FIXED: Don't pass region - service gets it from config!
+                logger.info("🔊 Using Azure Speech REST API")
                 tts_service = TTSService(
                     provider='azure_speech',
-                    api_key=azure_speech_key
+                    api_key=azure_speech_key,
+                    region=azure_speech_region,
+                    base_url=None
                 )
-
+        
         if tts_provider == 'piper':
-            logger.info("🔊 Using Piper TTS")
-            # ✅ FIXED: Don't pass piper_host/port - service gets from config!
+            piper_host = config.get('piper_host', 'addon_core_piper')
+            piper_port = int(config.get('piper_port', 10200))
+            logger.info(f"🔊 Using Piper TTS: {piper_host}:{piper_port}")
             tts_service = TTSService(
-                provider='piper'
+                provider='piper',
+                piper_host=piper_host,
+                piper_port=piper_port
             )
-
+        
         elif tts_provider == 'openai':
             openai_key = config.get('openai_api_key')
             openai_url = config.get('openai_base_url', 'https://api.openai.com/v1')
@@ -398,9 +403,8 @@ async def lifespan(app: FastAPI):
                 api_key=openai_key,
                 base_url=openai_url
             )
-
+        
         logger.info(f"✅ TTS Service initialized: {tts_provider}")
-
         
         # ============================================================
         # STEP 7: Initialize STT Service
