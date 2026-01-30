@@ -1,8 +1,0 @@
-#!/bin/sh
-set -e
-
-echo "Starting YouTube Audio Streaming..."
-cd /app || exit 1
-
-echo "Starting Flask server on port 5000..."
-exec python3 server.py
