@@ -580,6 +580,13 @@ class AIService:
             self.logger.info(f"   Base URL: {self.client.base_url}")
             self.logger.info(f"   API Key (first 20): {self.client.api_key[:20]}...")
             
+            # Log the EXACT request that will be sent
+            import json
+            self.logger.info(f"🔍 EXACT REQUEST:")
+            self.logger.info(f"   URL: {self.client.base_url}chat/completions")
+            self.logger.info(f"   Headers: Authorization: Bearer {self.client.api_key[:20]}...")
+            self.logger.info(f"   Body: {json.dumps(request_params, indent=2)}")
+
             # Call API (works for all providers)
             response = await self.client.chat.completions.create(**request_params)
             
