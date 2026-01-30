@@ -563,11 +563,12 @@
                     addMessage('bot', data.text);
                     break;
                 case 'audio_chunk':
-                    console.log(`📦 Chunk ${data.chunk_index}: "${data.chunk_text}"`);
+                    // ✅ FIX: Use 'text' field instead of 'chunk_text'
+                    console.log(`📦 Chunk ${data.chunk || 'unknown'}: "${data.text}"`);
                     if (!currentBotMessageDiv) {
-                        currentBotMessageDiv = addMessage('bot', data.chunk_text, false, true);
+                        currentBotMessageDiv = addMessage('bot', data.text, false, true);
                     } else {
-                        appendToMessage(currentBotMessageDiv, ' ' + data.chunk_text);
+                        appendToMessage(currentBotMessageDiv, ' ' + data.text);
                     }
                     if (data.audio) {
                         queueAudio(data.audio, data.format || 'wav');
@@ -577,6 +578,7 @@
                         currentBotMessageDiv = null;
                     }
                     break;
+
                 case 'ai_response_complete':
                     console.log(`✅ Complete: ${data.total_chunks} chunks`);
                     removeTypingIndicator();
