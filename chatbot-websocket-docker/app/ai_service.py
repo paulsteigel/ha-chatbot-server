@@ -91,20 +91,24 @@ class AIService:
             # ✅ Initialize appropriate client
             if self.provider == "azure":
                 self.logger.info(f"   Azure Endpoint: {base_url}")
+    
+                # ✅ DEBUG: Log what we're using
                 self.logger.info(f"   🔍 DEBUG - API Key (first 20 chars): {api_key[:20]}...")
                 self.logger.info(f"   🔍 DEBUG - Base URL: {base_url}")
                 self.logger.info(f"   🔍 DEBUG - Model: {model}")
-    
+                
                 # Azure AI Foundry uses OpenAI-compatible API
-                # ✅ FIXED: Add api-key header for Azure authentication
+                # ✅ CRITICAL: Don't pass api_key to constructor!
+                # Azure expects ONLY "api-key" header, not "Authorization: Bearer"
                 self.client = AsyncOpenAI(
-                    api_key=api_key,
-                    base_url=base_url,  # Already includes /openai/v1/
+                    api_key="dummy-key-not-used",  # ← Dummy key to satisfy constructor
+                    base_url=base_url,
                     default_headers={
-                        "api-key": api_key  # ← CRITICAL! Azure requires this header
+                        "api-key": api_key  # ← Real key goes here ONLY
                     }
                 )
-                self.logger.info("✅ Using AsyncOpenAI with Azure headers (Foundry method)")
+                
+                self.logger.info("✅ Using AsyncOpenAI with Azure api-key header (Foundry method)")
             else:
                 # OpenAI or DeepSeek (OpenAI-compatible)
                 self.client = AsyncOpenAI(
