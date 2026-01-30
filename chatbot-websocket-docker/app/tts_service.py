@@ -66,8 +66,9 @@ class TTSService:
         base_url: str = None,
         region: str = None,
         piper_host: str = None,
-        piper_port: int = None
-        ):
+        piper_port: int = None,
+        azure_speech_endpoint: str = None  # ✅ ADD THIS
+    ):
         """Initialize TTS service with dynamic config."""
         
         self.config = self._build_config()
@@ -83,7 +84,8 @@ class TTSService:
         # ═══════════════════════════════════════════════════════════
         self.azure_speech_key = None
         self.azure_speech_region = None
-        self.speech_config = None  # ✅ SDK config
+        self.azure_speech_endpoint = None  # ✅ ADD THIS
+        self.speech_config = None
         
         if self.provider == "azure_speech":
             # Get credentials
@@ -91,36 +93,54 @@ class TTSService:
                 get_config("azure_speech_key", "") or api_key or ""
             ).strip()
             
-            self.azure_speech_region = (region or get_config("azure_speech_region", "eastus"))
+            self.azure_speech_region = (
+                region or get_config("azure_speech_region", "eastus")
+            )
+            
+            # ✅ GET ENDPOINT (PRIORITY!)
+            self.azure_speech_endpoint = (
+                azure_speech_endpoint or 
+                get_config("azure_speech_endpoint", "")
+            ).strip()
             
             if self.azure_speech_key:
-                # ✅ TRY TO INITIALIZE SDK (if available)
+                # ✅ TRY TO INITIALIZE SDK
                 if AZURE_SDK_AVAILABLE:
                     try:
-                        self.speech_config = speechsdk.SpeechConfig(
-                            subscription=self.azure_speech_key,
-                            region=self.azure_speech_region
-                        )
+                        # ✅ USE ENDPOINT IF AVAILABLE (LIKE PLAYGROUND!)
+                        if self.azure_speech_endpoint:
+                            logger.info(f"🔊 Using Azure Speech ENDPOINT (like playground)")
+                            logger.info(f"   Endpoint: {self.azure_speech_endpoint}")
+                            
+                            self.speech_config = speechsdk.SpeechConfig(
+                                subscription=self.azure_speech_key,
+                                endpoint=self.azure_speech_endpoint  # ✅ LIKE PLAYGROUND!
+                            )
+                        else:
+                            logger.info(f"🔊 Using Azure Speech REGION (slower)")
+                            logger.info(f"   Region: {self.azure_speech_region}")
+                            
+                            self.speech_config = speechsdk.SpeechConfig(
+                                subscription=self.azure_speech_key,
+                                region=self.azure_speech_region
+                            )
                         
-                        # Set output format to WAV 16kHz mono
+                        # Set output format
                         self.speech_config.set_speech_synthesis_output_format(
                             speechsdk.SpeechSynthesisOutputFormat.Riff16Khz16BitMonoPcm
                         )
                         
-                        logger.info("✅ Azure Speech SDK configured")
-                        logger.info(f"   Region: {self.azure_speech_region}")
+                        logger.info("✅ Azure Speech SDK configured successfully")
                         logger.info(f"   Output: WAV 16kHz mono")
                         logger.info(f"   Method: SDK (fast!)")
+                        
                     except Exception as e:
-                        logger.warning(f"⚠️ Azure Speech SDK init failed: {e}")
+                        logger.error(f"❌ Azure Speech SDK init failed: {e}", exc_info=True)
                         logger.info("   Fallback: Will use REST API")
                         self.speech_config = None
                 else:
-                    logger.info("⚠️ Azure Speech SDK not available (Alpine?)")
+                    logger.warning("⚠️ Azure Speech SDK not available")
                     logger.info("   Using REST API (slower)")
-                
-                # Log configuration
-                logger.info(f"   Key length: {len(self.azure_speech_key)} chars")
             else:
                 logger.error("❌ Azure Speech key not found!")
         
@@ -233,14 +253,14 @@ class TTSService:
         try:
             if current_provider == "azure_speech":
                 # ✅ TRY SDK FIRST (if available)
-                #if self.speech_config and AZURE_SDK_AVAILABLE:
-                #    try:
-                #        wav_bytes = await self._synthesize_azure_speech_sdk(
-                #            cleaned_text, language
-                #        )
-                #        return wav_bytes, "azure_speech_sdk"
-                #    except Exception as sdk_error:
-                #        logger.warning(f"⚠️ SDK failed: {sdk_error}, trying REST API...")
+                if self.speech_config and AZURE_SDK_AVAILABLE:
+                    try:
+                        wav_bytes = await self._synthesize_azure_speech_sdk(
+                            cleaned_text, language
+                        )
+                        return wav_bytes, "azure_speech_sdk"
+                    except Exception as sdk_error:
+                        logger.warning(f"⚠️ SDK failed: {sdk_error}, trying REST API...")
                 
                 # ✅ FALLBACK TO REST API
                 if AIOHTTP_AVAILABLE:
@@ -305,51 +325,71 @@ class TTSService:
     ) -> bytes:
         """
         Synthesize using Azure Speech SDK (FAST! < 2s)
+        ✅ EXACTLY LIKE PLAYGROUND SAMPLE
         Returns WAV 16kHz bytes.
         """
-        if not AZURE_SDK_AVAILABLE or not self.speech_config:
-            raise Exception("Azure Speech SDK not available")
+        if not AZURE_SDK_AVAILABLE:
+            raise Exception("Azure Speech SDK not installed")
+        
+        if not self.speech_config:
+            raise Exception("Azure Speech SDK not configured")
         
         # Get voice name
         voice_vi = get_config("tts_voice_vi", "vi-VN-HoaiMyNeural")
         voice_en = get_config("tts_voice_en", "en-US-AvaMultilingualNeural")
         voice_name = voice_vi if language == "vi" else voice_en
         
-        # Set voice
+        # ✅ Set voice (EXACTLY LIKE PLAYGROUND)
         self.speech_config.speech_synthesis_voice_name = voice_name
         
-        # Create synthesizer (output to memory)
-        synthesizer = speechsdk.SpeechSynthesizer(
+        # ✅ Create synthesizer (EXACTLY LIKE PLAYGROUND)
+        speech_synthesizer = speechsdk.SpeechSynthesizer(
             speech_config=self.speech_config,
             audio_config=None  # Output to memory
         )
         
-        logger.debug(f"🔊 Azure SDK: voice={voice_name}, text='{text[:50]}...'")
+        logger.info(f"🔊 Azure SDK synthesizing...")
+        logger.info(f"   Voice: {voice_name}")
+        logger.info(f"   Text: '{text[:50]}...'")
+        logger.info(f"   Length: {len(text)} chars")
         
-        # Synthesize (FAST!)
+        # ✅ Synthesize (EXACTLY LIKE PLAYGROUND)
         def _sync_synthesize():
-            return synthesizer.speak_text_async(text).get()
+            return speech_synthesizer.speak_text_async(text).get()
         
-        # Run in executor to avoid blocking
+        # Run in executor to avoid blocking event loop
+        import time
+        start_time = time.time()
+        
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(None, _sync_synthesize)
         
+        elapsed = time.time() - start_time
+        
+        # ✅ Check result (EXACTLY LIKE PLAYGROUND)
         if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
             wav_bytes = result.audio_data
-            logger.info(f"✅ Azure Speech SDK: {len(wav_bytes)} bytes (WAV 16kHz)")
+            logger.info(f"✅ Azure Speech SDK SUCCESS!")
+            logger.info(f"   Audio size: {len(wav_bytes)} bytes")
+            logger.info(f"   Time: {elapsed:.2f}s")
+            logger.info(f"   Speed: {len(text)/elapsed:.1f} chars/sec")
             return wav_bytes
         
         elif result.reason == speechsdk.ResultReason.Canceled:
-            cancellation = result.cancellation_details
-            error_msg = f"Azure Speech SDK error: {cancellation.reason}"
-            if cancellation.error_details:
-                error_msg += f" - {cancellation.error_details}"
+            cancellation_details = result.cancellation_details
+            
+            error_msg = f"Speech synthesis canceled: {cancellation_details.reason}"
+            
+            if cancellation_details.reason == speechsdk.CancellationReason.Error:
+                error_msg += f"\n   Error code: {cancellation_details.error_code}"
+                error_msg += f"\n   Error details: {cancellation_details.error_details}"
+            
             logger.error(f"❌ {error_msg}")
             raise Exception(error_msg)
         
         else:
-            raise Exception(f"Azure Speech SDK failed: {result.reason}")
-    
+            raise Exception(f"Unexpected SDK result: {result.reason}")
+
     # ═══════════════════════════════════════════════════════════════════
     # AZURE SPEECH REST API METHOD (FALLBACK)
     # ═══════════════════════════════════

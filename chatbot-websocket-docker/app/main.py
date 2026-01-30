@@ -407,25 +407,30 @@ async def reload_services():
         )
         logger.info(f"✅ AI Service reloaded: {model}")
         
-        # ============================================================
         # Reload TTS Service
-        # ============================================================
         tts_provider = config.get('tts_provider', 'azure_speech').lower()
         logger.info(f"🔊 Reloading TTS Service (provider: {tts_provider})...")
-        
+
         if tts_provider == 'azure_speech':
             azure_speech_key = config.get('azure_speech_key', '')
             azure_speech_region = config.get('azure_speech_region', 'eastus')
+            azure_speech_endpoint = config.get('azure_speech_endpoint', '')  # ✅ ADD THIS
             
             if not azure_speech_key:
                 logger.warning("⚠️ azure_speech_key not found, falling back to Piper")
                 tts_provider = 'piper'
             else:
+                # ✅ Log what we're using
+                if azure_speech_endpoint:
+                    logger.info(f"🔊 Reloading Azure Speech with ENDPOINT")
+                else:
+                    logger.info(f"🔊 Reloading Azure Speech with REGION")
+                
                 tts_service = TTSService(
                     provider='azure_speech',
                     api_key=azure_speech_key,
                     region=azure_speech_region,
-                    base_url=None
+                    azure_speech_endpoint=azure_speech_endpoint  # ✅ ADD THIS
                 )
         
         if tts_provider == 'piper':
@@ -658,26 +663,32 @@ async def lifespan(app: FastAPI):
         
         logger.info(f"✅ AI Service initialized: {model}")
         
-        # ============================================================
         # STEP 6: Initialize TTS Service
-        # ============================================================
         tts_provider = config.get('tts_provider', 'azure_speech').lower()
         logger.info(f"🔊 Initializing TTS Service (provider: {tts_provider})...")
-        
+
         if tts_provider == 'azure_speech':
             azure_speech_key = config.get('azure_speech_key')
             azure_speech_region = config.get('azure_speech_region', 'eastus')
+            azure_speech_endpoint = config.get('azure_speech_endpoint')  # ✅ ADD THIS
             
             if not azure_speech_key:
                 logger.warning("⚠️ azure_speech_key not found, falling back to Piper")
                 tts_provider = 'piper'
             else:
-                logger.info("🔊 Using Azure Speech REST API")
+                # ✅ Log what we're using
+                if azure_speech_endpoint:
+                    logger.info(f"🔊 Using Azure Speech SDK with ENDPOINT")
+                    logger.info(f"   Endpoint: {azure_speech_endpoint}")
+                else:
+                    logger.info(f"🔊 Using Azure Speech SDK with REGION")
+                    logger.info(f"   Region: {azure_speech_region}")
+                
                 tts_service = TTSService(
                     provider='azure_speech',
                     api_key=azure_speech_key,
                     region=azure_speech_region,
-                    base_url=None
+                    azure_speech_endpoint=azure_speech_endpoint  # ✅ ADD THIS
                 )
         
         if tts_provider == 'piper':
@@ -1238,6 +1249,7 @@ async def update_config(key: str, data: dict, user: dict = Depends(get_current_u
     except Exception as e:
         logger.error(f"❌ Update config error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/reload")
 async def reload_services_endpoint(user: dict = Depends(get_current_user)):
     """Reload all services with new configuration (protected)"""
