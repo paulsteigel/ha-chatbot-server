@@ -85,10 +85,6 @@ class WebSocketHandler:
                         await self.send_error(device_id or temp_id, "Invalid JSON format")
                         continue
                     
-                    message_type = message.get('type', 'unknown')
-                    
-                    self.logger.info(f"📨 Message from {temp_id if not device_id else device_id}: {message_type}")
-
                     message = json.loads(data)
                     message_type = message.get('type', 'unknown')
                     

@@ -349,12 +349,24 @@ async def reload_services():
     logger.info("=" * 80)
     
     try:
-        # Load fresh config from database
+        # ============================================================
+        # STEP 1: Load fresh config
+        # ============================================================
         config = await config_manager.load_config()
         logger.info(f"✅ Loaded {len(config)} config items from database")
         
         # ============================================================
-        # RELOAD AI SERVICE
+        # STEP 2: Close old services gracefully
+        # ============================================================
+        if music_service:
+            try:
+                await music_service.close()
+                logger.info("🎵 Old music service closed")
+            except Exception as e:
+                logger.warning(f"⚠️ Error closing music service: {e}")
+        
+        # ============================================================
+        # STEP 3: Reload AI Service
         # ============================================================
         ai_provider = config.get('ai_provider', 'azure').lower()
         logger.info(f"🤖 Reloading AI Service (provider: {ai_provider})...")
@@ -391,7 +403,7 @@ async def reload_services():
         logger.info(f"✅ AI Service reloaded: {model}")
         
         # ============================================================
-        # RELOAD TTS SERVICE
+        # STEP 4: Reload TTS Service
         # ============================================================
         tts_provider = config.get('tts_provider', 'azure_speech').lower()
         logger.info(f"🔊 Reloading TTS Service (provider: {tts_provider})...")
@@ -432,7 +444,7 @@ async def reload_services():
         logger.info(f"✅ TTS Service reloaded: {tts_provider}")
         
         # ============================================================
-        # RELOAD STT SERVICE
+        # STEP 5: Reload STT Service
         # ============================================================
         stt_provider = config.get('stt_provider', 'azure_speech').lower()
         logger.info(f"🎤 Reloading STT Service (provider: {stt_provider})...")
@@ -475,34 +487,54 @@ async def reload_services():
         logger.info(f"✅ STT Service reloaded: {stt_provider}")
         
         # ============================================================
-        # RELOAD MUSIC SERVICE
+        # STEP 6: Reload Music Service
         # ============================================================
         enable_music = safe_bool(config.get('enable_music_playback', True))
         music_url = config.get('music_service_url', 'http://music.sfdp.net')
         
         if enable_music:
-            if music_service:
-                await music_service.close()
             music_service = MusicService(music_url)
             logger.info(f"✅ Music Service reloaded: {music_url}")
         else:
-            if music_service:
-                await music_service.close()
-                music_service = None
+            music_service = None
             logger.info("⚠️ Music Service disabled")
         
         # ============================================================
-        # UPDATE WEBSOCKET HANDLER REFERENCES
+        # STEP 7: Update WebSocket Handler (for NEW connections)
         # ============================================================
         if ws_handler:
             ws_handler.ai_service = ai_service
             ws_handler.tts_service = tts_service
             ws_handler.stt_service = stt_service
             ws_handler.music_service = music_service
-            logger.info("✅ WebSocket handler updated with new services")
+            logger.info("✅ WebSocket handler updated")
+            
+            # ✅ Notify all active connections
+            notification = {
+                "type": "system",
+                "message": "⚠️ Services reloaded. Please refresh if you experience issues.",
+                "timestamp": time.time()
+            }
+            
+            disconnected = []
+            for device_id, ws in list(ws_handler.active_connections.items()):
+                try:
+                    await ws.send_json(notification)
+                    logger.info(f"📢 Notified {device_id} about reload")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to notify {device_id}: {e}")
+                    disconnected.append(device_id)
+            
+            # Clean up disconnected clients
+            for device_id in disconnected:
+                ws_handler.active_connections.pop(device_id, None)
         
         logger.info("=" * 80)
         logger.info("✅ ALL SERVICES RELOADED SUCCESSFULLY")
+        logger.info(f"   AI: {ai_provider} ({model})")
+        logger.info(f"   TTS: {tts_provider}")
+        logger.info(f"   STT: {stt_provider}")
+        logger.info(f"   Music: {'enabled' if music_service else 'disabled'}")
         logger.info("=" * 80)
         
         return True
@@ -510,7 +542,6 @@ async def reload_services():
     except Exception as e:
         logger.error(f"❌ Service reload failed: {e}", exc_info=True)
         raise
-
 # ==============================================================================
 # Lifespan Context Manager
 # ==============================================================================

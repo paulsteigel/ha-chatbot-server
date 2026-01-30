@@ -233,14 +233,14 @@ class TTSService:
         try:
             if current_provider == "azure_speech":
                 # ✅ TRY SDK FIRST (if available)
-                if self.speech_config and AZURE_SDK_AVAILABLE:
-                    try:
-                        wav_bytes = await self._synthesize_azure_speech_sdk(
-                            cleaned_text, language
-                        )
-                        return wav_bytes, "azure_speech_sdk"
-                    except Exception as sdk_error:
-                        logger.warning(f"⚠️ SDK failed: {sdk_error}, trying REST API...")
+                #if self.speech_config and AZURE_SDK_AVAILABLE:
+                #    try:
+                #        wav_bytes = await self._synthesize_azure_speech_sdk(
+                #            cleaned_text, language
+                #        )
+                #        return wav_bytes, "azure_speech_sdk"
+                #    except Exception as sdk_error:
+                #        logger.warning(f"⚠️ SDK failed: {sdk_error}, trying REST API...")
                 
                 # ✅ FALLBACK TO REST API
                 if AIOHTTP_AVAILABLE:
