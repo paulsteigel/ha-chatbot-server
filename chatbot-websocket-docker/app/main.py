@@ -340,7 +340,6 @@ music_service = None
 # ==============================================================================
 # Service Reload Function
 # ==============================================================================
-
 async def reload_services():
     """Reload all services with new configuration from database"""
     global ai_service, tts_service, stt_service, music_service
@@ -502,7 +501,15 @@ async def reload_services():
             ws_handler.music_service = music_service
             logger.info("✅ WebSocket handler updated with new services")
         
-        logger
+        logger.info("=" * 80)
+        logger.info("✅ ALL SERVICES RELOADED SUCCESSFULLY")
+        logger.info("=" * 80)
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Service reload failed: {e}", exc_info=True)
+        raise
 
 # ==============================================================================
 # Lifespan Context Manager
