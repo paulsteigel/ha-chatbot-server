@@ -4,7 +4,7 @@ uvicorn[standard]==0.24.0
 websockets==12.0
 python-multipart==0.0.6
 
-# ✅ Azure Services (SDK - không dùng REST API nữa!)
+# ✅ Azure Services
 azure-cognitiveservices-speech==1.34.0
 azure-ai-inference==1.0.0b1
 openai==1.3.0

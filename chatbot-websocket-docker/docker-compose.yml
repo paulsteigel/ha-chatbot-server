@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   chatbot:
     build: .
@@ -62,9 +60,14 @@ services:
       - TTS_REMOVE_EMOJI=${TTS_REMOVE_EMOJI:-true}
       - TTS_REMOVE_MARKDOWN=${TTS_REMOVE_MARKDOWN:-true}
     
+    # ✅ FIXED: Named volumes (giống care-planner)
     volumes:
-      - ./logs:/app/logs
-      - ./models:/app/models
+      - logs-data:/app/logs
+      - models-data:/app/models
+    
+    # ✅ FIXED: Add extra_hosts for MySQL connection
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     
     networks:
       - chatbot-net
@@ -79,3 +82,8 @@ services:
 networks:
   chatbot-net:
     driver: bridge
+
+# ✅ FIXED: Declare named volumes (giống care-planner)
+volumes:
+  logs-data:
+  models-data:
