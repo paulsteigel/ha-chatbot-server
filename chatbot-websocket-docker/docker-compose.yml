@@ -11,8 +11,8 @@ services:
       # ✅ ONLY MySQL URL - all other config loaded from MySQL!
       - MYSQL_URL=${MYSQL_URL}
       - MYSQL_URL=${MYSQL_URL}
-      - ADMIN_USERNAME=admin
-      - ADMIN_PASSWORD=D1ndh1sk@;;  # Change this!
+      - ADMIN_USERNAME="admin"
+      - ADMIN_PASSWORD="D1ndh1sk@;;
 
     
     volumes:
