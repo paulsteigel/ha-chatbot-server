@@ -17,10 +17,10 @@ RUN apt-get update && apt-get install -y \
 
 # ✅ STEP 2: Install OpenSSL 1.1.1 (required by Azure Speech SDK)
 # See: https://github.com/Azure-Samples/cognitive-services-speech-sdk/issues/2204
-RUN wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2.23_amd64.deb && \
-    dpkg -i libssl1.1_1.1.1f-1ubuntu2.23_amd64.deb && \
-    rm libssl1.1_1.1.1f-1ubuntu2.23_amd64.deb
-
+RUN wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.0g-2ubuntu4_amd64.deb && \
+    dpkg -i libssl1.1_1.1.0g-2ubuntu4_amd64.deb && \
+    rm libssl1.1_1.1.0g-2ubuntu4_amd64.deb
+    
 WORKDIR /app
 
 # Copy requirements first (for better caching)
