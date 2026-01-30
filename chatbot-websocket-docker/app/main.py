@@ -500,7 +500,7 @@ async def reload_services():
             logger.info("⚠️ Music Service disabled")
         
         # ============================================================
-        # STEP 7: Update WebSocket Handler (for NEW connections)
+        # STEP 7: Update WebSocket Handler
         # ============================================================
         if ws_handler:
             ws_handler.ai_service = ai_service
@@ -509,25 +509,27 @@ async def reload_services():
             ws_handler.music_service = music_service
             logger.info("✅ WebSocket handler updated")
             
-            # ✅ Notify all active connections
-            notification = {
-                "type": "system",
-                "message": "⚠️ Services reloaded. Please refresh if you experience issues.",
-                "timestamp": time.time()
-            }
-            
-            disconnected = []
-            for device_id, ws in list(ws_handler.active_connections.items()):
-                try:
-                    await ws.send_json(notification)
-                    logger.info(f"📢 Notified {device_id} about reload")
-                except Exception as e:
-                    logger.warning(f"⚠️ Failed to notify {device_id}: {e}")
-                    disconnected.append(device_id)
-            
-            # Clean up disconnected clients
-            for device_id in disconnected:
-                ws_handler.active_connections.pop(device_id, None)
+            # ✅ Notify all active connections via device_manager
+            if device_manager:
+                connections = device_manager.get_all_connections()
+                notification = {
+                    "type": "system",
+                    "message": "⚠️ Services reloaded. Please refresh if you experience issues.",
+                    "timestamp": time.time()
+                }
+                
+                disconnected = []
+                for device_id, ws in connections.items():
+                    try:
+                        await ws.send_json(notification)
+                        logger.info(f"📢 Notified {device_id} about reload")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Failed to notify {device_id}: {e}")
+                        disconnected.append(device_id)
+                
+                # Clean up disconnected clients
+                for device_id in disconnected:
+                    await device_manager.remove_connection(device_id)
         
         logger.info("=" * 80)
         logger.info("✅ ALL SERVICES RELOADED SUCCESSFULLY")
