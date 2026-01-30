@@ -53,6 +53,7 @@ def get_config(key: str, default=None):
     
     return default
 
+
 def safe_int(value, default: int) -> int:
     """Safely convert value to int, handle null/None."""
     if value is None or value == "" or value == "null" or value == "None":
@@ -72,6 +73,42 @@ def safe_float(value, default: float) -> float:
     except (ValueError, TypeError):
         return default
 
+
+def safe_bool(value, default: bool = False) -> bool:
+    """
+    Safely convert value to bool, handle string/bool/None.
+    
+    Args:
+        value: Can be bool, string, int, or None
+        default: Default value if conversion fails
+    
+    Returns:
+        Boolean value
+    
+    Examples:
+        safe_bool(True) -> True
+        safe_bool('true') -> True
+        safe_bool('false') -> False
+        safe_bool(1) -> True
+        safe_bool(0) -> False
+        safe_bool(None) -> False (default)
+    """
+    if value is None or value == "" or value == "null" or value == "None":
+        return default
+    
+    # Already a boolean
+    if isinstance(value, bool):
+        return value
+    
+    # String conversion
+    if isinstance(value, str):
+        return value.lower() in ('true', '1', 'yes', 'on', 'enabled')
+    
+    # Integer conversion (0 = False, non-zero = True)
+    if isinstance(value, (int, float)):
+        return bool(value)
+    
+    return default
 
 # ==============================================================================
 # Configuration - AFTER get_config() is defined
@@ -251,9 +288,10 @@ async def lifespan(app: FastAPI):
         # ============================================================
         # STEP 4: Initialize Music Service
         # ============================================================
-        enable_music = config.get('enable_music_playback', 'true').lower() == 'true'
+        # ✅ FIXED: Handle both string and boolean
+        enable_music = safe_bool(config.get('enable_music_playback', True))
         music_url = config.get('music_service_url', 'http://music.sfdp.net')
-        
+
         if enable_music:
             try:
                 logger.info("🎵 Initializing Music Service...")
@@ -265,6 +303,7 @@ async def lifespan(app: FastAPI):
         else:
             logger.info("⚠️ Music playback disabled in config")
             music_service = None
+
         
         # ============================================================
         # STEP 5: Initialize AI Service
