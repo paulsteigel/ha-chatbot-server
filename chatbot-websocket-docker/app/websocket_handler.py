@@ -799,14 +799,14 @@ class WebSocketHandler:
                     # ─────────────────────────────────────────────────
                     await self.send_message(device_id, {
                         "type": "audio_chunk",
-                        "chunk_index": sentence_count - 1,
-                        "chunk_text": original,
+                        "chunk": sentence_count - 1,
+                        "text": original,
                         "audio": audio_base64,
                         "format": "wav",
                         "sample_rate": 16000,
                         "tts_provider": tts_provider,
                         "language": language,
-                        "is_last": is_last
+                        "is_final": is_last
                     })
                     
                     self.logger.info(
