@@ -311,14 +311,76 @@ class AIService:
         device_type: str = None,
         music_service=None
     ) -> AsyncGenerator[tuple[str, str, str, bool, Optional[dict]], None]:
-        """🌊 STREAM CHAT RESPONSE - WITH TOOL CALLING SUPPORT"""
+        """🌊 STREAM CHAT RESPONSE - WITH MUSIC SUPPORT (2-STEP APPROACH)"""
         start_time = time.time()
         
         try:
             self.logger.info(f"💬 User: {user_message}")
             
             # ═══════════════════════════════════════════════════════════
-            # STEP 1: Build messages
+            # ✅ STEP 1: CHECK FOR MUSIC INTENT FIRST (NON-STREAMING)
+            # ═══════════════════════════════════════════════════════════
+            if music_service:
+                # Try function calling first (OpenAI/Azure)
+                if self.use_function_calling:
+                    self.logger.info(f"🎵 Checking for function calls ({self.provider})...")
+                    
+                    # ✅ Use non-streaming chat() to detect function calls
+                    result = await self.chat(
+                        user_message=user_message,
+                        conversation_logger=conversation_logger,
+                        device_id=device_id,
+                        device_type=device_type,
+                        music_service=music_service
+                    )
+                    
+                    # If music was found, yield it and return
+                    if result.get('music_result'):
+                        self.logger.info(f"🎵 Music function called successfully!")
+                        
+                        yield (
+                            result['response'],
+                            result['cleaned_response'],
+                            result['language'],
+                            True,  # is_final
+                            result['music_result']  # ✅ Music data
+                        )
+                        return
+                
+                # Fallback: Keyword detection (DeepSeek)
+                else:
+                    music_query = self.detect_music_intent(user_message)
+                    
+                    if music_query:
+                        self.logger.info(f"🎵 Music intent detected (keyword): '{music_query}'")
+                        
+                        music_results = await music_service.search_music(music_query, 1)
+                        
+                        if music_results:
+                            first_result = music_results[0]
+                            
+                            response_text = (
+                                f"🎵 Đang phát: {first_result['title']} "
+                                f"của {first_result['channel']}"
+                            )
+                            
+                            self.conversation_history.append({"role": "user", "content": user_message})
+                            self.conversation_history.append({"role": "assistant", "content": response_text})
+                            
+                            cleaned_text = self.clean_text_for_tts(response_text)
+                            language = self.detect_language(cleaned_text)
+                            
+                            yield (
+                                response_text,
+                                cleaned_text,
+                                language,
+                                True,
+                                first_result  # ✅ Music data
+                            )
+                            return
+            
+            # ═══════════════════════════════════════════════════════════
+            # ✅ STEP 2: NORMAL STREAMING CHAT (No music detected)
             # ═══════════════════════════════════════════════════════════
             self.conversation_history.append({"role": "user", "content": user_message})
             
@@ -329,206 +391,35 @@ class AIService:
                 {"role": "system", "content": self.system_prompt}
             ] + self.conversation_history
             
-            # ═══════════════════════════════════════════════════════════
-            # STEP 2: Prepare request with tools (if available)
-            # ═══════════════════════════════════════════════════════════
-            request_params = {
-                "model": self.model,
-                "messages": messages,
-                "temperature": self.temperature,
-                "max_tokens": self.max_tokens,
-                "stream": True
-            }
-            
-            # Add tools for OpenAI/Azure
-            if self.use_function_calling and music_service:
-                request_params["tools"] = MUSIC_FUNCTIONS
-                request_params["tool_choice"] = "auto"
-                self.logger.info(f"🎵 Function calling enabled ({self.provider})")
-            
-            # ═══════════════════════════════════════════════════════════
-            # STEP 3: First API call - check for tool calls
-            # ═══════════════════════════════════════════════════════════
             request_start = time.time()
             self.logger.info(f"⏱️  Streaming from {self.provider.upper()}...")
             
-            stream = await self.client.chat.completions.create(**request_params)
+            stream = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+                stream=True,
+            )
             
             full_response = ""
-            tool_calls_buffer = []
-            current_tool_call = None
+            current_sentence = ""
             first_token_time = None
+            sentence_count = 0
             
-            # Collect the streaming response
             async for chunk in stream:
                 if chunk.choices and len(chunk.choices) > 0:
-                    delta = chunk.choices[0].delta
-                    
-                    # Check for tool calls
-                    if delta.tool_calls:
-                        for tool_call_chunk in delta.tool_calls:
-                            if tool_call_chunk.index is not None:
-                                # New tool call
-                                if current_tool_call is None or current_tool_call['index'] != tool_call_chunk.index:
-                                    if current_tool_call:
-                                        tool_calls_buffer.append(current_tool_call)
-                                    
-                                    current_tool_call = {
-                                        'index': tool_call_chunk.index,
-                                        'id': tool_call_chunk.id or '',
-                                        'type': 'function',
-                                        'function': {
-                                            'name': tool_call_chunk.function.name or '',
-                                            'arguments': tool_call_chunk.function.arguments or ''
-                                        }
-                                    }
-                                else:
-                                    # Continue existing tool call
-                                    if tool_call_chunk.function.name:
-                                        current_tool_call['function']['name'] += tool_call_chunk.function.name
-                                    if tool_call_chunk.function.arguments:
-                                        current_tool_call['function']['arguments'] += tool_call_chunk.function.arguments
-                    
-                    # Regular content
-                    if delta.content:
-                        token = delta.content
+                    if chunk.choices[0].delta.content:
+                        token = chunk.choices[0].delta.content
                         full_response += token
-                        
-                        if first_token_time is None:
-                            first_token_time = time.time() - request_start
-                            self.logger.info(f"⚡ First token: {first_token_time:.2f}s")
-            
-            # Add last tool call if exists
-            if current_tool_call:
-                tool_calls_buffer.append(current_tool_call)
-            
-            # ═══════════════════════════════════════════════════════════
-            # STEP 4: Handle tool calls
-            # ═══════════════════════════════════════════════════════════
-            if tool_calls_buffer and music_service:
-                self.logger.info(f"🔧 Tool calls detected: {len(tool_calls_buffer)}")
-                
-                for tool_call in tool_calls_buffer:
-                    function_name = tool_call['function']['name']
+                        current_sentence += token
                     
-                    if function_name == "search_and_play_music":
-                        try:
-                            function_args = json.loads(tool_call['function']['arguments'])
-                            query = function_args.get('query', '')
-                            
-                            self.logger.info(f"🎵 Searching music: '{query}'")
-                            
-                            # Execute music search
-                            music_result = await music_service.get_first_result(query)
-                            
-                            if music_result:
-                                self.logger.info(f"✅ Found: {music_result['title']}")
-                                
-                                # Yield music result
-                                yield "", "", "vi", False, music_result
-                                
-                                # Generate confirmation message
-                                response_text = f"Đây là bài {music_result['title']} em nhé! 🎵"
-                                cleaned = self.clean_text_for_tts(response_text)
-                                language = self.detect_language(cleaned)
-                                
-                                # Save to history
-                                self.conversation_history.append({
-                                    "role": "assistant",
-                                    "content": response_text
-                                })
-                                
-                                # Yield response
-                                yield response_text, cleaned, language, True, None
-                                # Log conversation
-                                if conversation_logger and device_id:
-                                    try:
-                                        await conversation_logger.log_conversation(
-                                            device_id=device_id,
-                                            device_type=device_type or "unknown",
-                                            user_message=user_message,
-                                            ai_response=response_text,
-                                            model=self.model,
-                                            provider=self.provider,
-                                            response_time=time.time() - start_time,
-                                        )
-                                    except Exception as log_error:
-                                        self.logger.error(f"❌ MySQL log error: {log_error}")
-                                
-                                return
-                            
-                            else:
-                                self.logger.warning("❌ Music not found")
-                                response_text = f"Xin lỗi em, chị không tìm thấy bài '{query}'. Em thử tìm bài khác nhé! 😔"
-                                cleaned = self.clean_text_for_tts(response_text)
-                                language = self.detect_language(cleaned)
-                                
-                                self.conversation_history.append({
-                                    "role": "assistant",
-                                    "content": response_text
-                                })
-                                
-                                yield response_text, cleaned, language, True, None
-                                return
-                        
-                        except Exception as tool_error:
-                            self.logger.error(f"❌ Tool execution error: {tool_error}")
-                            error_text = "Xin lỗi em, chị gặp lỗi khi tìm nhạc. Em thử lại nhé! 😔"
-                            yield error_text, error_text, "vi", True, None
-                            return
-            
-            # ═══════════════════════════════════════════════════════════
-            # STEP 5: No tool calls - stream normal response
-            # ═══════════════════════════════════════════════════════════
-            if not tool_calls_buffer:
-                # Check for DeepSeek keyword fallback
-                if not self.use_function_calling and music_service:
-                    music_query = self.detect_music_intent(user_message)
+                    if first_token_time is None:
+                        first_token_time = time.time() - request_start
+                        self.logger.info(f"⚡ First token: {first_token_time:.2f}s")
                     
-                    if music_query:
-                        self.logger.info(f"🎵 Music intent (keyword): '{music_query}'")
-                        
-                        music_result = await music_service.get_first_result(music_query)
-                        
-                        if music_result:
-                            yield "", "", "vi", False, music_result
-                            
-                            response_text = f"Đây là bài {music_result['title']} em nhé! 🎵"
-                            cleaned = self.clean_text_for_tts(response_text)
-                            language = self.detect_language(cleaned)
-                            
-                            self.conversation_history.append({
-                                "role": "assistant",
-                                "content": response_text
-                            })
-                            
-                            yield response_text, cleaned, language, True, None
-                            return
-                
-                # Normal streaming - split into sentences
-                self.logger.info(f"📝 Streaming normal response: {len(full_response)} chars")
-                
-                current_sentence = ""
-                sentence_count = 0
-                
-                for char in full_response:
-                    current_sentence += char
-                    
-                    # Check for sentence end
-                    should_yield = False
-                    split_reason = None
-                    
+                    # Sentence detection
                     if re.search(r'[.!?。！？]\s*$', current_sentence):
-                        should_yield = True
-                        split_reason = "sentence_end"
-                    elif len(current_sentence) > 120 and re.search(r'[,;，；]\s*$', current_sentence):
-                        should_yield = True
-                        split_reason = "comma_split"
-                    elif len(current_sentence) > 180:
-                        should_yield = True
-                        split_reason = "force_split"
-                    
-                    if should_yield:
                         original = current_sentence.strip()
                         
                         if original:
@@ -539,50 +430,59 @@ class AIService:
                                 language = self.detect_language(cleaned)
                                 
                                 self.logger.info(
-                                    f"📤 Chunk {sentence_count} ({language}, {split_reason}, {len(original)} chars): "
+                                    f"📤 Chunk {sentence_count} ({language}, sentence_end, {len(original)} chars): "
                                     f"'{original[:40]}...'"
                                 )
                                 
                                 yield (original, cleaned, language, False, None)
                             
                             current_sentence = ""
+            
+            # Final sentence
+            if current_sentence.strip():
+                original = current_sentence.strip()
+                cleaned = self.clean_text_for_tts(original)
                 
-                # Final sentence
-                if current_sentence.strip():
-                    original = current_sentence.strip()
-                    cleaned = self.clean_text_for_tts(original)
-                    
-                    if cleaned:
-                        sentence_count += 1
-                        language = self.detect_language(cleaned)
-                        self.logger.info(f"📤 Final chunk {sentence_count} ({len(original)} chars)")
-                        yield (original, cleaned, language, True, None)
-                    else:
-                        yield ("", "", "", True, None)
+                if cleaned:
+                    sentence_count += 1
+                    language = self.detect_language(cleaned)
+                    self.logger.info(f"📤 Final chunk {sentence_count} ({len(original)} chars)")
+                    yield (original, cleaned, language, True, None)
                 else:
                     yield ("", "", "", True, None)
-                
-                # Save to history
-                self.conversation_history.append({
-                    "role": "assistant",
-                    "content": full_response
-                })
-                
-                # Log conversation
-                if conversation_logger and device_id:
-                    try:
-                        await conversation_logger.log_conversation(
-                            device_id=device_id,
-                            device_type=device_type or "unknown",
-                            user_message=user_message,
-                            ai_response=full_response,
-                            model=self.model,
-                            provider=self.provider,
-                            response_time=time.time() - start_time,
-                        )
-                    except Exception as log_error:
-                        self.logger.error(f"❌ MySQL log error: {log_error}")
-        
+            else:
+                yield ("", "", "", True, None)
+            
+            # Save to history
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": full_response
+            })
+            
+            request_time = time.time() - request_start
+            
+            self.logger.info(
+                f"🤖 Complete: {len(full_response)} chars, {sentence_count} chunks"
+            )
+            self.logger.info(
+                f"⏱️  Timing: First token {first_token_time:.2f}s, Total {request_time:.2f}s"
+            )
+            
+            # Log to MySQL
+            if conversation_logger and device_id:
+                try:
+                    await conversation_logger.log_conversation(
+                        device_id=device_id,
+                        device_type=device_type or "unknown",
+                        user_message=user_message,
+                        ai_response=full_response,
+                        model=self.model,
+                        provider=self.provider,
+                        response_time=request_time,
+                    )
+                except Exception as log_error:
+                    self.logger.error(f"❌ MySQL log error: {log_error}")
+            
         except Exception as e:
             self.logger.error(f"❌ Chat stream error: {e}", exc_info=True)
             yield (
