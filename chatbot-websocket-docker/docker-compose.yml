@@ -5,61 +5,11 @@ services:
     restart: unless-stopped
     
     ports:
-      - "5005:5000"  # ✅ OK: external:internal
+      - "5005:5000"
     
     environment:
-      # Server
-      - HOST=0.0.0.0
-      - PORT=5000  # ✅ OK: internal port
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      
-      # AI Provider (Azure DeepSeek)
-      - AI_PROVIDER=azure
-      - AI_MODEL=${AI_MODEL:-deepseek-chat}  # ✅ FIXED: was DeepSeek-V3.2
-      - AZURE_API_KEY=${AZURE_API_KEY}
-      - AZURE_ENDPOINT=${AZURE_ENDPOINT}
-      - AZURE_DEPLOYMENT=${AZURE_DEPLOYMENT}
-      - AZURE_API_VERSION=${AZURE_API_VERSION:-2024-12-01-preview}
-      
-      # Azure Speech (TTS/STT)
-      - TTS_PROVIDER=azure_speech
-      - AZURE_SPEECH_KEY=${AZURE_SPEECH_KEY}
-      - AZURE_SPEECH_REGION=${AZURE_SPEECH_REGION:-eastus}
-      
-      # TTS Voices
-      - TTS_VOICE_VI=${TTS_VOICE_VI:-en-US-Ava:DragonHDLatestNeural}  # ✅ FIXED: from working config
-      - TTS_VOICE_EN=${TTS_VOICE_EN:-en-US-AvaMultilingualNeural}
-      
-      # STT Provider
-      - STT_PROVIDER=${STT_PROVIDER:-azure_speech}  # ✅ FIXED: was groq
-      - GROQ_API_KEY=${GROQ_API_KEY}
-      
-      # Fallback providers
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}  # ✅ ADD THIS
-      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
-      
-      # Piper (fallback TTS)
-      - PIPER_HOST=${PIPER_HOST:-addon_core_piper}
-      - PIPER_PORT=${PIPER_PORT:-10200}
-      - PIPER_VOICE_VI=${PIPER_VOICE_VI:-vi_VN-vais1000-medium}
-      - PIPER_VOICE_EN=${PIPER_VOICE_EN:-en_US-lessac-medium}
-      
-      # Music Service
-      - MUSIC_SERVICE_URL=${MUSIC_SERVICE_URL:-http://music.sfdp.net}  # ✅ FIXED: http not https
-      - ENABLE_MUSIC_PLAYBACK=${ENABLE_MUSIC_PLAYBACK:-true}
-      
-      # MySQL (optional)
-      - MYSQL_URL=${MYSQL_URL:-}
-      
-      # Chat settings
-      - TEMPERATURE=${TEMPERATURE:-0.7}
-      - MAX_TOKENS=${MAX_TOKENS:-500}
-      - MAX_CONTEXT=${MAX_CONTEXT:-10}
-      
-      # TTS settings
-      - TTS_REMOVE_EMOJI=${TTS_REMOVE_EMOJI:-true}
-      - TTS_REMOVE_MARKDOWN=${TTS_REMOVE_MARKDOWN:-true}
+      # ✅ ONLY MySQL URL - all other config loaded from MySQL!
+      - MYSQL_URL=${MYSQL_URL}
     
     volumes:
       - logs-data:/app/logs
@@ -70,7 +20,6 @@ services:
     
     networks:
       - chatbot-net
-      - npm_default  # ← VERIFY THIS NAME FIRST!
     
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
@@ -82,9 +31,6 @@ services:
 networks:
   chatbot-net:
     driver: bridge
-  
-  npm_default:
-    external: true  # ✅ OK: reference existing NPM network
 
 volumes:
   logs-data:
