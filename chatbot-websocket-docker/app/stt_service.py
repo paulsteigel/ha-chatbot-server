@@ -1,8 +1,8 @@
 # File: app/stt_service.py
 """
-STT Service - Multi-provider with Azure Speech REST API support
-✅ Providers: azure_speech, groq, openai
-✅ Async support with fallback
+STT Service - Multi-provider with Azure Speech SDK support
+✅ Providers: azure_speech (SDK + REST fallback), groq, openai
+✅ SDK for speed (< 2s), REST as fallback
 """
 
 import os
@@ -12,6 +12,15 @@ import json
 from typing import Optional
 from io import BytesIO
 import asyncio
+import tempfile
+
+# Azure Speech SDK (for Debian)
+try:
+    import azure.cognitiveservices.speech as speechsdk
+    AZURE_SDK_AVAILABLE = True
+except ImportError:
+    AZURE_SDK_AVAILABLE = False
+    speechsdk = None
 
 # Groq (optional)
 try:
@@ -22,7 +31,7 @@ except ImportError:
 
 from openai import AsyncOpenAI
 
-# aiohttp for Azure Speech REST API
+# aiohttp for Azure Speech REST API (fallback)
 try:
     import aiohttp
     AIOHTTP_AVAILABLE = True
@@ -68,22 +77,52 @@ class STTService:
         self.api_key = api_key
         
         # ═══════════════════════════════════════════════════════════
-        # AZURE SPEECH REST API SETUP
+        # AZURE SPEECH SDK SETUP (PRIMARY)
         # ═══════════════════════════════════════════════════════════
-        if self.provider == "azure_speech" and AIOHTTP_AVAILABLE:
-            self.azure_endpoint = get_config(
-                "azure_speech_endpoint",
-                ""
-            )
-            self.azure_api_version = "2025-10-15"
+        self.speech_config = None
+        self.azure_region = None
+        self.azure_endpoint = None
+        
+        if self.provider == "azure_speech":
+            # Get region from config
+            self.azure_region = get_config("azure_speech_region", "eastus")
             
-            if self.azure_endpoint:
-                self.logger.info("🎤 Initializing STT Service...")
-                self.logger.info(f"   Provider: Azure Speech REST API")
-                self.logger.info(f"   Endpoint: {self.azure_endpoint}")
-                self.logger.info(f"   API Version: {self.azure_api_version}")
+            # ✅ TRY TO INITIALIZE SDK (if available)
+            if AZURE_SDK_AVAILABLE:
+                try:
+                    self.speech_config = speechsdk.SpeechConfig(
+                        subscription=api_key,
+                        region=self.azure_region
+                    )
+                    
+                    # Set recognition language (auto-detect or specific)
+                    # For auto-detect, we'll set it per-request
+                    
+                    self.logger.info("🎤 Initializing STT Service...")
+                    self.logger.info(f"   Provider: Azure Speech SDK")
+                    self.logger.info(f"   Region: {self.azure_region}")
+                    self.logger.info(f"   Method: SDK (FAST! < 2s)")
+                    
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Azure Speech SDK init failed: {e}")
+                    self.logger.info("   Fallback: Will use REST API")
+                    self.speech_config = None
             else:
-                self.logger.error("❌ Azure Speech endpoint not configured!")
+                self.logger.info("⚠️ Azure Speech SDK not available (Alpine?)")
+                self.logger.info("   Using REST API (slower)")
+            
+            # ✅ PREPARE REST API FALLBACK
+            if AIOHTTP_AVAILABLE:
+                self.azure_endpoint = (
+                    f"https://{self.azure_region}.api.cognitive.microsoft.com"
+                )
+                self.azure_api_version = "2024-11-15"
+                
+                if not self.speech_config:
+                    self.logger.info("🎤 Initializing STT Service...")
+                    self.logger.info(f"   Provider: Azure Speech REST API")
+                    self.logger.info(f"   Region: {self.azure_region}")
+                    self.logger.info(f"   Endpoint: {self.azure_endpoint}")
         
         # ═══════════════════════════════════════════════════════════
         # GROQ SETUP
@@ -147,14 +186,39 @@ class STTService:
             # TRY PRIMARY PROVIDER
             # ─────────────────────────────────────────────────────────
             if self.provider == "azure_speech":
-                text = await self._transcribe_azure_speech(audio_data, language)
+                # ✅ TRY SDK FIRST (if available)
+                if self.speech_config and AZURE_SDK_AVAILABLE:
+                    try:
+                        text = await self._transcribe_azure_speech_sdk(
+                            audio_data, language
+                        )
+                        elapsed = time.time() - start_time
+                        self.logger.info(f"✅ Transcription (Azure SDK): {text}")
+                        self.logger.info(f"⏱️  Completed in {elapsed:.2f}s")
+                        return text
+                    except Exception as sdk_error:
+                        self.logger.warning(
+                            f"⚠️ SDK failed: {sdk_error}, trying REST API..."
+                        )
+                
+                # ✅ FALLBACK TO REST API
+                if AIOHTTP_AVAILABLE and self.azure_endpoint:
+                    text = await self._transcribe_azure_speech_rest(
+                        audio_data, language
+                    )
+                    elapsed = time.time() - start_time
+                    self.logger.info(f"✅ Transcription (Azure REST): {text}")
+                    self.logger.info(f"⏱️  Completed in {elapsed:.2f}s")
+                    return text
+                else:
+                    raise Exception("Neither SDK nor REST API available")
+            
             elif self.provider == "groq" and hasattr(self, 'use_groq') and self.use_groq:
                 text = await self._transcribe_groq(audio_data, language)
             else:
                 text = await self._transcribe_openai(audio_data, language)
             
             elapsed = time.time() - start_time
-            
             self.logger.info(f"✅ Transcription ({self.provider}): {text}")
             self.logger.info(f"⏱️  Completed in {elapsed:.2f}s")
             
@@ -182,15 +246,102 @@ class STTService:
             return ""
     
     # ═══════════════════════════════════════════════════════════════════
-    # AZURE SPEECH REST API METHOD (NEW!)
-    # ═══════════════════════════════════
-    async def _transcribe_azure_speech(
+    # ✅ NEW: AZURE SPEECH SDK METHOD (FAST!)
+    # ═══════════════════════════════════════════════════════════════════
+    async def _transcribe_azure_speech_sdk(
         self, audio_data: bytes, language: str
     ) -> str:
         """
-        Transcribe using Azure Speech REST API.
+        Transcribe using Azure Speech SDK (FAST! < 2s)
+        Supports: WAV, MP3, OGG, WEBM
+        """
+        if not AZURE_SDK_AVAILABLE or not self.speech_config:
+            raise Exception("Azure Speech SDK not available")
         
-        Endpoint: /speechtotext/transcriptions:transcribe
+        # Map language codes
+        language_map = {
+            "auto": None,  # Auto-detect
+            "vi": "vi-VN",
+            "en": "en-US"
+        }
+        
+        recognition_language = language_map.get(language, None)
+        
+        # Save audio to temp file (SDK needs file path)
+        with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as temp_file:
+            temp_file.write(audio_data)
+            temp_path = temp_file.name
+        
+        try:
+            # Create audio config from file
+            audio_config = speechsdk.AudioConfig(filename=temp_path)
+            
+            # Create recognizer
+            if recognition_language:
+                # Specific language
+                speech_recognizer = speechsdk.SpeechRecognizer(
+                    speech_config=self.speech_config,
+                    audio_config=audio_config,
+                    language=recognition_language
+                )
+            else:
+                # Auto-detect (vi-VN, en-US)
+                auto_detect_config = speechsdk.languageconfig.AutoDetectSourceLanguageConfig(
+                    languages=["vi-VN", "en-US"]
+                )
+                speech_recognizer = speechsdk.SpeechRecognizer(
+                    speech_config=self.speech_config,
+                    audio_config=audio_config,
+                    auto_detect_source_language_config=auto_detect_config
+                )
+            
+            self.logger.debug(
+                f"🎤 Azure SDK: language={recognition_language or 'auto-detect'}"
+            )
+            
+            # Recognize (FAST!)
+            def _sync_recognize():
+                return speech_recognizer.recognize_once()
+            
+            # Run in executor to avoid blocking
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, _sync_recognize)
+            
+            if result.reason == speechsdk.ResultReason.RecognizedSpeech:
+                text = result.text.strip()
+                self.logger.info(f"✅ Azure Speech SDK: '{text}'")
+                return text
+            
+            elif result.reason == speechsdk.ResultReason.NoMatch:
+                self.logger.warning("⚠️ Azure Speech SDK: No speech detected")
+                return ""
+            
+            elif result.reason == speechsdk.ResultReason.Canceled:
+                cancellation = result.cancellation_details
+                error_msg = f"Azure Speech SDK error: {cancellation.reason}"
+                if cancellation.error_details:
+                    error_msg += f" - {cancellation.error_details}"
+                self.logger.error(f"❌ {error_msg}")
+                raise Exception(error_msg)
+            
+            else:
+                raise Exception(f"Azure Speech SDK failed: {result.reason}")
+        
+        finally:
+            # Clean up temp file
+            try:
+                os.unlink(temp_path)
+            except Exception:
+                pass
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # AZURE SPEECH REST API METHOD (FALLBACK)
+    # ═══════════════════════════════════
+    async def _transcribe_azure_speech_rest(
+        self, audio_data: bytes, language: str
+    ) -> str:
+        """
+        Transcribe using Azure Speech REST API (SLOWER, 5-10s)
         """
         if not AIOHTTP_AVAILABLE:
             raise Exception("aiohttp not installed")
@@ -220,15 +371,10 @@ class STTService:
         
         # Build definition JSON
         definition = {
-            "enhancedMode": {
-                "enabled": True,
-                "task": "transcribe"
-            }
+            "locales": ["vi-VN", "en-US"] if language == "auto" else [
+                "vi-VN" if language == "vi" else "en-US"
+            ]
         }
-        
-        # Add language hint if specified
-        if language != "auto":
-            definition["locales"] = [language if language != "vi" else "vi-VN"]
         
         form.add_field(
             'definition',
@@ -237,28 +383,36 @@ class STTService:
         )
         
         # Make request
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, data=form) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    raise Exception(
-                        f"Azure Speech API error {response.status}: {error_text}"
-                    )
-                
-                result = await response.json()
-                
-                # Extract text from response
-                # Response format: {"text": "transcribed text", ...}
-                text = result.get("text", "")
-                
-                if not text:
-                    # Try alternative response formats
-                    if "combinedPhrases" in result:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    url, 
+                    headers=headers, 
+                    data=form,
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        raise Exception(
+                            f"Azure Speech API error {response.status}: {error_text}"
+                        )
+                    
+                    result = await response.json()
+                    
+                    # Extract text from response
+                    text = result.get("text", "")
+                    
+                    if not text and "combinedPhrases" in result:
                         phrases = result["combinedPhrases"]
                         if phrases and len(phrases) > 0:
                             text = phrases[0].get("text", "")
-                
-                return text.strip()
+                    
+                    return text.strip()
+        
+        except asyncio.TimeoutError:
+            raise Exception("Azure Speech API timeout (10s)")
+        except aiohttp.ClientError as e:
+            raise Exception(f"Azure Speech API connection error: {e}")
     
     # ═══════════════════════════════════════════════════════════════════
     # GROQ METHOD (EXISTING)
