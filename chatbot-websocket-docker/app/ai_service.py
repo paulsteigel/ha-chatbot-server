@@ -493,7 +493,7 @@ class AIService:
         conversation_logger=None,
         device_id: str = None,
         device_type: str = None,
-        music_service=None  # ✅ NEW: Optional music service
+        music_service=None
     ) -> Dict[str, Any]:
         """
         💬 CHAT WITH FUNCTION CALLING SUPPORT
@@ -566,6 +566,19 @@ class AIService:
                 request_params["tools"] = MUSIC_FUNCTIONS
                 request_params["tool_choice"] = "auto"
                 self.logger.info(f"🎵 Function calling enabled ({self.provider})")
+            
+            # ✅ ADD THIS DEBUG LOGGING BEFORE THE API CALL
+            self.logger.info(f"🔍 DEBUG - About to call API with:")
+            self.logger.info(f"   Model: {request_params.get('model')}")
+            self.logger.info(f"   Messages count: {len(request_params.get('messages', []))}")
+            self.logger.info(f"   Stream: {request_params.get('stream')}")
+            self.logger.info(f"   Temperature: {request_params.get('temperature')}")
+            self.logger.info(f"   Max tokens: {request_params.get('max_tokens')}")
+            
+            # Log the actual client configuration
+            self.logger.info(f"🔍 DEBUG - Client config:")
+            self.logger.info(f"   Base URL: {self.client.base_url}")
+            self.logger.info(f"   API Key (first 20): {self.client.api_key[:20]}...")
             
             # Call API (works for all providers)
             response = await self.client.chat.completions.create(**request_params)
