@@ -104,26 +104,18 @@ class TTSService:
             ).strip()
             
             if self.azure_speech_key:
-                # ✅ TRY TO INITIALIZE SDK
+                # ✅ FORCE USE REGION (endpoint doesn't work well in Docker)
                 if AZURE_SDK_AVAILABLE:
                     try:
-                        # ✅ USE ENDPOINT IF AVAILABLE (LIKE PLAYGROUND!)
-                        if self.azure_speech_endpoint:
-                            logger.info(f"🔊 Using Azure Speech ENDPOINT (like playground)")
-                            logger.info(f"   Endpoint: {self.azure_speech_endpoint}")
-                            
-                            self.speech_config = speechsdk.SpeechConfig(
-                                subscription=self.azure_speech_key,
-                                endpoint=self.azure_speech_endpoint  # ✅ LIKE PLAYGROUND!
-                            )
-                        else:
-                            logger.info(f"🔊 Using Azure Speech REGION (slower)")
-                            logger.info(f"   Region: {self.azure_speech_region}")
-                            
-                            self.speech_config = speechsdk.SpeechConfig(
-                                subscription=self.azure_speech_key,
-                                region=self.azure_speech_region
-                            )
+                        logger.info(f"🔊 Using Azure Speech SDK with REGION")
+                        logger.info(f"   Region: {self.azure_speech_region}")
+                        logger.info(f"   Note: Endpoint ignored (doesn't work in Docker)")
+                        
+                        # ✅ ALWAYS USE REGION (more reliable in Docker)
+                        self.speech_config = speechsdk.SpeechConfig(
+                            subscription=self.azure_speech_key,
+                            region=self.azure_speech_region
+                        )
                         
                         # Set output format
                         self.speech_config.set_speech_synthesis_output_format(
