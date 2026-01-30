@@ -350,10 +350,18 @@ async def reload_services():
     
     try:
         # ============================================================
-        # STEP 1: Load fresh config
+        # STEP 1: Load fresh config from database
         # ============================================================
         config = await config_manager.load_config()
         logger.info(f"✅ Loaded {len(config)} config items from database")
+        
+        # ✅ HELPER FUNCTION to extract config values correctly
+        def get_config_value(key: str, default=''):
+            """Extract config_value from nested dict structure"""
+            item = config.get(key, {})
+            if isinstance(item, dict):
+                return item.get('config_value', default)
+            return item or default
         
         # ============================================================
         # STEP 2: Close old services gracefully
@@ -368,35 +376,35 @@ async def reload_services():
         # ============================================================
         # STEP 3: Reload AI Service
         # ============================================================
-        ai_provider = config.get('ai_provider', 'azure').lower()
+        ai_provider = get_config_value('ai_provider', 'azure').lower()
         logger.info(f"🤖 Reloading AI Service (provider: {ai_provider})...")
         
         if ai_provider == 'azure':
-            api_key = config.get('azure_api_key')
-            base_url = config.get('azure_endpoint')
-            model = config.get('ai_model') or config.get('azure_deployment')
-            azure_api_version = config.get('azure_api_version', '2024-12-01-preview')
+            api_key = get_config_value('azure_api_key')
+            base_url = get_config_value('azure_endpoint')
+            model = get_config_value('ai_model') or get_config_value('azure_deployment')
+            azure_api_version = get_config_value('azure_api_version', '2024-12-01-preview')
         elif ai_provider == 'deepseek':
-            api_key = config.get('deepseek_api_key')
-            base_url = config.get('deepseek_base_url', 'https://api.deepseek.com/v1')
-            model = config.get('ai_model', 'deepseek-chat')
+            api_key = get_config_value('deepseek_api_key')
+            base_url = get_config_value('deepseek_base_url', 'https://api.deepseek.com/v1')
+            model = get_config_value('ai_model', 'deepseek-chat')
             azure_api_version = None
         else:  # openai
-            api_key = config.get('openai_api_key')
-            base_url = config.get('openai_base_url', 'https://api.openai.com/v1')
-            model = config.get('ai_model', 'gpt-4')
+            api_key = get_config_value('openai_api_key')
+            base_url = get_config_value('openai_base_url', 'https://api.openai.com/v1')
+            model = get_config_value('ai_model', 'gpt-4')
             azure_api_version = None
         
-        system_prompt = config.get('system_prompt', FINAL_SYSTEM_PROMPT)
+        system_prompt = get_config_value('system_prompt', FINAL_SYSTEM_PROMPT)
         
         ai_service = AIService(
             api_key=api_key,
             base_url=base_url,
             model=model,
             system_prompt=system_prompt,
-            temperature=float(config.get('temperature', 0.7)),
-            max_tokens=int(config.get('max_tokens', 500)),
-            max_context=int(config.get('max_context', 10)),
+            temperature=float(get_config_value('temperature', '0.7')),
+            max_tokens=int(get_config_value('max_tokens', '500')),
+            max_context=int(get_config_value('max_context', '10')),
             provider=ai_provider,
             azure_api_version=azure_api_version
         )
@@ -405,12 +413,12 @@ async def reload_services():
         # ============================================================
         # STEP 4: Reload TTS Service
         # ============================================================
-        tts_provider = config.get('tts_provider', 'azure_speech').lower()
+        tts_provider = get_config_value('tts_provider', 'azure_speech').lower()
         logger.info(f"🔊 Reloading TTS Service (provider: {tts_provider})...")
         
         if tts_provider == 'azure_speech':
-            azure_speech_key = config.get('azure_speech_key')
-            azure_speech_region = config.get('azure_speech_region', 'eastus')
+            azure_speech_key = get_config_value('azure_speech_key')
+            azure_speech_region = get_config_value('azure_speech_region', 'eastus')
             
             if not azure_speech_key:
                 logger.warning("⚠️ azure_speech_key not found, falling back to Piper")
@@ -424,8 +432,8 @@ async def reload_services():
                 )
         
         if tts_provider == 'piper':
-            piper_host = config.get('piper_host', 'addon_core_piper')
-            piper_port = int(config.get('piper_port', 10200))
+            piper_host = get_config_value('piper_host', 'addon_core_piper')
+            piper_port = int(get_config_value('piper_port', '10200'))
             tts_service = TTSService(
                 provider='piper',
                 piper_host=piper_host,
@@ -433,8 +441,8 @@ async def reload_services():
             )
         
         elif tts_provider == 'openai':
-            openai_key = config.get('openai_api_key')
-            openai_url = config.get('openai_base_url', 'https://api.openai.com/v1')
+            openai_key = get_config_value('openai_api_key')
+            openai_url = get_config_value('openai_base_url', 'https://api.openai.com/v1')
             tts_service = TTSService(
                 provider='openai',
                 api_key=openai_key,
@@ -446,11 +454,11 @@ async def reload_services():
         # ============================================================
         # STEP 5: Reload STT Service
         # ============================================================
-        stt_provider = config.get('stt_provider', 'azure_speech').lower()
+        stt_provider = get_config_value('stt_provider', 'azure_speech').lower()
         logger.info(f"🎤 Reloading STT Service (provider: {stt_provider})...")
         
         if stt_provider == 'azure_speech':
-            azure_speech_key = config.get('azure_speech_key')
+            azure_speech_key = get_config_value('azure_speech_key')
             if not azure_speech_key:
                 logger.warning("⚠️ azure_speech_key not found, falling back to Groq")
                 stt_provider = 'groq'
@@ -462,7 +470,7 @@ async def reload_services():
                 )
         
         if stt_provider == 'groq':
-            groq_key = config.get('groq_api_key')
+            groq_key = get_config_value('groq_api_key')
             if not groq_key:
                 logger.warning("⚠️ groq_api_key not found, falling back to OpenAI")
                 stt_provider = 'openai'
@@ -475,8 +483,8 @@ async def reload_services():
                 )
         
         if stt_provider == 'openai':
-            openai_key = config.get('openai_api_key')
-            openai_url = config.get('openai_base_url', 'https://api.openai.com/v1')
+            openai_key = get_config_value('openai_api_key')
+            openai_url = get_config_value('openai_base_url', 'https://api.openai.com/v1')
             stt_service = STTService(
                 api_key=openai_key,
                 base_url=openai_url,
@@ -489,8 +497,9 @@ async def reload_services():
         # ============================================================
         # STEP 6: Reload Music Service
         # ============================================================
-        enable_music = safe_bool(config.get('enable_music_playback', True))
-        music_url = config.get('music_service_url', 'http://music.sfdp.net')
+        enable_music_str = get_config_value('enable_music_playback', 'true')
+        enable_music = safe_bool(enable_music_str)
+        music_url = get_config_value('music_service_url', 'http://music.sfdp.net')
         
         if enable_music:
             music_service = MusicService(music_url)
@@ -509,7 +518,7 @@ async def reload_services():
             ws_handler.music_service = music_service
             logger.info("✅ WebSocket handler updated")
             
-            # ✅ Notify all active connections via device_manager
+            # Notify all active connections
             if device_manager:
                 connections = device_manager.get_all_connections()
                 notification = {
