@@ -3,6 +3,9 @@ School Chatbot WebSocket Server
 Main FastAPI application with WebSocket support for ESP32 devices
 ✅ WITH MUSIC SERVICE + AZURE AI INTEGRATION
 """
+from app.config_manager import ConfigManager
+config_manager = None
+
 import logging
 import asyncio
 import os
@@ -204,7 +207,6 @@ ws_handler = None
 conversation_logger = None
 music_service = None
 
-
 # ==============================================================================
 # Lifespan Context Manager
 # ==============================================================================
@@ -212,27 +214,51 @@ music_service = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for application startup and shutdown"""
-    global device_manager, ota_manager, ai_service, tts_service, stt_service, ws_handler, conversation_logger, music_service
+    global config_manager, device_manager, ota_manager, ai_service, tts_service, stt_service, ws_handler, conversation_logger, music_service
     
     logger.info("=" * 80)
     logger.info("🚀 SCHOOL CHATBOT WEBSOCKET SERVER")
     logger.info("=" * 80)
     
     try:
-        # Initialize Device Manager
+        # ============================================================
+        # STEP 1: Initialize Config Manager & Load from MySQL
+        # ============================================================
+        MYSQL_URL = os.getenv('MYSQL_URL')
+        if not MYSQL_URL:
+            raise Exception("❌ MYSQL_URL not set in environment!")
+        
+        logger.info("🔐 Initializing Config Manager...")
+        config_manager = ConfigManager(MYSQL_URL)
+        await config_manager.connect()
+        
+        # Load all configuration from MySQL
+        config = await config_manager.load_config()
+        logger.info(f"✅ Loaded {len(config)} config items from MySQL")
+        
+        # ============================================================
+        # STEP 2: Initialize Device Manager
+        # ============================================================
         logger.info("📱 Initializing Device Manager...")
         device_manager = DeviceManager()
         
-        # Initialize OTA Manager
+        # ============================================================
+        # STEP 3: Initialize OTA Manager
+        # ============================================================
         logger.info("📦 Initializing OTA Manager...")
         ota_manager = OTAManager()
         
-        # Initialize Music Service
-        if ENABLE_MUSIC:
+        # ============================================================
+        # STEP 4: Initialize Music Service
+        # ============================================================
+        enable_music = config.get('enable_music_playback', 'true').lower() == 'true'
+        music_url = config.get('music_service_url', 'http://music.sfdp.net')
+        
+        if enable_music:
             try:
                 logger.info("🎵 Initializing Music Service...")
-                music_service = MusicService(MUSIC_SERVICE_URL)
-                logger.info(f"✅ Music Service ready: {MUSIC_SERVICE_URL}")
+                music_service = MusicService(music_url)
+                logger.info(f"✅ Music Service ready: {music_url}")
             except Exception as e:
                 logger.warning(f"⚠️ Music Service disabled: {e}")
                 music_service = None
@@ -240,103 +266,176 @@ async def lifespan(app: FastAPI):
             logger.info("⚠️ Music playback disabled in config")
             music_service = None
         
-        # ✅ Initialize AI Service with provider-specific configuration
-        logger.info(f"🤖 Initializing AI Service ({AI_PROVIDER})...")
+        # ============================================================
+        # STEP 5: Initialize AI Service
+        # ============================================================
+        ai_provider = config.get('ai_provider', 'azure').lower()
+        logger.info(f"🤖 Initializing AI Service (provider: {ai_provider})...")
         
-        if AI_PROVIDER.lower() == 'azure':
-            api_key = AZURE_API_KEY
-            base_url = AZURE_ENDPOINT
-            model = AZURE_DEPLOYMENT or AI_MODEL
-            azure_api_version = AZURE_API_VERSION
-        elif AI_PROVIDER.lower() == 'deepseek':
-            api_key = DEEPSEEK_API_KEY
-            base_url = DEEPSEEK_BASE_URL
-            model = AI_MODEL
+        # Get provider-specific config
+        if ai_provider == 'azure':
+            api_key = config.get('azure_api_key')
+            base_url = config.get('azure_endpoint')
+            model = config.get('ai_model') or config.get('azure_deployment')
+            azure_api_version = config.get('azure_api_version', '2024-12-01-preview')
+            
+            if not api_key:
+                raise Exception("❌ azure_api_key not found in config!")
+            if not base_url:
+                raise Exception("❌ azure_endpoint not found in config!")
+                
+        elif ai_provider == 'deepseek':
+            api_key = config.get('deepseek_api_key')
+            base_url = config.get('deepseek_base_url', 'https://api.deepseek.com/v1')
+            model = config.get('ai_model', 'deepseek-chat')
             azure_api_version = None
+            
+            if not api_key:
+                raise Exception("❌ deepseek_api_key not found in config!")
+                
         else:  # openai
-            api_key = OPENAI_API_KEY
-            base_url = OPENAI_BASE_URL
-            model = AI_MODEL
+            api_key = config.get('openai_api_key')
+            base_url = config.get('openai_base_url', 'https://api.openai.com/v1')
+            model = config.get('ai_model', 'gpt-4')
             azure_api_version = None
+            
+            if not api_key:
+                raise Exception("❌ openai_api_key not found in config!")
+        
+        # Get system prompt (use default if not in config)
+        system_prompt = config.get('system_prompt', FINAL_SYSTEM_PROMPT)
         
         ai_service = AIService(
             api_key=api_key,
             base_url=base_url,
             model=model,
-            system_prompt=FINAL_SYSTEM_PROMPT,
-            temperature=CHAT_TEMPERATURE,
-            max_tokens=CHAT_MAX_TOKENS,
-            max_context=CHAT_MAX_CONTEXT,
-            provider=AI_PROVIDER,
+            system_prompt=system_prompt,
+            temperature=float(config.get('temperature', 0.7)),
+            max_tokens=int(config.get('max_tokens', 500)),
+            max_context=int(config.get('max_context', 10)),
+            provider=ai_provider,
             azure_api_version=azure_api_version
         )
         
-        # Initialize TTS Service
-        logger.info("🔊 Initializing TTS Service...")
-
-        # Get TTS provider config
-        TTS_PROVIDER = get_config('tts_provider', 'openai')
-
-        # ✅ Azure Speech REST API is supported!
-        if TTS_PROVIDER == 'azure_speech':
-            logger.info("🔊 Using Azure Speech REST API (Alpine compatible!)")
+        logger.info(f"✅ AI Service initialized: {model}")
+        
+        # ============================================================
+        # STEP 6: Initialize TTS Service
+        # ============================================================
+        tts_provider = config.get('tts_provider', 'azure_speech').lower()
+        logger.info(f"🔊 Initializing TTS Service (provider: {tts_provider})...")
+        
+        if tts_provider == 'azure_speech':
+            azure_speech_key = config.get('azure_speech_key')
+            azure_speech_region = config.get('azure_speech_region', 'eastus')
+            
+            if not azure_speech_key:
+                logger.warning("⚠️ azure_speech_key not found, falling back to Piper")
+                tts_provider = 'piper'
+            else:
+                logger.info("🔊 Using Azure Speech REST API")
+                tts_service = TTSService(
+                    provider='azure_speech',
+                    api_key=azure_speech_key,
+                    region=azure_speech_region,
+                    base_url=None
+                )
+        
+        if tts_provider == 'piper':
+            piper_host = config.get('piper_host', 'addon_core_piper')
+            piper_port = int(config.get('piper_port', 10200))
+            logger.info(f"🔊 Using Piper TTS: {piper_host}:{piper_port}")
             tts_service = TTSService(
-                provider='azure_speech',
-                api_key=AZURE_API_KEY,  # Same key as Azure OpenAI!
-                base_url=None
+                provider='piper',
+                piper_host=piper_host,
+                piper_port=piper_port
             )
-        elif TTS_PROVIDER == 'piper':
-            logger.info("🔊 Using Piper TTS (local)")
-            tts_service = TTSService(provider='piper')
-        else:  # openai
+        
+        elif tts_provider == 'openai':
+            openai_key = config.get('openai_api_key')
+            openai_url = config.get('openai_base_url', 'https://api.openai.com/v1')
+            
+            if not openai_key:
+                raise Exception("❌ openai_api_key not found for TTS!")
+            
             logger.info("🔊 Using OpenAI TTS")
             tts_service = TTSService(
                 provider='openai',
-                api_key=OPENAI_API_KEY,
-                base_url=OPENAI_BASE_URL
+                api_key=openai_key,
+                base_url=openai_url
             )
         
-        # Initialize STT Service
-        logger.info("🎤 Initializing STT Service...")
-
-        STT_PROVIDER = get_config('stt_provider', 'groq')
-
-        if STT_PROVIDER == 'azure_speech':
+        logger.info(f"✅ TTS Service initialized: {tts_provider}")
+        
+        # ============================================================
+        # STEP 7: Initialize STT Service
+        # ============================================================
+        stt_provider = config.get('stt_provider', 'azure_speech').lower()
+        logger.info(f"🎤 Initializing STT Service (provider: {stt_provider})...")
+        
+        if stt_provider == 'azure_speech':
+            azure_speech_key = config.get('azure_speech_key')
+            azure_speech_region = config.get('azure_speech_region', 'eastus')
+            
+            if not azure_speech_key:
+                logger.warning("⚠️ azure_speech_key not found, falling back to Groq")
+                stt_provider = 'groq'
+            else:
+                logger.info("🎤 Using Azure Speech STT")
+                stt_service = STTService(
+                    api_key=azure_speech_key,
+                    region=azure_speech_region,
+                    model="whisper-1",
+                    provider='azure_speech'
+                )
+        
+        if stt_provider == 'groq':
+            groq_key = config.get('groq_api_key')
+            
+            if not groq_key:
+                logger.warning("⚠️ groq_api_key not found, falling back to OpenAI")
+                stt_provider = 'openai'
+            else:
+                logger.info("🎤 Using Groq STT (Whisper)")
+                stt_service = STTService(
+                    api_key=groq_key,
+                    base_url="https://api.groq.com/openai/v1",
+                    model="whisper-large-v3",
+                    provider='groq'
+                )
+        
+        if stt_provider == 'openai':
+            openai_key = config.get('openai_api_key')
+            openai_url = config.get('openai_base_url', 'https://api.openai.com/v1')
+            
+            if not openai_key:
+                raise Exception("❌ openai_api_key not found for STT!")
+            
+            logger.info("🎤 Using OpenAI STT (Whisper)")
             stt_service = STTService(
-                api_key=AZURE_API_KEY,
-                base_url=AZURE_ENDPOINT,
-                model="whisper-1",
-                provider='azure_speech'
-            )
-        elif GROQ_API_KEY:
-            stt_service = STTService(
-                api_key=GROQ_API_KEY,
-                base_url="https://api.groq.com/openai/v1",
-                model="whisper-large-v3",
-                provider='groq'
-            )
-        else:
-            stt_service = STTService(
-                api_key=OPENAI_API_KEY,
-                base_url=OPENAI_BASE_URL,
+                api_key=openai_key,
+                base_url=openai_url,
                 model="whisper-1",
                 provider='openai'
             )
-
         
-        # Initialize Conversation Logger (MySQL)
-        if MYSQL_URL:
-            try:
-                logger.info("💾 Initializing Conversation Logger...")
-                conversation_logger = ConversationLogger(MYSQL_URL)
-                await conversation_logger.connect()
-            except Exception as e:
-                logger.warning(f"⚠️ MySQL logger disabled: {e}")
-                conversation_logger = None
-        else:
-            logger.info("⚠️ MYSQL_URL not set, conversation logging disabled")
+        logger.info(f"✅ STT Service initialized: {stt_provider}")
         
-        # Initialize WebSocket Handler
+        # ============================================================
+        # STEP 8: Initialize Conversation Logger
+        # ============================================================
+        try:
+            logger.info("💾 Initializing Conversation Logger...")
+            conversation_logger = ConversationLogger(MYSQL_URL)
+            await conversation_logger.connect()
+            logger.info("✅ Conversation Logger ready")
+        except Exception as e:
+            logger.warning(f"⚠️ MySQL logger disabled: {e}")
+            conversation_logger = None
+        
+        # ============================================================
+        # STEP 9: Initialize WebSocket Handler
+        # ============================================================
         logger.info("🔌 Initializing WebSocket Handler...")
         ws_handler = WebSocketHandler(
             device_manager=device_manager,
@@ -348,14 +447,20 @@ async def lifespan(app: FastAPI):
             music_service=music_service
         )
         
+        # ============================================================
+        # STARTUP COMPLETE
+        # ============================================================
         logger.info("=" * 80)
         logger.info("✅ ALL SERVICES INITIALIZED SUCCESSFULLY")
         logger.info("=" * 80)
-        logger.info(f"🌐 Server listening on: {HOST}:{PORT}")
-        logger.info(f"📡 WebSocket endpoint: ws://{HOST}:{PORT}/ws")
-        logger.info(f"🌍 Web interface: http://{HOST}:{PORT}/")
+        logger.info(f"🌐 Server listening on: {os.getenv('HOST', '0.0.0.0')}:{os.getenv('PORT', 5000)}")
+        logger.info(f"📡 WebSocket endpoint: ws://{os.getenv('HOST', '0.0.0.0')}:{os.getenv('PORT', 5000)}/ws")
+        logger.info(f"🌍 Web interface: http://{os.getenv('HOST', '0.0.0.0')}:{os.getenv('PORT', 5000)}/")
+        logger.info(f"🤖 AI Provider: {ai_provider} ({model})")
+        logger.info(f"🔊 TTS Provider: {tts_provider}")
+        logger.info(f"🎤 STT Provider: {stt_provider}")
         if music_service:
-            logger.info(f"🎵 Music Service: {MUSIC_SERVICE_URL}")
+            logger.info(f"🎵 Music Service: {music_url}")
         logger.info("=" * 80)
         
         yield
@@ -381,8 +486,14 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 logger.error(f"❌ MySQL close error: {e}")
         
+        if config_manager:
+            try:
+                await config_manager.close()
+                logger.info("🔐 Config Manager closed")
+            except Exception as e:
+                logger.error(f"❌ Config Manager close error: {e}")
+        
         logger.info("✅ Shutdown complete")
-
 
 # ==============================================================================
 # FastAPI Application

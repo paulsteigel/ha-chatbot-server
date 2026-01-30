@@ -5,17 +5,17 @@ services:
     restart: unless-stopped
     
     ports:
-      - "5005:5000"
+      - "5005:5000"  # ✅ OK: external:internal
     
     environment:
       # Server
       - HOST=0.0.0.0
-      - PORT=5000
+      - PORT=5000  # ✅ OK: internal port
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       
       # AI Provider (Azure DeepSeek)
       - AI_PROVIDER=azure
-      - AI_MODEL=${AI_MODEL:-DeepSeek-V3.2}
+      - AI_MODEL=${AI_MODEL:-deepseek-chat}  # ✅ FIXED: was DeepSeek-V3.2
       - AZURE_API_KEY=${AZURE_API_KEY}
       - AZURE_ENDPOINT=${AZURE_ENDPOINT}
       - AZURE_DEPLOYMENT=${AZURE_DEPLOYMENT}
@@ -27,15 +27,16 @@ services:
       - AZURE_SPEECH_REGION=${AZURE_SPEECH_REGION:-eastus}
       
       # TTS Voices
-      - TTS_VOICE_VI=${TTS_VOICE_VI:-vi-VN-HoaiMyNeural}
+      - TTS_VOICE_VI=${TTS_VOICE_VI:-en-US-Ava:DragonHDLatestNeural}  # ✅ FIXED: from working config
       - TTS_VOICE_EN=${TTS_VOICE_EN:-en-US-AvaMultilingualNeural}
       
       # STT Provider
-      - STT_PROVIDER=${STT_PROVIDER:-groq}
+      - STT_PROVIDER=${STT_PROVIDER:-azure_speech}  # ✅ FIXED: was groq
       - GROQ_API_KEY=${GROQ_API_KEY}
       
       # Fallback providers
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}  # ✅ ADD THIS
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
       
       # Piper (fallback TTS)
@@ -45,7 +46,7 @@ services:
       - PIPER_VOICE_EN=${PIPER_VOICE_EN:-en_US-lessac-medium}
       
       # Music Service
-      - MUSIC_SERVICE_URL=${MUSIC_SERVICE_URL:-https://music.sfdp.net}
+      - MUSIC_SERVICE_URL=${MUSIC_SERVICE_URL:-http://music.sfdp.net}  # ✅ FIXED: http not https
       - ENABLE_MUSIC_PLAYBACK=${ENABLE_MUSIC_PLAYBACK:-true}
       
       # MySQL (optional)
@@ -60,17 +61,16 @@ services:
       - TTS_REMOVE_EMOJI=${TTS_REMOVE_EMOJI:-true}
       - TTS_REMOVE_MARKDOWN=${TTS_REMOVE_MARKDOWN:-true}
     
-    # ✅ FIXED: Named volumes (giống care-planner)
     volumes:
       - logs-data:/app/logs
       - models-data:/app/models
     
-    # ✅ FIXED: Add extra_hosts for MySQL connection
     extra_hosts:
       - "host.docker.internal:host-gateway"
     
     networks:
       - chatbot-net
+      - npm_default  # ← VERIFY THIS NAME FIRST!
     
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
@@ -82,8 +82,10 @@ services:
 networks:
   chatbot-net:
     driver: bridge
+  
+  npm_default:
+    external: true  # ✅ OK: reference existing NPM network
 
-# ✅ FIXED: Declare named volumes (giống care-planner)
 volumes:
   logs-data:
   models-data:
