@@ -90,13 +90,14 @@ class AIService:
         try:
             # ✅ Initialize appropriate client
             if self.provider == "azure":
-                self.logger.info(f"   Azure Endpoint: {base_url}")
-                
+                self.logger.info(f"   Azure Endpoint: {base_url}")    
                 # Azure AI Foundry uses OpenAI-compatible API
                 self.client = AsyncOpenAI(
                     api_key=api_key,
-                    base_url=base_url  # Already includes /openai/v1/
-                )
+                    base_url=base_url,  # Already includes /openai/v1/
+                    default_headers={
+                        "api-key": api_key  # ← CRITICAL! Azure requires this header
+                    }
             else:
                 # OpenAI or DeepSeek (OpenAI-compatible)
                 self.client = AsyncOpenAI(
