@@ -2,20 +2,24 @@ FROM python:3.11-slim-bookworm
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# ✅ CORRECT: Install ONLY essential dependencies for Azure Speech SDK
+# ✅ STEP 1: Install basic dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
-    libssl-dev \
     ca-certificates \
     libasound2 \
     wget \
     curl \
     ffmpeg \
-    # ✅ CRITICAL for Azure SDK:
     libgomp1 \
     libatomic1 \
     libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
+
+# ✅ STEP 2: Install OpenSSL 1.1.1 (required by Azure Speech SDK)
+# See: https://github.com/Azure-Samples/cognitive-services-speech-sdk/issues/2204
+RUN wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2.23_amd64.deb && \
+    dpkg -i libssl1.1_1.1.1f-1ubuntu2.23_amd64.deb && \
+    rm libssl1.1_1.1.1f-1ubuntu2.23_amd64.deb
 
 WORKDIR /app
 
@@ -40,7 +44,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
 
 LABEL \
     org.opencontainers.image.title="School Chatbot Server" \
-    org.opencontainers.image.description="Standalone Docker with Azure Speech SDK" \
+    org.opencontainers.image.description="Standalone Docker with Azure Speech SDK + OpenSSL 1.1.1" \
     org.opencontainers.image.source="https://github.com/paulsteigel/ha-chatbot-server" \
     org.opencontainers.image.authors="Đặng Đình Ngọc <ngocdd@sfdp.net>"
 
