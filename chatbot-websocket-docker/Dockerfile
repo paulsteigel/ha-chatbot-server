@@ -2,15 +2,26 @@ FROM python:3.11-slim-bookworm
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# Install system dependencies for Azure Speech SDK
+# ✅ ENHANCED: Install ALL dependencies for Azure Speech SDK
 RUN apt-get update && apt-get install -y \
     build-essential \
     libssl-dev \
     ca-certificates \
     libasound2 \
+    libasound2-dev \
+    libpulse0 \
+    libpulse-dev \
     wget \
     curl \
     ffmpeg \
+    # ✅ ADD THESE FOR SDK:
+    libgstreamer1.0-0 \
+    libgstreamer-plugins-base1.0-0 \
+    libgstreamer-plugins-good1.0-0 \
+    gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-ugly \
+    gstreamer1.0-libav \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -24,8 +35,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY app/ /app/app/
 COPY static/ /app/static/
-
-# ✅ REMOVED: COPY main.py /app/ (vì main.py đã ở trong app/)
 
 # Create directories with proper permissions
 RUN mkdir -p /app/logs /app/models && \
@@ -42,5 +51,4 @@ LABEL \
     org.opencontainers.image.source="https://github.com/paulsteigel/ha-chatbot-server" \
     org.opencontainers.image.authors="Đặng Đình Ngọc <ngocdd@sfdp.net>"
 
-# ✅ FIXED: Run from app/main.py
 CMD ["python", "-m", "app.main"]
