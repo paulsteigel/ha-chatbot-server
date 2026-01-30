@@ -13,7 +13,6 @@ services:
       - MYSQL_URL=${MYSQL_URL}
       - ADMIN_USERNAME="admin"
       - ADMIN_PASSWORD="D1ndh1sk@;;"
-
     
     volumes:
       - logs-data:/app/logs
