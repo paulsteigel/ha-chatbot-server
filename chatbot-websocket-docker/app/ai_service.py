@@ -606,14 +606,21 @@ class AIService:
             finish_reason = response.choices[0].finish_reason
             
             # ═══════════════════════════════════════════════════════════
-            # STEP 3: Handle function call
+            # STEP 3: Handle function call (3-TIER DETECTION)
             # ═══════════════════════════════════════════════════════════
+
+            # ─────────────────────────────────────────────────────────
+            # TIER 1: Standard OpenAI function calling
+            # ─────────────────────────────────────────────────────────
             if finish_reason == 'tool_calls' and message.tool_calls:
                 tool_call = message.tool_calls[0]
                 function_name = tool_call.function.name
                 function_args = json.loads(tool_call.function.arguments)
                 
-                self.logger.info(f"🎯 Function call ({self.provider}): {function_name}({function_args})")
+                self.logger.info(
+                    f"🎯 [TIER 1] Standard function call: {function_name}"
+                    f"({json.dumps(function_args, ensure_ascii=False)})"
+                )
                 
                 if function_name == "search_and_play_music" and music_service:
                     query = function_args.get('query')
@@ -643,13 +650,37 @@ class AIService:
                             'language': language,
                             'function_call': {
                                 'name': function_name,
-                                'arguments': function_args
+                                'arguments': function_args,
+                                'method': 'standard'
                             },
                             'music_result': first_result,
-                            'chunks': [response_text]  # ✅ Single chunk
+                            'chunks': [response_text]
                         }
-                    else:
-                        response_text = f"❌ Xin lỗi, tôi không tìm thấy bài hát '{query}'."
+
+            # ─────────────────────────────────────────────────────────
+            # TIER 2: Text-based function call parsing (DeepSeek)
+            # ─────────────────────────────────────────────────────────
+            elif finish_reason == 'stop' and message.content and music_service:
+                parsed_function = self.parse_text_function_call(message.content)
+                
+                if parsed_function and parsed_function['name'] == 'search_and_play_music':
+                    function_args = parsed_function['arguments']
+                    query = function_args.get('query')
+                    max_results = function_args.get('max_results', 1)
+                    
+                    self.logger.info(
+                        f"🎯 [TIER 2] Text-based function call: {query}"
+                    )
+                    
+                    music_results = await music_service.search_music(query, max_results)
+                    
+                    if music_results:
+                        first_result = music_results[0]
+                        
+                        response_text = (
+                            f"🎵 Đang phát: {first_result['title']} "
+                            f"của {first_result['channel']}"
+                        )
                         
                         self.conversation_history.append({
                             "role": "assistant",
@@ -663,10 +694,19 @@ class AIService:
                             'response': response_text,
                             'cleaned_response': cleaned_text,
                             'language': language,
-                            'function_call': None,
-                            'music_result': None,
-                            'chunks': [response_text]  # ✅ Single chunk
+                            'function_call': {
+                                'name': 'search_and_play_music',
+                                'arguments': function_args,
+                                'method': 'text_parsing'
+                            },
+                            'music_result': first_result,
+                            'chunks': [response_text]
                         }
+
+            # ─────────────────────────────────────────────────────────
+            # TIER 3: Normal response (will use keyword detection in chat_stream)
+            # ─────────────────────────────────────────────────────────
+
             
             # ═══════════════════════════════════════════════════════════
             # STEP 4: Normal text response WITH SMART SPLITTING
@@ -725,6 +765,49 @@ class AIService:
                 'music_result': None,
                 'chunks': [error_text]  # ✅ Single chunk for error
             }
+
+    def parse_text_function_call(self, text: str) -> Optional[Dict]:
+        """
+        🔍 PARSE TEXT-BASED FUNCTION CALLS (DeepSeek workaround)
+        
+        Some models (like DeepSeek on Azure Foundry) return function calls
+        as plain text instead of structured tool_calls.
+        
+        Example input:
+            "search_and_play_music\n{\n  \"query\": \"hà nội phố\",\n  \"max_results\": 1\n}"
+        
+        Returns:
+            {"name": "search_and_play_music", "arguments": {...}}
+            or None if not a function call
+        """
+        if not text:
+            return None
+        
+        # Pattern: function_name followed by JSON
+        pattern = r'^(search_and_play_music)\s*\n?\s*(\{[\s\S]*\})\s*$'
+        match = re.match(pattern, text.strip())
+        
+        if match:
+            function_name = match.group(1)
+            json_str = match.group(2)
+            
+            try:
+                arguments = json.loads(json_str)
+                
+                self.logger.info(
+                    f"🎯 Parsed text function call: {function_name}"
+                    f"({json.dumps(arguments, ensure_ascii=False)})"
+                )
+                
+                return {
+                    "name": function_name,
+                    "arguments": arguments
+                }
+            except json.JSONDecodeError as e:
+                self.logger.error(f"❌ Failed to parse function JSON: {e}")
+                return None
+        
+        return None
 
     def clear_history(self):
         """🗑️ Clear conversation history"""
