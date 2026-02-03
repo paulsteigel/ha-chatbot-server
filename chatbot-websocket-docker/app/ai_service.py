@@ -596,7 +596,12 @@ class AIService:
 
             # Call API
             response = await self.client.chat.completions.create(**request_params)
-            
+            # DEBUG LOGGING:
+            self.logger.info(f"🔍 DEBUG - API Response:")
+            self.logger.info(f"   Finish reason: {response.choices[0].finish_reason}")
+            self.logger.info(f"   Message content: {response.choices[0].message.content}")
+            self.logger.info(f"   Tool calls: {response.choices[0].message.tool_calls}")
+
             message = response.choices[0].message
             finish_reason = response.choices[0].finish_reason
             
