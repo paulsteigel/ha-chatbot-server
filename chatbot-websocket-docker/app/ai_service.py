@@ -768,44 +768,45 @@ class AIService:
 
     def parse_text_function_call(self, text: str) -> Optional[Dict]:
         """
-        🔍 PARSE TEXT-BASED FUNCTION CALLS (DeepSeek workaround)
+        🔍 PARSE TEXT-BASED FUNCTION CALLS
         
-        Some models (like DeepSeek on Azure Foundry) return function calls
-        as plain text instead of structured tool_calls.
+        Some models (DeepSeek, Claude) return function calls as text instead of 
+        structured tool_calls. This method detects and parses them.
         
         Example input:
-            "search_and_play_music\n{\n  \"query\": \"hà nội phố\",\n  \"max_results\": 1\n}"
+            "Chị sẽ phát nhạc cho em!\n\nsearch_and_play_music\n{\n  \"query\": \"hà nội phố\"\n}"
         
         Returns:
-            {"name": "search_and_play_music", "arguments": {...}}
+            {"name": "search_and_play_music", "arguments": {"query": "...", ...}}
             or None if not a function call
         """
         if not text:
             return None
         
-        # Pattern: function_name followed by JSON
-        pattern = r'^(search_and_play_music)\s*\n?\s*(\{[\s\S]*\})\s*$'
-        match = re.match(pattern, text.strip())
+        # Pattern 1: function_name\n{...json...}
+        pattern1 = r'search_and_play_music\s*\n\s*(\{[^}]+\})'
         
-        if match:
-            function_name = match.group(1)
-            json_str = match.group(2)
+        # Pattern 2: More flexible - find JSON after function name
+        pattern2 = r'search_and_play_music.*?(\{[\s\S]*?"query"[\s\S]*?\})'
+        
+        for pattern in [pattern1, pattern2]:
+            match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
             
-            try:
-                arguments = json.loads(json_str)
+            if match:
+                json_str = match.group(1)
                 
-                self.logger.info(
-                    f"🎯 Parsed text function call: {function_name}"
-                    f"({json.dumps(arguments, ensure_ascii=False)})"
-                )
-                
-                return {
-                    "name": function_name,
-                    "arguments": arguments
-                }
-            except json.JSONDecodeError as e:
-                self.logger.error(f"❌ Failed to parse function JSON: {e}")
-                return None
+                try:
+                    arguments = json.loads(json_str)
+                    
+                    self.logger.info(f"🎯 Parsed text function call: search_and_play_music({arguments})")
+                    
+                    return {
+                        "name": "search_and_play_music",
+                        "arguments": arguments
+                    }
+                except json.JSONDecodeError as e:
+                    self.logger.warning(f"⚠️ Failed to parse JSON: {e}")
+                    continue
         
         return None
 
