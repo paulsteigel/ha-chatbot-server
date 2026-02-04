@@ -143,52 +143,52 @@ class ToolRegistry:
         return {'query': 'random'}
     
     def _extract_device_params(self, text: str, tool: ToolDefinition) -> Dict:
-    """Extract device control parameters"""
-    params = {}
-    
-    # Volume control
-    if 'volume' in tool.parameters.get('properties', {}):
-        numbers = re.findall(r'\d+', text)
-        if numbers:
-            params['volume'] = int(numbers[0])
-        else:
-            # Relative adjustment
-            if any(kw in text.lower() for kw in ['tăng', 'lên', 'up']):
-                params['volume'] = '+10'
-            elif any(kw in text.lower() for kw in ['giảm', 'xuống', 'down']):
-                params['volume'] = '-10'
-    
-    # ✅ ADD THIS: Return None if required params are missing
-    if 'volume' in tool.parameters.get('required', []) and 'volume' not in params:
-        return None
-    
-    # Light/Fan control
-    if 'action' in tool.parameters.get('properties', {}):
-        if any(kw in text.lower() for kw in ['bật', 'mở', 'on']):
-            params['action'] = 'on'
-        elif any(kw in text.lower() for kw in ['tắt', 'off']):
-            params['action'] = 'off'
-    
-    # ✅ ADD THIS: Return None if required params are missing
-    if 'action' in tool.parameters.get('required', []) and 'action' not in params:
-        return None
-    
-    # Brightness control
-    if 'brightness' in tool.parameters.get('properties', {}):
-        numbers = re.findall(r'\d+', text)
-        if numbers:
-            params['brightness'] = int(numbers[0])
-        else:
-            if any(kw in text.lower() for kw in ['tăng', 'sáng', 'up']):
-                params['brightness'] = '+10'
-            elif any(kw in text.lower() for kw in ['giảm', 'tối', 'down']):
-                params['brightness'] = '-10'
-    
-    # ✅ ADD THIS: Return None if required params are missing
-    if 'brightness' in tool.parameters.get('required', []) and 'brightness' not in params:
-        return None
-    
-    return params
+        """Extract device control parameters"""
+        params = {}
+        
+        # Volume control
+        if 'volume' in tool.parameters.get('properties', {}):
+            numbers = re.findall(r'\d+', text)
+            if numbers:
+                params['volume'] = int(numbers[0])
+            else:
+                # Relative adjustment
+                if any(kw in text.lower() for kw in ['tăng', 'lên', 'up']):
+                    params['volume'] = '+10'
+                elif any(kw in text.lower() for kw in ['giảm', 'xuống', 'down']):
+                    params['volume'] = '-10'
+        
+        # ✅ ADD THIS: Return None if required params are missing
+        if 'volume' in tool.parameters.get('required', []) and 'volume' not in params:
+            return None
+        
+        # Light/Fan control
+        if 'action' in tool.parameters.get('properties', {}):
+            if any(kw in text.lower() for kw in ['bật', 'mở', 'on']):
+                params['action'] = 'on'
+            elif any(kw in text.lower() for kw in ['tắt', 'off']):
+                params['action'] = 'off'
+        
+        # ✅ ADD THIS: Return None if required params are missing
+        if 'action' in tool.parameters.get('required', []) and 'action' not in params:
+            return None
+        
+        # Brightness control
+        if 'brightness' in tool.parameters.get('properties', {}):
+            numbers = re.findall(r'\d+', text)
+            if numbers:
+                params['brightness'] = int(numbers[0])
+            else:
+                if any(kw in text.lower() for kw in ['tăng', 'sáng', 'up']):
+                    params['brightness'] = '+10'
+                elif any(kw in text.lower() for kw in ['giảm', 'tối', 'down']):
+                    params['brightness'] = '-10'
+        
+        # ✅ ADD THIS: Return None if required params are missing
+        if 'brightness' in tool.parameters.get('required', []) and 'brightness' not in params:
+            return None
+        
+        return params
 
 
     # ───────────────────────────────────────────────────────────
