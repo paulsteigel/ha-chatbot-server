@@ -16,55 +16,6 @@ import json
 from typing import List, Dict, Optional, AsyncGenerator, Any
 from openai import AsyncOpenAI, AsyncAzureOpenAI
 
-
-# ═══════════════════════════════════════════════════════════════════
-# MUSIC FUNCTION DEFINITION
-# ═══════════════════════════════════════════════════════════════════
-MUSIC_CONTROL_FUNCTION = {
-    "type": "function",
-    "function": {
-        "name": "control_music",
-        "description": "Control music playback (stop, pause, resume, next, previous). Use when user wants to control the currently playing music.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": ["stop", "pause", "resume", "next", "previous"],
-                    "description": "The control action to perform"
-                }
-            },
-            "required": ["action"]
-        }
-    }
-}
-
-MUSIC_FUNCTIONS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "search_and_play_music",
-            "description": "Search for music on YouTube and play it. Use when user asks to play a song, music, or audio.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "The song name, artist, or search query. Examples: 'the tempest piano', 'beethoven symphony 5', 'lofi hip hop'"
-                    },
-                    "max_results": {
-                        "type": "integer",
-                        "description": "Number of results to return (default: 1 for immediate playback, 5 for showing options)",
-                        "default": 1
-                    }
-                },
-                "required": ["query"]
-            }
-        }
-    },
-    MUSIC_CONTROL_FUNCTION
-]
-
 class AIService:
     """AI Chat Service with streaming support"""
 
@@ -78,7 +29,8 @@ class AIService:
         max_tokens: int = 500,
         max_context: int = 10,
         provider: str = "openai",
-        azure_api_version: str = None
+        azure_api_version: str = None,
+        tool_registry = None
     ):
         """Initialize AI Service"""
         self.logger = logging.getLogger("AIService")
@@ -92,6 +44,7 @@ class AIService:
         self.max_context = max_context
         self.provider = provider.lower()
         self.azure_api_version = azure_api_version
+        self.tool_registry = tool_registry
 
         # ✅ Enable function calling (OpenAI and Azure only)
         self.use_function_calling = self.provider in ["openai", "azure"]
@@ -333,6 +286,153 @@ class AIService:
         
         return chunks
 
+    async def chat_with_tools(
+        self,
+        user_message: str,
+        conversation_logger=None,
+        device_id: str = None,
+        device_type: str = None,
+        music_service=None,
+        device_manager=None
+    ) -> Dict[str, Any]:
+        """
+        💬 CHAT WITH HYBRID TOOL DETECTION
+        
+        Tier 1: Keyword detection (fast, works for all models)
+        Tier 2: Function calling (GPT-4, GPT-4o)
+        Tier 3: Normal chat
+        """
+        try:
+            self.logger.info(f"💬 User: {user_message}")
+            
+            # ═══════════════════════════════════════════════════════════
+            # TIER 1: KEYWORD DETECTION (Primary for DeepSeek)
+            # ═══════════════════════════════════════════════════════════
+            if self.tool_registry:
+                detected = self.tool_registry.detect_tool(user_message)
+            else:
+                detected = None
+            
+            if detected:
+                tool_name, params = detected
+                self.logger.info(f"🎯 [TIER 1] Keyword detected: {tool_name}({params})")
+                
+                # Execute tool
+                tool = self.tool_registry.tools[tool_name]
+                result = await tool.handler(params)
+                
+                if result['success']:
+                    response_text = result['message']
+                    
+                    # Add to history
+                    self.conversation_history.append({"role": "user", "content": user_message})
+                    self.conversation_history.append({"role": "assistant", "content": response_text})
+                    
+                    cleaned_text = self.clean_text_for_tts(response_text)
+                    language = self.detect_language(cleaned_text)
+                    
+                    return {
+                        'response': response_text,
+                        'cleaned_response': cleaned_text,
+                        'language': language,
+                        'tool_call': {
+                            'name': tool_name,
+                            'arguments': params,
+                            'method': 'keyword'
+                        },
+                        'music_result': result.get('music_result'),
+                        'chunks': [response_text]
+                    }
+            
+            # ═══════════════════════════════════════════════════════════
+            # TIER 2: FUNCTION CALLING (GPT-4, GPT-4o)
+            # ═══════════════════════════════════════════════════════════
+            if self.use_function_calling:
+                self.conversation_history.append({"role": "user", "content": user_message})
+                
+                if len(self.conversation_history) > self.max_context * 2:
+                    self.conversation_history = self.conversation_history[-(self.max_context * 2):]
+                
+                messages = [
+                    {"role": "system", "content": self.system_prompt}
+                ] + self.conversation_history
+                
+                # Get functions from registry
+                functions = self.tool_registry.get_openai_functions()
+                
+                response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens,
+                    tools=functions,
+                    tool_choice="auto"
+                )
+                
+                message = response.choices[0].message
+                finish_reason = response.choices[0].finish_reason
+                
+                # Handle function call
+                if finish_reason == 'tool_calls' and message.tool_calls:
+                    tool_call = message.tool_calls[0]
+                    function_name = tool_call.function.name
+                    function_args = json.loads(tool_call.function.arguments)
+                    
+                    self.logger.info(f"🎯 [TIER 2] Function call: {function_name}({function_args})")
+                    
+                    # Execute tool
+                    tool = self.tool_registry.tools[function_name]
+                    result = await tool.handler(function_args)
+                    
+                    if result['success']:
+                        response_text = result['message']
+                        
+                        self.conversation_history.append({
+                            "role": "assistant",
+                            "content": response_text
+                        })
+                        
+                        cleaned_text = self.clean_text_for_tts(response_text)
+                        language = self.detect_language(cleaned_text)
+                        
+                        return {
+                            'response': response_text,
+                            'cleaned_response': cleaned_text,
+                            'language': language,
+                            'tool_call': {
+                                'name': function_name,
+                                'arguments': function_args,
+                                'method': 'function_calling'
+                            },
+                            'music_result': result.get('music_result'),
+                            'chunks': [response_text]
+                        }
+            
+            # ═══════════════════════════════════════════════════════════
+            # TIER 3: NORMAL CHAT (No tool detected)
+            # ═══════════════════════════════════════════════════════════
+            return await self.chat(
+                user_message=user_message,
+                conversation_logger=conversation_logger,
+                device_id=device_id,
+                device_type=device_type,
+                music_service=music_service
+            )
+        
+        except Exception as e:
+            self.logger.error(f"❌ Chat with tools error: {e}", exc_info=True)
+            
+            error_text = "Xin lỗi, tôi gặp lỗi khi xử lý. Vui lòng thử lại."
+            
+            return {
+                'response': error_text,
+                'cleaned_response': error_text,
+                'language': 'vi',
+                'tool_call': None,
+                'music_result': None,
+                'chunks': [error_text]
+            }
+        
     async def chat_stream(
         self,
         user_message: str,
@@ -555,8 +655,8 @@ class AIService:
             }
             
             # Add function calling if enabled (but keyword detection takes priority)
-            if self.use_function_calling and music_service:
-                request_params["tools"] = MUSIC_FUNCTIONS
+            if self.use_function_calling and self.tool_registry:
+                request_params["tools"] = self.tool_registry.get_openai_functions()
                 request_params["tool_choice"] = "auto"
             
             # Call API
@@ -570,26 +670,19 @@ class AIService:
             # ═══════════════════════════════════════════════════════════
             # TIER 2: Standard function calling (GPT-4, GPT-4o)
             # ═══════════════════════════════════════════════════════════
-            if finish_reason == 'tool_calls' and message.tool_calls and music_service:
+            if finish_reason == 'tool_calls' and message.tool_calls and self.tool_registry:
                 tool_call = message.tool_calls[0]
                 function_name = tool_call.function.name
                 function_args = json.loads(tool_call.function.arguments)
                 
                 self.logger.info(f"🎯 [TIER 2] Standard function call: {function_name}({function_args})")
                 
-                if function_name == "search_and_play_music":
-                    query = function_args.get('query')
-                    max_results = function_args.get('max_results', 1)
+                # ✅ Use tool_registry to execute (like chat_with_tools does)
+                try:
+                    result = await self.tool_registry.execute_tool(function_name, function_args)
                     
-                    music_results = await music_service.search_music(query, max_results)
-                    
-                    if music_results:
-                        first_result = music_results[0]
-                        
-                        response_text = (
-                            f"🎵 Đang phát: {first_result['title']} "
-                            f"của {first_result['channel']}"
-                        )
+                    if result.get('success'):
+                        response_text = result['message']
                         
                         self.conversation_history.append({
                             "role": "assistant",
@@ -608,9 +701,12 @@ class AIService:
                                 'arguments': function_args,
                                 'method': 'standard'
                             },
-                            'music_result': first_result,
+                            'music_result': result.get('music_result'),
                             'chunks': [response_text]
                         }
+                except Exception as tool_error:
+                    self.logger.error(f"❌ Tool execution failed: {tool_error}")
+                    # Fall through to normal response
             
             # ═══════════════════════════════════════════════════════════
             # TIER 3: Normal text response

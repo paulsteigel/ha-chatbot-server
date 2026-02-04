@@ -126,3 +126,23 @@ class DeviceManager:
             self.logger.info(f"🗑️ Removed inactive device: {device_id}")
         
         return len(devices_to_remove)
+
+    def get_volume(self) -> int:
+        """Get current volume"""
+        # Mock implementation
+        return 50
+    
+    def set_volume(self, volume: int):
+        """Set volume"""
+        self.logger.info(f"🔊 Set volume to {volume}")
+        # TODO: Implement actual volume control
+    
+    def turn_on_light(self):
+        """Turn on light"""
+        self.logger.info("💡 Light ON")
+        # TODO: Implement actual light control
+    
+    def turn_off_light(self):
+        """Turn off light"""
+        self.logger.info("🌙 Light OFF")
+        # TODO: Implement actual light control

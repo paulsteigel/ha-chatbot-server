@@ -1,7 +1,7 @@
 """
 School Chatbot WebSocket Server
 Main FastAPI application with WebSocket support for ESP32 devices
-✅ WITH MUSIC SERVICE + AZURE AI INTEGRATION
+✅ WITH TOOL REGISTRY + MUSIC SERVICE + AZURE AI INTEGRATION
 """
 import secrets
 import hashlib
@@ -19,7 +19,7 @@ import json
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request, Response, Depends
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse
 
 # Import services
 from app.ai_service import AIService
@@ -31,6 +31,9 @@ from app.websocket_handler import WebSocketHandler
 from app.conversation_logger import ConversationLogger
 from app.music_service import MusicService
 from app.config import SYSTEM_PROMPT, AI_CONFIG, TTS_CONFIG, STT_CONFIG, AI_MODELS
+
+# ✅ FIXED: Import tool registry instead of tools
+from app.tool_registry import tool_registry, register_music_tools, register_device_tools
 
 # ==============================================================================
 # Configuration Helper - WITH NULL HANDLING
@@ -81,36 +84,16 @@ def safe_float(value, default: float) -> float:
 
 
 def safe_bool(value, default: bool = False) -> bool:
-    """
-    Safely convert value to bool, handle string/bool/None.
-    
-    Args:
-        value: Can be bool, string, int, or None
-        default: Default value if conversion fails
-    
-    Returns:
-        Boolean value
-    
-    Examples:
-        safe_bool(True) -> True
-        safe_bool('true') -> True
-        safe_bool('false') -> False
-        safe_bool(1) -> True
-        safe_bool(0) -> False
-        safe_bool(None) -> False (default)
-    """
+    """Safely convert value to bool, handle string/bool/None."""
     if value is None or value == "" or value == "null" or value == "None":
         return default
     
-    # Already a boolean
     if isinstance(value, bool):
         return value
     
-    # String conversion
     if isinstance(value, str):
         return value.lower() in ('true', '1', 'yes', 'on', 'enabled')
     
-    # Integer conversion (0 = False, non-zero = True)
     if isinstance(value, (int, float)):
         return bool(value)
     
@@ -118,10 +101,8 @@ def safe_bool(value, default: bool = False) -> bool:
 
 # ═══════════════════════════════════════════════════════════════════
 # AUTHENTICATION & SESSION MANAGEMENT
-# ═══════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 
-# In-memory session storage (for simplicity)
-# In production, use Redis or database
 active_sessions = {}
 
 def hash_password(password: str) -> str:
@@ -161,7 +142,6 @@ async def get_current_user(request: Request) -> dict:
     if not session:
         raise HTTPException(status_code=401, detail="Invalid session")
     
-    # Check session age (24 hours)
     if time.time() - session['created_at'] > 86400:
         delete_session(session_token)
         raise HTTPException(status_code=401, detail="Session expired")
@@ -170,7 +150,6 @@ async def get_current_user(request: Request) -> dict:
 
 async def get_admin_credentials():
     """Get admin credentials from database or environment"""
-    # Try database first (only if conversation_logger is initialized)
     if conversation_logger and hasattr(conversation_logger, 'pool') and conversation_logger.pool:
         try:
             async with conversation_logger.pool.acquire() as conn:
@@ -195,19 +174,18 @@ async def get_admin_credentials():
         except Exception as e:
             logger.warning(f"⚠️ Could not load admin credentials from DB: {e}")
     
-    # Fallback to environment variables
     username = os.getenv('ADMIN_USERNAME', 'admin')
-    password = os.getenv('ADMIN_PASSWORD', 'admin123')  # Default password
+    password = os.getenv('ADMIN_PASSWORD', 'admin123')
     
     return {
         'username': username,
         'password_hash': hash_password(password)
     }
+
 # ==============================================================================
 # Configuration - AFTER get_config() is defined
 # ==============================================================================
 
-# Logging setup first
 LOG_LEVEL = get_config('log_level', 'INFO').upper()
 logging.basicConfig(
     level=LOG_LEVEL,
@@ -215,38 +193,28 @@ logging.basicConfig(
 )
 logger = logging.getLogger('Main')
 
-# Server configuration
 HOST = os.getenv('HOST', '0.0.0.0')
 PORT = int(os.getenv('PORT', '5000'))
 
-# ✅ AI CONFIGURATION
 AI_PROVIDER = get_config('ai_provider', 'deepseek')
 
-# ✅ Update AI_MODELS to include Azure
 AI_MODELS_EXTENDED = {
     'openai': 'gpt-4o-mini',
     'deepseek': 'deepseek-chat',
     'azure': 'gpt-4o'
 }
 
-# API Keys
 OPENAI_API_KEY = get_config('openai_api_key', '')
 OPENAI_BASE_URL = get_config('openai_base_url', 'https://api.openai.com/v1')
 DEEPSEEK_API_KEY = get_config('deepseek_api_key', '')
 DEEPSEEK_BASE_URL = os.getenv('DEEPSEEK_BASE_URL', 'https://api.deepseek.com/v1')
 GROQ_API_KEY = get_config('groq_api_key', '')
 
-# ✅ Azure configuration
 AZURE_API_KEY = get_config('azure_api_key', '')
 AZURE_ENDPOINT = get_config('azure_endpoint', '')
 AZURE_DEPLOYMENT = get_config('azure_deployment', '')
 AZURE_API_VERSION = get_config('azure_api_version', '2024-02-15-preview')
 
-# Azure Speech (optional)
-#AZURE_SPEECH_KEY = get_config('azure_speech_key', '')
-#AZURE_SPEECH_REGION = get_config('azure_speech_region', '')
-
-# Auto-select correct model for provider
 if AI_PROVIDER.lower() == 'openai':
     DEFAULT_MODEL = AI_MODELS_EXTENDED.get('openai', 'gpt-4o-mini')
 elif AI_PROVIDER.lower() == 'deepseek':
@@ -256,17 +224,13 @@ elif AI_PROVIDER.lower() == 'azure':
 else:
     DEFAULT_MODEL = 'gpt-4o-mini'
 
-# Allow manual override
 AI_MODEL = get_config('ai_model', DEFAULT_MODEL)
 
-# MySQL configuration
 MYSQL_URL = get_config('mysql_url', '')
 
-# Music Service configuration
 MUSIC_SERVICE_URL = get_config('music_service_url', 'https://music.sfdp.net')
 ENABLE_MUSIC = get_config('enable_music_playback', True)
 
-# System prompt
 SYSTEM_PROMPT_OVERRIDE = get_config('system_prompt', None)
 if SYSTEM_PROMPT_OVERRIDE and len(SYSTEM_PROMPT_OVERRIDE) > 50:
     FINAL_SYSTEM_PROMPT = SYSTEM_PROMPT_OVERRIDE
@@ -275,7 +239,6 @@ else:
     FINAL_SYSTEM_PROMPT = SYSTEM_PROMPT
     logger.info("💬 Using DEFAULT system prompt from config.py")
 
-# Chat configuration
 CHAT_TEMPERATURE = safe_float(
     get_config('temperature', AI_CONFIG.get("temperature", 0.7)),
     0.7
@@ -289,10 +252,8 @@ CHAT_MAX_CONTEXT = safe_int(
     10
 )
 
-# TTS configuration
 TTS_VOICE = get_config('tts_voice_vi', TTS_CONFIG.get("vietnamese_voice", "nova"))
 
-# ✅ LOG CONFIGURATION
 logger.info("=" * 80)
 logger.info("🤖 AI CONFIGURATION")
 logger.info("=" * 80)
@@ -323,7 +284,6 @@ logger.info(f"🎵 Music Service: {'✅' if ENABLE_MUSIC else '❌'} ({MUSIC_SER
 logger.info(f"📊 Log Level: {LOG_LEVEL}")
 logger.info("=" * 80)
 
-
 # ==============================================================================
 # Service Instances (Global)
 # ==============================================================================
@@ -349,20 +309,9 @@ async def reload_services():
     logger.info("=" * 80)
     
     try:
-        # ============================================================
-        # Load config from database (returns flat dict)
-        # ============================================================
         config = await config_manager.load_config(force_refresh=True)
         logger.info(f"✅ Loaded {len(config)} config items from database")
         
-        # ✅ DEBUG: Log groq key
-        groq_key_debug = config.get('groq_api_key', '')
-        logger.info(f"🔑 DEBUG groq_api_key type: {type(groq_key_debug)}")
-        logger.info(f"🔑 DEBUG groq_api_key value: {groq_key_debug[:20] if groq_key_debug else 'EMPTY'}...")
-        
-        # ============================================================
-        # Close old services
-        # ============================================================
         if music_service:
             try:
                 await music_service.close()
@@ -370,9 +319,7 @@ async def reload_services():
             except Exception as e:
                 logger.warning(f"⚠️ Error closing music service: {e}")
         
-        # ============================================================
         # Reload AI Service
-        # ============================================================
         ai_provider = config.get('ai_provider', 'azure').lower()
         logger.info(f"🤖 Reloading AI Service (provider: {ai_provider})...")
         
@@ -394,6 +341,7 @@ async def reload_services():
         
         system_prompt = config.get('system_prompt', FINAL_SYSTEM_PROMPT)
         
+        # ✅ FIXED: Pass tools to AI service
         ai_service = AIService(
             api_key=api_key,
             base_url=base_url,
@@ -403,7 +351,8 @@ async def reload_services():
             max_tokens=int(config.get('max_tokens', 500)),
             max_context=int(config.get('max_context', 10)),
             provider=ai_provider,
-            azure_api_version=azure_api_version
+            azure_api_version=azure_api_version,
+            tool_registry=tool_registry  # ✅ ADD THIS
         )
         logger.info(f"✅ AI Service reloaded: {model}")
         
@@ -414,13 +363,12 @@ async def reload_services():
         if tts_provider == 'azure_speech':
             azure_speech_key = config.get('azure_speech_key', '')
             azure_speech_region = config.get('azure_speech_region', 'eastus')
-            azure_speech_endpoint = config.get('azure_speech_endpoint', '')  # ✅ ADD THIS
+            azure_speech_endpoint = config.get('azure_speech_endpoint', '')
             
             if not azure_speech_key:
                 logger.warning("⚠️ azure_speech_key not found, falling back to Piper")
                 tts_provider = 'piper'
             else:
-                # ✅ Log what we're using
                 if azure_speech_endpoint:
                     logger.info(f"🔊 Reloading Azure Speech with ENDPOINT")
                 else:
@@ -430,7 +378,7 @@ async def reload_services():
                     provider='azure_speech',
                     api_key=azure_speech_key,
                     region=azure_speech_region,
-                    azure_speech_endpoint=azure_speech_endpoint  # ✅ ADD THIS
+                    azure_speech_endpoint=azure_speech_endpoint
                 )
         
         if tts_provider == 'piper':
@@ -453,9 +401,7 @@ async def reload_services():
         
         logger.info(f"✅ TTS Service reloaded: {tts_provider}")
         
-        # ============================================================
         # Reload STT Service
-        # ============================================================
         stt_provider = config.get('stt_provider', 'azure_speech').lower()
         logger.info(f"🎤 Reloading STT Service (provider: {stt_provider})...")
         
@@ -498,9 +444,7 @@ async def reload_services():
         
         logger.info(f"✅ STT Service reloaded: {stt_provider}")
         
-        # ============================================================
         # Reload Music Service
-        # ============================================================
         enable_music = safe_bool(config.get('enable_music_playback', True))
         music_url = config.get('music_service_url', 'http://music.sfdp.net')
         
@@ -511,17 +455,15 @@ async def reload_services():
             music_service = None
             logger.info("⚠️ Music Service disabled")
         
-        # ============================================================
         # Update WebSocket Handler
-        # ============================================================
         if ws_handler:
             ws_handler.ai_service = ai_service
             ws_handler.tts_service = tts_service
             ws_handler.stt_service = stt_service
             ws_handler.music_service = music_service
+            ws_handler.tool_registry = tool_registry  # ✅ ADD THIS
             logger.info("✅ WebSocket handler updated")
             
-            # Notify clients
             if device_manager:
                 connections = device_manager.get_all_connections()
                 notification = {
@@ -549,6 +491,7 @@ async def reload_services():
     except Exception as e:
         logger.error(f"❌ Service reload failed: {e}", exc_info=True)
         raise
+
 # ==============================================================================
 # Lifespan Context Manager
 # ==============================================================================
@@ -563,9 +506,7 @@ async def lifespan(app: FastAPI):
     logger.info("=" * 80)
     
     try:
-        # ============================================================
         # STEP 1: Initialize Config Manager & Load from MySQL
-        # ============================================================
         MYSQL_URL = os.getenv('MYSQL_URL')
         if not MYSQL_URL:
             raise Exception("❌ MYSQL_URL not set in environment!")
@@ -574,26 +515,18 @@ async def lifespan(app: FastAPI):
         config_manager = ConfigManager(MYSQL_URL)
         await config_manager.connect()
         
-        # Load all configuration from MySQL
         config = await config_manager.load_config()
         logger.info(f"✅ Loaded {len(config)} config items from MySQL")
         
-        # ============================================================
         # STEP 2: Initialize Device Manager
-        # ============================================================
         logger.info("📱 Initializing Device Manager...")
         device_manager = DeviceManager()
         
-        # ============================================================
         # STEP 3: Initialize OTA Manager
-        # ============================================================
         logger.info("📦 Initializing OTA Manager...")
         ota_manager = OTAManager()
         
-        # ============================================================
         # STEP 4: Initialize Music Service
-        # ============================================================
-        # ✅ FIXED: Handle both string and boolean
         enable_music = safe_bool(config.get('enable_music_playback', True))
         music_url = config.get('music_service_url', 'http://music.sfdp.net')
 
@@ -609,7 +542,12 @@ async def lifespan(app: FastAPI):
             logger.info("⚠️ Music playback disabled in config")
             music_service = None
 
-        
+        # ✅ FIXED: Register tools AFTER device_manager and music_service are created
+        logger.info("🔧 Registering tools...")
+        register_device_tools(device_manager)
+        if music_service:
+            register_music_tools(music_service)
+        logger.info(f"✅ Registered {len(tool_registry.get_all_tools())} tools")
         # ============================================================
         # STEP 5: Initialize AI Service
         # ============================================================
@@ -649,6 +587,7 @@ async def lifespan(app: FastAPI):
         # Get system prompt (use default if not in config)
         system_prompt = config.get('system_prompt', FINAL_SYSTEM_PROMPT)
         
+        # ✅ FIXED: Pass tool_registry to AI service
         ai_service = AIService(
             api_key=api_key,
             base_url=base_url,
@@ -658,25 +597,28 @@ async def lifespan(app: FastAPI):
             max_tokens=int(config.get('max_tokens', 500)),
             max_context=int(config.get('max_context', 10)),
             provider=ai_provider,
-            azure_api_version=azure_api_version
+            azure_api_version=azure_api_version,
+            tool_registry=tool_registry  # ✅ ADD THIS
         )
         
         logger.info(f"✅ AI Service initialized: {model}")
+        logger.info(f"   Tools available: {len(tool_registry.get_all_tools())}")
         
+        # ============================================================
         # STEP 6: Initialize TTS Service
+        # ============================================================
         tts_provider = config.get('tts_provider', 'azure_speech').lower()
         logger.info(f"🔊 Initializing TTS Service (provider: {tts_provider})...")
 
         if tts_provider == 'azure_speech':
             azure_speech_key = config.get('azure_speech_key')
             azure_speech_region = config.get('azure_speech_region', 'eastus')
-            azure_speech_endpoint = config.get('azure_speech_endpoint')  # ✅ ADD THIS
+            azure_speech_endpoint = config.get('azure_speech_endpoint')
             
             if not azure_speech_key:
                 logger.warning("⚠️ azure_speech_key not found, falling back to Piper")
                 tts_provider = 'piper'
             else:
-                # ✅ Log what we're using
                 if azure_speech_endpoint:
                     logger.info(f"🔊 Using Azure Speech SDK with ENDPOINT")
                     logger.info(f"   Endpoint: {azure_speech_endpoint}")
@@ -688,7 +630,7 @@ async def lifespan(app: FastAPI):
                     provider='azure_speech',
                     api_key=azure_speech_key,
                     region=azure_speech_region,
-                    azure_speech_endpoint=azure_speech_endpoint  # ✅ ADD THIS
+                    azure_speech_endpoint=azure_speech_endpoint
                 )
         
         if tts_provider == 'piper':
@@ -731,16 +673,12 @@ async def lifespan(app: FastAPI):
                 stt_provider = 'groq'
             else:
                 logger.info("🎤 Using Azure Speech STT")
-                # ✅ FIXED: Don't pass region - service gets it from config!
                 stt_service = STTService(
                     api_key=azure_speech_key,
                     model="whisper-1",
                     provider='azure_speech'
                 )
-        groq_key_debug = config.get('groq_api_key', '')
-        logger.info(f"🔑 DEBUG startup groq_api_key type: {type(groq_key_debug)}")
-        logger.info(f"🔑 DEBUG startup groq_api_key value: {groq_key_debug[:20] if groq_key_debug else 'EMPTY'}...")
-
+        
         if stt_provider == 'groq':
             groq_key = config.get('groq_api_key')
             
@@ -772,7 +710,6 @@ async def lifespan(app: FastAPI):
             )
 
         logger.info(f"✅ STT Service initialized: {stt_provider}")
-
         
         # ============================================================
         # STEP 8: Initialize Conversation Logger
@@ -790,6 +727,8 @@ async def lifespan(app: FastAPI):
         # STEP 9: Initialize WebSocket Handler
         # ============================================================
         logger.info("🔌 Initializing WebSocket Handler...")
+        
+        # ✅ FIXED: Pass tool_registry to WebSocket handler
         ws_handler = WebSocketHandler(
             device_manager=device_manager,
             ota_manager=ota_manager,
@@ -797,7 +736,8 @@ async def lifespan(app: FastAPI):
             tts_service=tts_service,
             stt_service=stt_service,
             conversation_logger=conversation_logger,
-            music_service=music_service
+            music_service=music_service,
+            tool_registry=tool_registry  # ✅ ADD THIS
         )
         
         # ============================================================
@@ -814,6 +754,12 @@ async def lifespan(app: FastAPI):
         logger.info(f"🎤 STT Provider: {stt_provider}")
         if music_service:
             logger.info(f"🎵 Music Service: {music_url}")
+        logger.info(f"🔧 Registered Tools: {len(tool_registry.get_all_tools())}")
+        
+        # ✅ Log tool details
+        for tool_name, tool_def in tool_registry.get_all_tools().items():
+            logger.info(f"   - {tool_name} [{tool_def.tool_type.value}]")
+        
         logger.info("=" * 80)
         
         yield
@@ -854,7 +800,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="School Chatbot WebSocket Server",
-    description="WebSocket server for ESP32-based school chatbot with music playback and Azure AI",
+    description="WebSocket server for ESP32-based school chatbot with tool registry, music playback and Azure AI",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -863,7 +809,6 @@ app = FastAPI(
 if os.path.exists('/app/static'):
     app.mount("/static", StaticFiles(directory="/app/static"), name="static")
     logger.info("📁 Static files mounted at /static")
-
 
 # ==============================================================================
 # HTTP Endpoints
@@ -893,18 +838,15 @@ async def root():
             """
         )
 
-
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    # Get device count safely
     device_count = 0
     if device_manager and hasattr(device_manager, 'get_device_count'):
         device_count = device_manager.get_device_count()
     elif device_manager and hasattr(device_manager, 'devices'):
         device_count = len(device_manager.devices)
     
-    # Get active connections count safely
     active_connections = 0
     if ws_handler and hasattr(ws_handler, 'get_active_connections_count'):
         active_connections = ws_handler.get_active_connections_count()
@@ -921,19 +863,17 @@ async def health_check():
             "ota_manager": ota_manager is not None,
             "websocket_handler": ws_handler is not None,
             "conversation_logger": conversation_logger is not None,
-            "music_service": music_service is not None  # ✅ ADD THIS
+            "music_service": music_service is not None,
+            "tool_registry": tool_registry is not None  # ✅ ADD THIS
         },
         "devices": device_count,
-        "active_connections": active_connections
+        "active_connections": active_connections,
+        "registered_tools": len(tool_registry.get_all_tools()) if tool_registry else 0  # ✅ ADD THIS
     })
-
 
 @app.get("/api/mysql/status")
 async def mysql_status():
-    """
-    ✅ CHECK MYSQL LOGGING STATUS
-    Endpoint để monitor MySQL logging health
-    """
+    """✅ CHECK MYSQL LOGGING STATUS"""
     if not conversation_logger:
         return JSONResponse({
             "status": "disabled",
@@ -942,10 +882,8 @@ async def mysql_status():
         })
     
     try:
-        # Get stats
         stats = conversation_logger.get_stats()
         
-        # Test connection
         pool_info = {
             "available": False,
             "size": 0,
@@ -955,7 +893,6 @@ async def mysql_status():
         
         if conversation_logger.pool:
             try:
-                # Quick connection test
                 async with asyncio.timeout(3):
                     async with conversation_logger.pool.acquire() as conn:
                         async with conn.cursor() as cursor:
@@ -994,7 +931,6 @@ async def mysql_status():
             "message": str(e)
         }, status_code=500)
 
-
 def _get_recommendation(stats: dict) -> str:
     """Get recommendation based on stats"""
     health = stats.get('health', 'unknown')
@@ -1015,14 +951,12 @@ def _get_recommendation(stats: dict) -> str:
     
     return "✅ All systems operational."
 
-
 @app.get("/status")
 async def get_status():
     """Get detailed server status"""
     if not device_manager:
         return JSONResponse({"error": "Device manager not initialized"}, status_code=503)
     
-    # Get statistics safely
     stats = {}
     if hasattr(device_manager, 'get_statistics'):
         stats = device_manager.get_statistics()
@@ -1032,7 +966,6 @@ async def get_status():
             "devices": list(device_manager.devices.keys())
         }
     
-    # Get active connections
     active_connections = 0
     active_devices = []
     if ws_handler:
@@ -1046,20 +979,33 @@ async def get_status():
         elif hasattr(ws_handler, 'active_connections'):
             active_devices = list(ws_handler.active_connections.keys())
     
+    # ✅ ADD: Get tool registry info
+    tools_info = {}
+    if tool_registry:
+        tools_info = {
+            "total": len(tool_registry.get_all_tools()),
+            "by_type": {}
+        }
+        
+        from app.tool_registry import ToolType
+        for tool_type in ToolType:
+            tools_of_type = tool_registry.get_tools_by_type(tool_type)
+            tools_info["by_type"][tool_type.value] = len(tools_of_type)
+    
     return JSONResponse({
         "server": {
             "version": "1.0.0",
             "ai_provider": AI_PROVIDER,
             "ai_model": AI_MODEL,
             "mysql_logging": conversation_logger is not None,
-            "music_service": music_service is not None,  # ✅ ADD THIS
-            "music_url": MUSIC_SERVICE_URL if music_service else None  # ✅ ADD THIS
+            "music_service": music_service is not None,
+            "music_url": MUSIC_SERVICE_URL if music_service else None,
+            "tools": tools_info  # ✅ ADD THIS
         },
         "devices": stats,
         "active_connections": active_connections,
         "active_device_ids": active_devices
     })
-
 
 @app.get("/api/conversations")
 async def get_conversations(device_id: str = None, limit: int = 50):
@@ -1081,6 +1027,30 @@ async def get_conversations(device_id: str = None, limit: int = 50):
             "error": str(e)
         }, status_code=500)
 
+# ✅ NEW: Get registered tools endpoint
+@app.get("/api/tools")
+async def get_tools():
+    """Get all registered tools"""
+    if not tool_registry:
+        return JSONResponse({
+            "error": "Tool registry not initialized"
+        }, status_code=503)
+    
+    tools_list = []
+    for tool_name, tool_def in tool_registry.get_all_tools().items():
+        tools_list.append({
+            "name": tool_name,
+            "description": tool_def.description,
+            "type": tool_def.tool_type.value,
+            "keywords": tool_def.keywords,
+            "examples": tool_def.examples,
+            "parameters": tool_def.parameters
+        })
+    
+    return JSONResponse({
+        "tools": tools_list,
+        "count": len(tools_list)
+    })
 
 # ==============================================================================
 # WebSocket Endpoint
@@ -1093,7 +1063,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 # ═══════════════════════════════════════════════════════════════════
 # AUTHENTICATION ENDPOINTS
-# ═══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════
 
 @app.get("/login")
 async def login_page():
@@ -1108,7 +1078,6 @@ async def login(request: Request, response: Response):
         username = data.get('username', '')
         password = data.get('password', '')
         
-        # ✅ ADD DEBUG LOGGING
         logger.info(f"🔐 Login attempt:")
         logger.info(f"   Username from form: '{username}'")
         logger.info(f"   Password length: {len(password)}")
@@ -1116,7 +1085,6 @@ async def login(request: Request, response: Response):
         # Get admin credentials
         admin_creds = await get_admin_credentials()
         
-        # ✅ ADD DEBUG LOGGING
         logger.info(f"🔐 Loaded credentials:")
         logger.info(f"   Expected username: '{admin_creds['username']}'")
         logger.info(f"   Expected hash: {admin_creds['password_hash'][:20]}...")
@@ -1265,7 +1233,8 @@ async def reload_services_endpoint(user: dict = Depends(get_current_user)):
                 "ai": ai_service is not None,
                 "tts": tts_service is not None,
                 "stt": stt_service is not None,
-                "music": music_service is not None
+                "music": music_service is not None,
+                "tools": len(tool_registry.get_all_tools()) if tool_registry else 0
             }
         })
     except Exception as e:
