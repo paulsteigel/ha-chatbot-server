@@ -201,7 +201,7 @@ AI_PROVIDER = get_config('ai_provider', 'deepseek')
 AI_MODELS_EXTENDED = {
     'openai': 'gpt-4o-mini',
     'deepseek': 'deepseek-chat',
-    'azure': 'gpt-4o'
+    'azure': 'DeepSeek-V3.2'
 }
 
 OPENAI_API_KEY = get_config('openai_api_key', '')
