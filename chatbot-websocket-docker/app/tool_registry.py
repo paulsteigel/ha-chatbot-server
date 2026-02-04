@@ -89,19 +89,31 @@ class ToolRegistry:
         """
         text_lower = text.lower()
         
+        # ✅ PRIORITIZE MUSIC KEYWORDS
+        # Check music keywords first (more specific)
+        music_keywords = ['nhạc', 'bài hát', 'music', 'song', 'phát nhạc', 'play music']
+        has_music_keyword = any(kw in text_lower for kw in music_keywords)
+        
         # Find matching tool
         for keyword, tool_name in self.keyword_map.items():
             if keyword in text_lower:
                 tool = self.tools[tool_name]
                 
+                # ✅ Skip device tools if music keywords are present
+                if has_music_keyword and tool.tool_type == ToolType.DEVICE_CONTROL:
+                    continue
+                
                 # Extract parameters
                 params = self._extract_params(text, tool)
                 
+                # ✅ Skip if params extraction failed (required params missing)
                 if params is not None:
                     logger.info(f"🎯 Detected tool: {tool_name} with params: {params}")
                     return (tool_name, params)
         
         return None
+
+
     
     def _extract_params(self, text: str, tool: ToolDefinition) -> Optional[Dict]:
         """Extract parameters from text based on tool definition"""
@@ -131,41 +143,54 @@ class ToolRegistry:
         return {'query': 'random'}
     
     def _extract_device_params(self, text: str, tool: ToolDefinition) -> Dict:
-        """Extract device control parameters"""
-        params = {}
-        
-        # Volume control
-        if 'volume' in tool.parameters.get('properties', {}):
-            numbers = re.findall(r'\d+', text)
-            if numbers:
-                params['volume'] = int(numbers[0])
-            else:
-                # Relative adjustment
-                if any(kw in text.lower() for kw in ['tăng', 'lên', 'up']):
-                    params['volume'] = '+10'
-                elif any(kw in text.lower() for kw in ['giảm', 'xuống', 'down']):
-                    params['volume'] = '-10'
-        
-        # Light/Fan control
-        if 'action' in tool.parameters.get('properties', {}):
-            if any(kw in text.lower() for kw in ['bật', 'mở', 'on']):
-                params['action'] = 'on'
-            elif any(kw in text.lower() for kw in ['tắt', 'off']):
-                params['action'] = 'off'
-        
-        # Brightness control
-        if 'brightness' in tool.parameters.get('properties', {}):
-            numbers = re.findall(r'\d+', text)
-            if numbers:
-                params['brightness'] = int(numbers[0])
-            else:
-                if any(kw in text.lower() for kw in ['tăng', 'sáng', 'up']):
-                    params['brightness'] = '+10'
-                elif any(kw in text.lower() for kw in ['giảm', 'tối', 'down']):
-                    params['brightness'] = '-10'
-        
-        return params
+    """Extract device control parameters"""
+    params = {}
     
+    # Volume control
+    if 'volume' in tool.parameters.get('properties', {}):
+        numbers = re.findall(r'\d+', text)
+        if numbers:
+            params['volume'] = int(numbers[0])
+        else:
+            # Relative adjustment
+            if any(kw in text.lower() for kw in ['tăng', 'lên', 'up']):
+                params['volume'] = '+10'
+            elif any(kw in text.lower() for kw in ['giảm', 'xuống', 'down']):
+                params['volume'] = '-10'
+    
+    # ✅ ADD THIS: Return None if required params are missing
+    if 'volume' in tool.parameters.get('required', []) and 'volume' not in params:
+        return None
+    
+    # Light/Fan control
+    if 'action' in tool.parameters.get('properties', {}):
+        if any(kw in text.lower() for kw in ['bật', 'mở', 'on']):
+            params['action'] = 'on'
+        elif any(kw in text.lower() for kw in ['tắt', 'off']):
+            params['action'] = 'off'
+    
+    # ✅ ADD THIS: Return None if required params are missing
+    if 'action' in tool.parameters.get('required', []) and 'action' not in params:
+        return None
+    
+    # Brightness control
+    if 'brightness' in tool.parameters.get('properties', {}):
+        numbers = re.findall(r'\d+', text)
+        if numbers:
+            params['brightness'] = int(numbers[0])
+        else:
+            if any(kw in text.lower() for kw in ['tăng', 'sáng', 'up']):
+                params['brightness'] = '+10'
+            elif any(kw in text.lower() for kw in ['giảm', 'tối', 'down']):
+                params['brightness'] = '-10'
+    
+    # ✅ ADD THIS: Return None if required params are missing
+    if 'brightness' in tool.parameters.get('required', []) and 'brightness' not in params:
+        return None
+    
+    return params
+
+
     # ───────────────────────────────────────────────────────────
     # OPENAI FUNCTION CALLING (for GPT-4)
     # ───────────────────────────────────────────────────────────
@@ -301,6 +326,13 @@ def register_device_tools(device_manager):
     async def set_volume(args: Dict) -> Dict:
         """Set audio volume"""
         volume = args.get('volume')
+        
+        # ✅ ADD THIS: Check if volume is None
+        if volume is None:
+            return {
+                "success": False,
+                "message": "Thiếu thông tin âm lượng"
+            }
         
         # Handle relative adjustment
         if isinstance(volume, str) and volume.startswith(('+', '-')):
@@ -448,6 +480,12 @@ def register_device_tools(device_manager):
     async def set_brightness(args: Dict) -> Dict:
         """Set screen brightness"""
         brightness = args.get('brightness')
+
+        if brightness is None:
+            return {
+                "success": False,
+                "message": "Thiếu thông tin độ sáng"
+            }
         
         # Handle relative adjustment
         if isinstance(brightness, str) and brightness.startswith(('+', '-')):
