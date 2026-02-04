@@ -84,9 +84,9 @@ class TTSService:
         # ═══════════════════════════════════════════════════════════
         self.azure_speech_key = None
         self.azure_speech_region = None
-        self.azure_speech_endpoint = None  # ✅ ADD THIS
+        self.azure_speech_endpoint = None
         self.speech_config = None
-        
+
         if self.provider == "azure_speech":
             # Get credentials
             self.azure_speech_key = (
@@ -94,7 +94,7 @@ class TTSService:
             ).strip()
             
             self.azure_speech_region = (
-                region or get_config("azure_speech_region", "eastus")
+                region or get_config("azure_speech_region", "eastus2")
             )
             
             # ✅ GET ENDPOINT (PRIORITY!)
@@ -104,18 +104,25 @@ class TTSService:
             ).strip()
             
             if self.azure_speech_key:
-                # ✅ FORCE USE REGION (endpoint doesn't work well in Docker)
                 if AZURE_SDK_AVAILABLE:
                     try:
-                        logger.info(f"🔊 Using Azure Speech SDK with REGION")
-                        logger.info(f"   Region: {self.azure_speech_region}")
-                        logger.info(f"   Note: Endpoint ignored (doesn't work in Docker)")
-                        
-                        # ✅ ALWAYS USE REGION (more reliable in Docker)
-                        self.speech_config = speechsdk.SpeechConfig(
-                            subscription=self.azure_speech_key,
-                            region=self.azure_speech_region
-                        )
+                        # ✅ PRIORITIZE ENDPOINT (like Azure Foundry)
+                        if self.azure_speech_endpoint:
+                            logger.info(f"🔊 Using Azure Speech SDK with ENDPOINT")
+                            logger.info(f"   Endpoint: {self.azure_speech_endpoint}")
+                            
+                            self.speech_config = speechsdk.SpeechConfig(
+                                subscription=self.azure_speech_key,
+                                endpoint=self.azure_speech_endpoint  # ✅ Use endpoint
+                            )
+                        else:
+                            logger.info(f"🔊 Using Azure Speech SDK with REGION")
+                            logger.info(f"   Region: {self.azure_speech_region}")
+                            
+                            self.speech_config = speechsdk.SpeechConfig(
+                                subscription=self.azure_speech_key,
+                                region=self.azure_speech_region
+                            )
                         
                         # Set output format
                         self.speech_config.set_speech_synthesis_output_format(
@@ -123,18 +130,11 @@ class TTSService:
                         )
                         
                         logger.info("✅ Azure Speech SDK configured successfully")
-                        logger.info(f"   Output: WAV 16kHz mono")
-                        logger.info(f"   Method: SDK (fast!)")
                         
                     except Exception as e:
                         logger.error(f"❌ Azure Speech SDK init failed: {e}", exc_info=True)
-                        logger.info("   Fallback: Will use REST API")
                         self.speech_config = None
-                else:
-                    logger.warning("⚠️ Azure Speech SDK not available")
-                    logger.info("   Using REST API (slower)")
-            else:
-                logger.error("❌ Azure Speech key not found!")
+
         
         # ═══════════════════════════════════════════════════════════
         # OPENAI CLIENT SETUP
@@ -316,8 +316,8 @@ class TTSService:
         self, text: str, language: str
     ) -> bytes:
         """
-        Synthesize using Azure Speech SDK (FAST! < 2s)
-        ✅ EXACTLY LIKE PLAYGROUND SAMPLE
+        Synthesize using Azure Speech SDK
+        ✅ Supports HD Neural voices with model suffix (e.g., :DragonHDLatestNeural)
         Returns WAV 16kHz bytes.
         """
         if not AZURE_SDK_AVAILABLE:
@@ -326,9 +326,9 @@ class TTSService:
         if not self.speech_config:
             raise Exception("Azure Speech SDK not configured")
         
-        # Get voice name
+        # ✅ Get voice name WITH MODEL SUFFIX (like Azure Foundry)
         voice_vi = get_config("tts_voice_vi", "vi-VN-HoaiMyNeural")
-        voice_en = get_config("tts_voice_en", "en-US-AvaMultilingualNeural")
+        voice_en = get_config("tts_voice_en", "en-US-Ava:DragonHDLatestNeural")  # ✅ WITH SUFFIX!
         voice_name = voice_vi if language == "vi" else voice_en
         
         # ✅ Set voice (EXACTLY LIKE PLAYGROUND)
