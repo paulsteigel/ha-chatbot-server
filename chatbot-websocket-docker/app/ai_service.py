@@ -42,8 +42,28 @@ MUSIC_FUNCTIONS = [
                 "required": ["query"]
             }
         }
-    }
+    },
+    MUSIC_CONTROL_FUNCTION
 ]
+
+MUSIC_CONTROL_FUNCTION = {
+    "type": "function",
+    "function": {
+        "name": "control_music",
+        "description": "Control music playback (stop, pause, resume, next, previous). Use when user wants to control the currently playing music.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["stop", "pause", "resume", "next", "previous"],
+                    "description": "The control action to perform"
+                }
+            },
+            "required": ["action"]
+        }
+    }
+}
 
 
 class AIService:
@@ -128,25 +148,36 @@ class AIService:
             self.logger.warning(f"⚠️ AI test skipped: {e}")
 
     def detect_music_intent(self, text: str) -> Optional[str]:
-        """🎵 DETECT MUSIC INTENT (for DeepSeek fallback)"""
+        """🎵 DETECT MUSIC INTENT - IMPROVED"""
         text_lower = text.lower()
         
-        vi_patterns = [
-            r'(?:mở|phát|chơi|bật|tìm|nghe)\s+(?:bài\s+)?(?:nhạc|hát|piano|guitar|music)',
-            r'(?:cho|giúp)\s+(?:tôi|em|mình)\s+(?:nghe|mở|phát)\s+(?:nhạc|bài)',
-            r'play\s+(?:music|song|piano|guitar)',
-            r'tìm\s+(?:bài\s+)?(?:hát|nhạc)',
+        # Vietnamese + English patterns
+        patterns = [
+            # Vietnamese
+            r'(?:mở|phát|chơi|bật|tìm|nghe|play)\s+(?:bài\s+)?(?:nhạc|hát|bản\s+nhạc|music|song)\s+(.+)',
+            r'(?:cho|giúp)\s+(?:tôi|em|mình)\s+(?:nghe|mở|phát)\s+(?:nhạc|bài|music)\s+(.+)',
+            r'(?:tìm|search)\s+(?:bài\s+)?(?:hát|nhạc|music|song)\s+(.+)',
+            
+            # English
+            r'play\s+(?:music|song|audio|track)\s+(.+)',
+            r'(?:search|find)\s+(?:music|song)\s+(.+)',
+            
+            # Direct song name (after keywords)
+            r'(?:phát|play|mở|bật)\s+(.+?)(?:\s+(?:đi|nào|nhé))?$',
         ]
         
-        for pattern in vi_patterns:
-            match = re.search(pattern, text_lower)
+        for pattern in patterns:
+            match = re.search(pattern, text_lower, re.IGNORECASE)
             if match:
-                after_command = text_lower[match.end():].strip()
-                if after_command:
-                    after_command = re.sub(r'^(về|của|bởi|by|from)\s+', '', after_command)
-                    return after_command
-                else:
-                    return "piano music"
+                query = match.group(1).strip()
+                
+                # Clean up common Vietnamese particles
+                query = re.sub(r'^(về|của|bởi|by|from)\s+', '', query)
+                query = re.sub(r'\s+(đi|nào|nhé|đê)$', '', query)
+                
+                if len(query) > 2:  # Minimum 3 chars
+                    self.logger.info(f"🎵 Extracted query: '{query}'")
+                    return query
         
         return None
 
@@ -311,76 +342,43 @@ class AIService:
         device_type: str = None,
         music_service=None
     ) -> AsyncGenerator[tuple[str, str, str, bool, Optional[dict]], None]:
-        """🌊 STREAM CHAT RESPONSE - WITH MUSIC SUPPORT (2-STEP APPROACH)"""
+        """🌊 STREAM WITH TIER 1 KEYWORD DETECTION"""
         start_time = time.time()
         
         try:
             self.logger.info(f"💬 User: {user_message}")
             
             # ═══════════════════════════════════════════════════════════
-            # ✅ STEP 1: CHECK FOR MUSIC INTENT FIRST (NON-STREAMING)
+            # TIER 1: KEYWORD DETECTION (Check first, before API call)
             # ═══════════════════════════════════════════════════════════
             if music_service:
-                # Try function calling first (OpenAI/Azure)
-                if self.use_function_calling:
-                    self.logger.info(f"🎵 Checking for function calls ({self.provider})...")
-                    
-                    # ✅ Use non-streaming chat() to detect function calls
-                    result = await self.chat(
-                        user_message=user_message,
-                        conversation_logger=conversation_logger,
-                        device_id=device_id,
-                        device_type=device_type,
-                        music_service=music_service
-                    )
-                    
-                    # If music was found, yield it and return
-                    if result.get('music_result'):
-                        self.logger.info(f"🎵 Music function called successfully!")
-                        
-                        yield (
-                            result['response'],
-                            result['cleaned_response'],
-                            result['language'],
-                            True,  # is_final
-                            result['music_result']  # ✅ Music data
-                        )
-                        return
+                music_query = self.detect_music_intent(user_message)
                 
-                # Fallback: Keyword detection (DeepSeek)
-                else:
-                    music_query = self.detect_music_intent(user_message)
+                if music_query:
+                    self.logger.info(f"🎯 [TIER 1 STREAM] Keyword: '{music_query}'")
                     
-                    if music_query:
-                        self.logger.info(f"🎵 Music intent detected (keyword): '{music_query}'")
+                    music_results = await music_service.search_music(music_query, 1)
+                    
+                    if music_results:
+                        first_result = music_results[0]
                         
-                        music_results = await music_service.search_music(music_query, 1)
+                        response_text = (
+                            f"🎵 Đang phát: {first_result['title']} "
+                            f"của {first_result['channel']}"
+                        )
                         
-                        if music_results:
-                            first_result = music_results[0]
-                            
-                            response_text = (
-                                f"🎵 Đang phát: {first_result['title']} "
-                                f"của {first_result['channel']}"
-                            )
-                            
-                            self.conversation_history.append({"role": "user", "content": user_message})
-                            self.conversation_history.append({"role": "assistant", "content": response_text})
-                            
-                            cleaned_text = self.clean_text_for_tts(response_text)
-                            language = self.detect_language(cleaned_text)
-                            
-                            yield (
-                                response_text,
-                                cleaned_text,
-                                language,
-                                True,
-                                first_result  # ✅ Music data
-                            )
-                            return
+                        self.conversation_history.append({"role": "user", "content": user_message})
+                        self.conversation_history.append({"role": "assistant", "content": response_text})
+                        
+                        cleaned_text = self.clean_text_for_tts(response_text)
+                        language = self.detect_language(cleaned_text)
+                        
+                        # Yield music result and return
+                        yield (response_text, cleaned_text, language, True, first_result)
+                        return
             
             # ═══════════════════════════════════════════════════════════
-            # ✅ STEP 2: NORMAL STREAMING CHAT (No music detected)
+            # NORMAL STREAMING (No music detected)
             # ═══════════════════════════════════════════════════════════
             self.conversation_history.append({"role": "user", "content": user_message})
             
@@ -430,8 +428,7 @@ class AIService:
                                 language = self.detect_language(cleaned)
                                 
                                 self.logger.info(
-                                    f"📤 Chunk {sentence_count} ({language}, sentence_end, {len(original)} chars): "
-                                    f"'{original[:40]}...'"
+                                    f"📤 Chunk {sentence_count} ({language}): '{original[:40]}...'"
                                 )
                                 
                                 yield (original, cleaned, language, False, None)
@@ -446,7 +443,7 @@ class AIService:
                 if cleaned:
                     sentence_count += 1
                     language = self.detect_language(cleaned)
-                    self.logger.info(f"📤 Final chunk {sentence_count} ({len(original)} chars)")
+                    self.logger.info(f"📤 Final chunk {sentence_count}")
                     yield (original, cleaned, language, True, None)
                 else:
                     yield ("", "", "", True, None)
@@ -461,12 +458,8 @@ class AIService:
             
             request_time = time.time() - request_start
             
-            self.logger.info(
-                f"🤖 Complete: {len(full_response)} chars, {sentence_count} chunks"
-            )
-            self.logger.info(
-                f"⏱️  Timing: First token {first_token_time:.2f}s, Total {request_time:.2f}s"
-            )
+            self.logger.info(f"🤖 Complete: {len(full_response)} chars, {sentence_count} chunks")
+            self.logger.info(f"⏱️  Total: {request_time:.2f}s")
             
             # Log to MySQL
             if conversation_logger and device_id:
@@ -485,13 +478,7 @@ class AIService:
             
         except Exception as e:
             self.logger.error(f"❌ Chat stream error: {e}", exc_info=True)
-            yield (
-                "Xin lỗi, chị gặp lỗi khi xử lý.", 
-                "Xin lỗi, chị gặp lỗi khi xử lý.", 
-                "vi", 
-                True,
-                None
-            )
+            yield ("Xin lỗi, chị gặp lỗi khi xử lý.", "Xin lỗi, chị gặp lỗi khi xử lý.", "vi", True, None)
 
     async def chat(
         self,
@@ -502,27 +489,23 @@ class AIService:
         music_service=None
     ) -> Dict[str, Any]:
         """
-        💬 CHAT WITH FUNCTION CALLING SUPPORT + SMART SPLITTING
+        💬 CHAT WITH 3-TIER MUSIC DETECTION
         
-        Returns dict with:
-        - response: str (full text response)
-        - cleaned_response: str (for TTS)
-        - language: str
-        - function_call: dict (if music function called)
-        - music_result: dict (if music found)
-        - chunks: List[str] (✅ NEW: split response for TTS)
+        TIER 1: Keyword detection (works for all models)
+        TIER 2: Standard function calling (GPT-4, GPT-4o)
+        TIER 3: Text parsing (DeepSeek fallback)
         """
         try:
             self.logger.info(f"💬 User: {user_message}")
             
             # ═══════════════════════════════════════════════════════════
-            # STEP 1: Check for music intent (DeepSeek fallback)
+            # TIER 1: KEYWORD DETECTION (Primary for DeepSeek)
             # ═══════════════════════════════════════════════════════════
-            if not self.use_function_calling and music_service:
+            if music_service:
                 music_query = self.detect_music_intent(user_message)
                 
                 if music_query:
-                    self.logger.info(f"🎵 Music intent detected (keyword): '{music_query}'")
+                    self.logger.info(f"🎯 [TIER 1] Keyword detection: '{music_query}'")
                     
                     music_results = await music_service.search_music(music_query, 1)
                     
@@ -546,14 +529,15 @@ class AIService:
                             'language': language,
                             'function_call': {
                                 'name': 'search_and_play_music',
-                                'arguments': {'query': music_query, 'method': 'keyword'}
+                                'arguments': {'query': music_query},
+                                'method': 'keyword'
                             },
                             'music_result': first_result,
-                            'chunks': [response_text]  # ✅ Single chunk for music
+                            'chunks': [response_text]
                         }
             
             # ═══════════════════════════════════════════════════════════
-            # STEP 2: Normal chat with function calling (OpenAI/Azure)
+            # TIER 2 & 3: Call API (with or without function calling)
             # ═══════════════════════════════════════════════════════════
             self.conversation_history.append({"role": "user", "content": user_message})
             
@@ -571,58 +555,30 @@ class AIService:
                 "max_tokens": self.max_tokens
             }
             
-            # Add function calling if enabled
+            # Add function calling if enabled (but keyword detection takes priority)
             if self.use_function_calling and music_service:
                 request_params["tools"] = MUSIC_FUNCTIONS
                 request_params["tool_choice"] = "auto"
-                self.logger.info(f"🎵 Function calling enabled ({self.provider})")
             
-            # ✅ DEBUG LOGGING
-            self.logger.info(f"🔍 DEBUG - About to call API with:")
-            self.logger.info(f"   Model: {request_params.get('model')}")
-            self.logger.info(f"   Messages count: {len(request_params.get('messages', []))}")
-            self.logger.info(f"   Stream: {request_params.get('stream')}")
-            self.logger.info(f"   Temperature: {request_params.get('temperature')}")
-            self.logger.info(f"   Max tokens: {request_params.get('max_tokens')}")
-            
-            self.logger.info(f"🔍 DEBUG - Client config:")
-            self.logger.info(f"   Base URL: {self.client.base_url}")
-            self.logger.info(f"   API Key (first 20): {self.client.api_key[:20]}...")
-            
-            self.logger.info(f"🔍 EXACT REQUEST:")
-            self.logger.info(f"   URL: {self.client.base_url}chat/completions")
-            self.logger.info(f"   Headers: Authorization: Bearer {self.client.api_key[:20]}...")
-            self.logger.info(f"   Body: {json.dumps(request_params, indent=2)}")
-
             # Call API
             response = await self.client.chat.completions.create(**request_params)
-            # DEBUG LOGGING:
-            self.logger.info(f"🔍 DEBUG - API Response:")
-            self.logger.info(f"   Finish reason: {response.choices[0].finish_reason}")
-            self.logger.info(f"   Message content: {response.choices[0].message.content}")
-            self.logger.info(f"   Tool calls: {response.choices[0].message.tool_calls}")
-
+            
             message = response.choices[0].message
             finish_reason = response.choices[0].finish_reason
             
+            self.logger.info(f"🔍 API Response - Finish: {finish_reason}, Tool calls: {message.tool_calls}")
+            
             # ═══════════════════════════════════════════════════════════
-            # STEP 3: Handle function call (3-TIER DETECTION)
+            # TIER 2: Standard function calling (GPT-4, GPT-4o)
             # ═══════════════════════════════════════════════════════════
-
-            # ─────────────────────────────────────────────────────────
-            # TIER 1: Standard OpenAI function calling
-            # ─────────────────────────────────────────────────────────
-            if finish_reason == 'tool_calls' and message.tool_calls:
+            if finish_reason == 'tool_calls' and message.tool_calls and music_service:
                 tool_call = message.tool_calls[0]
                 function_name = tool_call.function.name
                 function_args = json.loads(tool_call.function.arguments)
                 
-                self.logger.info(
-                    f"🎯 [TIER 1] Standard function call: {function_name}"
-                    f"({json.dumps(function_args, ensure_ascii=False)})"
-                )
+                self.logger.info(f"🎯 [TIER 2] Standard function call: {function_name}({function_args})")
                 
-                if function_name == "search_and_play_music" and music_service:
+                if function_name == "search_and_play_music":
                     query = function_args.get('query')
                     max_results = function_args.get('max_results', 1)
                     
@@ -656,60 +612,9 @@ class AIService:
                             'music_result': first_result,
                             'chunks': [response_text]
                         }
-
-            # ─────────────────────────────────────────────────────────
-            # TIER 2: Text-based function call parsing (DeepSeek)
-            # ─────────────────────────────────────────────────────────
-            elif finish_reason == 'stop' and message.content and music_service:
-                parsed_function = self.parse_text_function_call(message.content)
-                
-                if parsed_function and parsed_function['name'] == 'search_and_play_music':
-                    function_args = parsed_function['arguments']
-                    query = function_args.get('query')
-                    max_results = function_args.get('max_results', 1)
-                    
-                    self.logger.info(
-                        f"🎯 [TIER 2] Text-based function call: {query}"
-                    )
-                    
-                    music_results = await music_service.search_music(query, max_results)
-                    
-                    if music_results:
-                        first_result = music_results[0]
-                        
-                        response_text = (
-                            f"🎵 Đang phát: {first_result['title']} "
-                            f"của {first_result['channel']}"
-                        )
-                        
-                        self.conversation_history.append({
-                            "role": "assistant",
-                            "content": response_text
-                        })
-                        
-                        cleaned_text = self.clean_text_for_tts(response_text)
-                        language = self.detect_language(cleaned_text)
-                        
-                        return {
-                            'response': response_text,
-                            'cleaned_response': cleaned_text,
-                            'language': language,
-                            'function_call': {
-                                'name': 'search_and_play_music',
-                                'arguments': function_args,
-                                'method': 'text_parsing'
-                            },
-                            'music_result': first_result,
-                            'chunks': [response_text]
-                        }
-
-            # ─────────────────────────────────────────────────────────
-            # TIER 3: Normal response (will use keyword detection in chat_stream)
-            # ─────────────────────────────────────────────────────────
-
             
             # ═══════════════════════════════════════════════════════════
-            # STEP 4: Normal text response WITH SMART SPLITTING
+            # TIER 3: Normal text response
             # ═══════════════════════════════════════════════════════════
             response_text = message.content or "Tôi không chắc cách trả lời câu hỏi đó."
             
@@ -718,12 +623,10 @@ class AIService:
                 "content": response_text
             })
             
-            # ✅ SPLIT LONG RESPONSES INTO CHUNKS
+            # Split into chunks
             chunks = self.split_long_response(response_text, max_chunk_size=150)
             
             self.logger.info(f"📊 Response split into {len(chunks)} chunks")
-            for i, chunk in enumerate(chunks, 1):
-                self.logger.info(f"   Chunk {i}: {len(chunk)} chars - '{chunk[:40]}...'")
             
             cleaned_text = self.clean_text_for_tts(response_text)
             language = self.detect_language(cleaned_text)
@@ -749,7 +652,7 @@ class AIService:
                 'language': language,
                 'function_call': None,
                 'music_result': None,
-                'chunks': chunks  # ✅ RETURN CHUNKS FOR TTS
+                'chunks': chunks
             }
         
         except Exception as e:
@@ -763,50 +666,40 @@ class AIService:
                 'language': 'vi',
                 'function_call': None,
                 'music_result': None,
-                'chunks': [error_text]  # ✅ Single chunk for error
+                'chunks': [error_text]
             }
 
-    def parse_text_function_call(self, text: str) -> Optional[Dict]:
-        """
-        🔍 PARSE TEXT-BASED FUNCTION CALLS
+    def detect_music_control_intent(self, text: str) -> Optional[str]:
+        """🎵 DETECT MUSIC CONTROL INTENT"""
+        text_lower = text.lower()
         
-        Some models (DeepSeek, Claude) return function calls as text instead of 
-        structured tool_calls. This method detects and parses them.
+        # Vietnamese patterns
+        patterns = {
+            'stop': [
+                r'(?:dừng|tắt|ngừng)\s+(?:nhạc|bài\s+hát|music)',
+                r'(?:stop|turn off)\s+(?:music|song)',
+            ],
+            'pause': [
+                r'(?:tạm\s+dừng|pause)\s+(?:nhạc|music)',
+            ],
+            'resume': [
+                r'(?:tiếp\s+tục|chơi\s+tiếp|resume|continue)\s+(?:nhạc|music)',
+            ],
+            'next': [
+                r'(?:bài|nhạc)\s+(?:tiếp\s+theo|kế\s+tiếp|next)',
+                r'(?:next|skip)\s+(?:song|track)',
+            ],
+            'previous': [
+                r'(?:bài|nhạc)\s+(?:trước|previous)',
+                r'(?:previous|back)\s+(?:song|track)',
+            ]
+        }
         
-        Example input:
-            "Chị sẽ phát nhạc cho em!\n\nsearch_and_play_music\n{\n  \"query\": \"hà nội phố\"\n}"
-        
-        Returns:
-            {"name": "search_and_play_music", "arguments": {"query": "...", ...}}
-            or None if not a function call
-        """
-        if not text:
-            return None
-        
-        # Pattern 1: function_name\n{...json...}
-        pattern1 = r'search_and_play_music\s*\n\s*(\{[^}]+\})'
-        
-        # Pattern 2: More flexible - find JSON after function name
-        pattern2 = r'search_and_play_music.*?(\{[\s\S]*?"query"[\s\S]*?\})'
-        
-        for pattern in [pattern1, pattern2]:
-            match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
-            
-            if match:
-                json_str = match.group(1)
-                
-                try:
-                    arguments = json.loads(json_str)
-                    
-                    self.logger.info(f"🎯 Parsed text function call: search_and_play_music({arguments})")
-                    
-                    return {
-                        "name": "search_and_play_music",
-                        "arguments": arguments
-                    }
-                except json.JSONDecodeError as e:
-                    self.logger.warning(f"⚠️ Failed to parse JSON: {e}")
-                    continue
+        for action, pattern_list in patterns.items():
+            for pattern in pattern_list:
+                if re.search(pattern, text_lower):
+                    self.logger.info(f"🎵 Music control detected: {action}")
+                    return action
         
         return None
 
