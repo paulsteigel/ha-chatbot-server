@@ -272,7 +272,7 @@ def register_device_tools(device_manager):
         return status
     
     tool_registry.register(
-        name="device.get_status",
+        name="device_get_status",
         description=(
             "Lấy trạng thái hiện tại của thiết bị (âm lượng, độ sáng, đèn, quạt, nhạc).\n\n"
             "**Khi nào dùng:**\n"
@@ -324,7 +324,7 @@ def register_device_tools(device_manager):
         }
     
     tool_registry.register(
-        name="device.set_volume",
+        name="device_set_volume",
         description=(
             "Đặt âm lượng loa (0-100).\n\n"
             "**Quan trọng:** Luôn gọi `device.get_status` trước để biết âm lượng hiện tại!"
@@ -374,7 +374,7 @@ def register_device_tools(device_manager):
         }
     
     tool_registry.register(
-        name="device.control_light",
+        name="device_control_light",
         description="Bật/tắt đèn",
         parameters={
             "type": "object",
@@ -419,7 +419,7 @@ def register_device_tools(device_manager):
         }
     
     tool_registry.register(
-        name="device.control_fan",
+        name="device_control_fan",
         description="Bật/tắt quạt",
         parameters={
             "type": "object",
@@ -471,7 +471,7 @@ def register_device_tools(device_manager):
         }
     
     tool_registry.register(
-        name="device.set_brightness",
+        name="device_set_brightness",
         description=(
             "Đặt độ sáng màn hình (0-100).\n\n"
             "**Quan trọng:** Gọi `device.get_status` trước để biết độ sáng hiện tại!"
@@ -531,7 +531,7 @@ def register_music_tools(music_service):
         }
     
     tool_registry.register(
-        name="music.search_and_play",
+        name="music_search_and_play",
         description=(
             "Tìm và phát nhạc từ YouTube.\n\n"
             "**Khi nào dùng:**\n"
@@ -589,7 +589,7 @@ def register_music_tools(music_service):
         }
     
     tool_registry.register(
-        name="music.control",
+        name="music_control",
         description="Điều khiển phát nhạc (dừng, tạm dừng, tiếp tục, bài tiếp, bài trước)",
         parameters={
             "type": "object",
