@@ -20,6 +20,25 @@ from openai import AsyncOpenAI, AsyncAzureOpenAI
 # ═══════════════════════════════════════════════════════════════════
 # MUSIC FUNCTION DEFINITION
 # ═══════════════════════════════════════════════════════════════════
+MUSIC_CONTROL_FUNCTION = {
+    "type": "function",
+    "function": {
+        "name": "control_music",
+        "description": "Control music playback (stop, pause, resume, next, previous). Use when user wants to control the currently playing music.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["stop", "pause", "resume", "next", "previous"],
+                    "description": "The control action to perform"
+                }
+            },
+            "required": ["action"]
+        }
+    }
+}
+
 MUSIC_FUNCTIONS = [
     {
         "type": "function",
@@ -45,26 +64,6 @@ MUSIC_FUNCTIONS = [
     },
     MUSIC_CONTROL_FUNCTION
 ]
-
-MUSIC_CONTROL_FUNCTION = {
-    "type": "function",
-    "function": {
-        "name": "control_music",
-        "description": "Control music playback (stop, pause, resume, next, previous). Use when user wants to control the currently playing music.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": ["stop", "pause", "resume", "next", "previous"],
-                    "description": "The control action to perform"
-                }
-            },
-            "required": ["action"]
-        }
-    }
-}
-
 
 class AIService:
     """AI Chat Service with streaming support"""
